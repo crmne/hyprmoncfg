@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
@@ -165,6 +167,34 @@ func TestOpenSaveDialogShowsExistingProfiles(t *testing.T) {
 	}
 	if len(got.saveDialog.List.Items()) != 2 {
 		t.Fatalf("expected 2 visible profiles, got %d", len(got.saveDialog.List.Items()))
+	}
+}
+
+func TestSaveDialogAllowsJKInProfileName(t *testing.T) {
+	m := Model{
+		styles:   newStyles(),
+		height:   30,
+		profiles: []profile.Profile{{Name: "Laptop Home"}, {Name: "Desk Dock"}},
+	}
+
+	updatedModel, _ := m.openSaveDialog()
+	got := updatedModel.(*Model)
+	got.saveDialog.Input.SetValue("")
+	got.saveDialog.Filter = ""
+	got.rebuildSaveList(false)
+
+	for _, r := range "desk job" {
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+		nextModel, _ := got.updateSaveKeys(msg)
+		next := nextModel.(Model)
+		got = &next
+	}
+
+	if value := got.saveDialog.Input.Value(); value != "desk job" {
+		t.Fatalf("expected typed name to include j/k, got %q", value)
+	}
+	if got.saveDialog.Filter != "desk job" {
+		t.Fatalf("expected filter to track typed name, got %q", got.saveDialog.Filter)
 	}
 }
 

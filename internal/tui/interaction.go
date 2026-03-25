@@ -402,7 +402,7 @@ func (m Model) updateSaveKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.saveCmd(m.currentProfile(name))
-	case "up", "down", "j", "k", "pgup", "pgdown", "home", "end":
+	case "up", "down", "pgup", "pgdown", "home", "end":
 		var cmd tea.Cmd
 		m.saveDialog.List, cmd = m.saveDialog.List.Update(msg)
 		m.syncSaveNameFromSelection()
