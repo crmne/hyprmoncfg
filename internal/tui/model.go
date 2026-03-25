@@ -609,6 +609,7 @@ func (m Model) renderMain() string {
 	case tabWorkspaces:
 		body = m.renderWorkspaceView(bodyHeight)
 	}
+	body = lipgloss.NewStyle().Height(bodyHeight).MaxHeight(bodyHeight).Render(body)
 
 	content := strings.Join([]string{
 		title,
@@ -684,6 +685,8 @@ func (m Model) renderCanvasPane(width int, height int) string {
 
 	legend := lipgloss.JoinHorizontal(
 		lipgloss.Left,
+		m.styles.label.Render("Legend"),
+		" ",
 		m.styles.badgeAccent.Render("Selected"),
 		" ",
 		m.styles.badgeOn.Render("Enabled"),

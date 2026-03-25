@@ -327,6 +327,7 @@ func TestRenderMainFitsShortTerminalHeight(t *testing.T) {
 			MaxWorkspaces: 9,
 			GroupSize:     3,
 		},
+		status: "Loaded 2 monitors and 3 profiles",
 	}
 
 	view := m.renderMain()
@@ -335,6 +336,9 @@ func TestRenderMainFitsShortTerminalHeight(t *testing.T) {
 	}
 	if height := lipgloss.Height(view); height != m.height {
 		t.Fatalf("expected short main view to fill height %d, got %d", m.height, height)
+	}
+	if !strings.Contains(view, "Loaded 2 monitors and 3 profiles") {
+		t.Fatalf("expected status to remain visible below the body, got:\n%s", view)
 	}
 }
 
