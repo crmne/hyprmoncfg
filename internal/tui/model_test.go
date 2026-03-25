@@ -277,6 +277,9 @@ func TestRenderMainFitsNarrowTerminalWidth(t *testing.T) {
 	if width := maxRenderedLineWidth(m.renderMain()); width > m.width {
 		t.Fatalf("expected main view to fit width %d, got max line width %d", m.width, width)
 	}
+	if height := lipgloss.Height(m.renderMain()); height != m.height {
+		t.Fatalf("expected main view to fill height %d, got %d", m.height, height)
+	}
 }
 
 func TestSaveModalFitsNarrowTerminalWidth(t *testing.T) {
@@ -292,6 +295,46 @@ func TestSaveModalFitsNarrowTerminalWidth(t *testing.T) {
 
 	if width := maxRenderedLineWidth(got.View()); width > got.width {
 		t.Fatalf("expected save modal to fit width %d, got max line width %d", got.width, width)
+	}
+}
+
+func TestRenderMainFitsShortTerminalHeight(t *testing.T) {
+	m := Model{
+		styles:      newStyles(),
+		mode:        modeMain,
+		tab:         tabLayout,
+		layoutFocus: layoutFocusInspector,
+		width:       80,
+		height:      16,
+		editOutputs: []editableOutput{{
+			Key:             "microstep|mpg321ur-qd",
+			Name:            "DP-1",
+			Description:     "Microstep MPG321UR-QD",
+			Enabled:         true,
+			Modes:           []string{"3840x2160@143.99Hz"},
+			ModeIndex:       0,
+			Width:           3840,
+			Height:          2160,
+			Refresh:         143.99,
+			X:               0,
+			Y:               0,
+			Scale:           1.33,
+			ActiveWorkspace: "1",
+		}},
+		workspaceEdit: workspaceEditor{
+			Enabled:       true,
+			Strategy:      profile.WorkspaceStrategySequential,
+			MaxWorkspaces: 9,
+			GroupSize:     3,
+		},
+	}
+
+	view := m.renderMain()
+	if width := maxRenderedLineWidth(view); width > m.width {
+		t.Fatalf("expected short main view to fit width %d, got max line width %d", m.width, width)
+	}
+	if height := lipgloss.Height(view); height != m.height {
+		t.Fatalf("expected short main view to fill height %d, got %d", m.height, height)
 	}
 }
 
