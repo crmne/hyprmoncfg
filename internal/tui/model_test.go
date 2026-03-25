@@ -342,6 +342,79 @@ func TestRenderMainFitsShortTerminalHeight(t *testing.T) {
 	}
 }
 
+func TestRenderMainFitsTallMediumWidth(t *testing.T) {
+	m := Model{
+		styles:      newStyles(),
+		mode:        modeMain,
+		tab:         tabLayout,
+		layoutFocus: layoutFocusInspector,
+		width:       100,
+		height:      40,
+		editOutputs: []editableOutput{{
+			Key:             "samsung display corp.|atna60cl10-0",
+			Name:            "eDP-1",
+			Description:     "Samsung Display Corp. ATNA60CL10-0",
+			Make:            "Samsung Display Corp.",
+			Model:           "ATNA60CL10-0",
+			Enabled:         true,
+			Modes:           []string{"2880x1800@120.00Hz", "2560x1600@90.00Hz"},
+			ModeIndex:       0,
+			Width:           2880,
+			Height:          1800,
+			Refresh:         120,
+			X:               0,
+			Y:               0,
+			Scale:           1.50,
+			Focused:         true,
+			DPMSStatus:      true,
+			PhysicalWidth:   340,
+			PhysicalHeight:  220,
+			ActiveWorkspace: "1",
+		}},
+		status: "Loaded 1 monitors and 3 profiles",
+	}
+
+	view := m.renderMain()
+	if width := maxRenderedLineWidth(view); width > m.width {
+		t.Fatalf("expected tall medium-width view to fit width %d, got max line width %d", m.width, width)
+	}
+	if height := lipgloss.Height(view); height != m.height {
+		t.Fatalf("expected tall medium-width view to fill height %d, got %d", m.height, height)
+	}
+	if !strings.Contains(view, "Loaded 1 monitors and 3 profiles") {
+		t.Fatalf("expected status to remain visible below the body, got:\n%s", view)
+	}
+}
+
+func TestFitBlockAccountsForWrappedLines(t *testing.T) {
+	text := strings.Join([]string{
+		"Selected Monitor",
+		"Enter opens the active editor. Mouse click selects fields.",
+		"Samsung Display Corp. ATNA60CL10-0",
+		"Mode 2880x1800@120.00Hz (1/13)",
+	}, "\n")
+
+	got := fitBlock(text, 20, 6)
+	if width := maxRenderedLineWidth(got); width > 20 {
+		t.Fatalf("expected wrapped block to fit width 20, got %d", width)
+	}
+	if height := lipgloss.Height(got); height != 6 {
+		t.Fatalf("expected wrapped block to fit height 6, got %d", height)
+	}
+}
+
+func TestUseCompactLayoutForMediumWideTallTerminals(t *testing.T) {
+	m := Model{width: 140}
+	if !m.useCompactLayout(30) {
+		t.Fatal("expected 140-column terminal to stay in compact layout")
+	}
+
+	m.width = 150
+	if m.useCompactLayout(30) {
+		t.Fatal("expected 150-column terminal to allow side-by-side layout")
+	}
+}
+
 func TestPreviewSelectedSnapShowsAlignedBottomEdgeWithoutMoving(t *testing.T) {
 	m := Model{
 		selectedOutput: 1,

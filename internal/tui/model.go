@@ -707,7 +707,7 @@ func (m Model) renderCanvasPane(width int, height int) string {
 	if len(disabled) > 0 && innerHeight >= 10 {
 		lines = append(lines, m.styles.subtle.Render("Disabled: "+strings.Join(disabled, ", ")))
 	}
-	return panel.Width(innerWidth).Render(normalizeBlockHeight(strings.Join(lines, "\n"), innerHeight))
+	return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 }
 
 func (m Model) renderCanvas(width, height int) string {
@@ -772,7 +772,7 @@ func (m Model) renderInspectorPane(width int, height int) string {
 	lines := []string{m.styles.header.Render("Selected Monitor"), m.styles.subtle.Render("Enter opens the active editor. Mouse click selects fields."), ""}
 	if len(m.editOutputs) == 0 {
 		lines = append(lines, "(none)")
-		return panel.Width(innerWidth).Render(normalizeBlockHeight(strings.Join(lines, "\n"), innerHeight))
+		return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 	}
 
 	output := m.editOutputs[m.selectedOutput]
@@ -781,7 +781,7 @@ func (m Model) renderInspectorPane(width int, height int) string {
 		if innerHeight >= 3 {
 			lines = append(lines, m.styles.subtle.Render(fitString(output.displayModelLabel(), innerWidth)))
 		}
-		return panel.Width(innerWidth).Render(normalizeBlockHeight(strings.Join(lines, "\n"), innerHeight))
+		return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 	}
 
 	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Left, m.styles.badgeAccent.Render(output.Name), " ", m.monitorStateBadge(output)))
@@ -817,7 +817,7 @@ func (m Model) renderInspectorPane(width int, height int) string {
 	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Draft     "), m.unsavedBadge()))
 	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Hardware  "), m.styles.subtle.Render(output.Key)))
 
-	return panel.Width(innerWidth).Render(normalizeBlockHeight(strings.Join(lines, "\n"), innerHeight))
+	return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 }
 
 func (m Model) renderProfilesView(height int) string {
@@ -866,9 +866,9 @@ func (m Model) renderProfilesView(height int) string {
 	leftStyle := m.styles.activePane
 	rightStyle := m.styles.inactivePane
 	left := leftStyle.Width(max(1, listWidth-leftStyle.GetHorizontalFrameSize())).
-		Render(normalizeBlockHeight(strings.Join(listLines, "\n"), max(1, height-leftStyle.GetVerticalFrameSize())))
+		Render(fitBlock(strings.Join(listLines, "\n"), max(1, listWidth-leftStyle.GetHorizontalFrameSize()), max(1, height-leftStyle.GetVerticalFrameSize())))
 	right := rightStyle.Width(max(1, detailWidth-rightStyle.GetHorizontalFrameSize())).
-		Render(normalizeBlockHeight(strings.Join(detailLines, "\n"), max(1, height-rightStyle.GetVerticalFrameSize())))
+		Render(fitBlock(strings.Join(detailLines, "\n"), max(1, detailWidth-rightStyle.GetHorizontalFrameSize()), max(1, height-rightStyle.GetVerticalFrameSize())))
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 }
 
@@ -927,9 +927,9 @@ func (m Model) renderWorkspaceView(height int) string {
 	leftStyle := m.styles.activePane
 	rightStyle := m.styles.inactivePane
 	left := leftStyle.Width(max(1, leftWidth-leftStyle.GetHorizontalFrameSize())).
-		Render(normalizeBlockHeight(strings.Join(settings, "\n"), max(1, height-leftStyle.GetVerticalFrameSize())))
+		Render(fitBlock(strings.Join(settings, "\n"), max(1, leftWidth-leftStyle.GetHorizontalFrameSize()), max(1, height-leftStyle.GetVerticalFrameSize())))
 	right := rightStyle.Width(max(1, rightWidth-rightStyle.GetHorizontalFrameSize())).
-		Render(normalizeBlockHeight(strings.Join(previewLines, "\n"), max(1, height-rightStyle.GetVerticalFrameSize())))
+		Render(fitBlock(strings.Join(previewLines, "\n"), max(1, rightWidth-rightStyle.GetHorizontalFrameSize()), max(1, height-rightStyle.GetVerticalFrameSize())))
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 }
 
@@ -1003,7 +1003,8 @@ func (m Model) mainBodyHeight(title string, tabs string, status string, help str
 }
 
 func (m Model) useCompactLayout(bodyHeight int) bool {
-	return bodyHeight < 14 || m.terminalWidth() < 96
+	canvasWidth, inspectorWidth := m.layoutPaneWidths()
+	return bodyHeight < 14 || canvasWidth < 96 || inspectorWidth < 50
 }
 
 func (m Model) compactLayoutHeights(total int) (int, int) {
@@ -1029,18 +1030,27 @@ func (m Model) compactLayoutHeights(total int) (int, int) {
 	return canvas, max(3, inspector)
 }
 
-func normalizeBlockHeight(text string, lines int) string {
-	if lines <= 0 {
+func fitBlock(text string, width int, height int) string {
+	if width <= 0 || height <= 0 {
 		return ""
 	}
-	parts := strings.Split(text, "\n")
-	if len(parts) > lines {
-		parts = parts[:lines]
+	wrapper := lipgloss.NewStyle().Width(width).MaxWidth(width)
+	raw := strings.Split(text, "\n")
+	lines := make([]string, 0, height)
+	for _, line := range raw {
+		rendered := wrapper.Render(line)
+		lines = append(lines, strings.Split(rendered, "\n")...)
+		if len(lines) >= height {
+			break
+		}
 	}
-	for len(parts) < lines {
-		parts = append(parts, "")
+	if len(lines) > height {
+		lines = lines[:height]
 	}
-	return strings.Join(parts, "\n")
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *Model) loadLiveState() {
