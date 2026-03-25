@@ -13,8 +13,8 @@ window_x="${WINDOW_X:-320}"
 window_y="${WINDOW_Y:-80}"
 capture_margin_left="${CAPTURE_MARGIN_LEFT:-0}"
 capture_margin_right="${CAPTURE_MARGIN_RIGHT:-0}"
-capture_margin_top="${CAPTURE_MARGIN_TOP:-8}"
-capture_margin_bottom="${CAPTURE_MARGIN_BOTTOM:-6}"
+capture_margin_top="${CAPTURE_MARGIN_TOP:-0}"
+capture_margin_bottom="${CAPTURE_MARGIN_BOTTOM:-0}"
 
 mkdir -p "$output_dir"
 
