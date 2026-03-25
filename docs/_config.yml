@@ -1,0 +1,77 @@
+title: hyprmoncfg
+description: Terminal-first monitor configuration for Hyprland.
+lang: en-US
+timezone: Europe/Berlin
+url: https://crmne.github.io
+baseurl: /hyprmoncfg
+
+markdown: kramdown
+kramdown:
+  input: GFM
+
+permalink: pretty
+theme: jekyll-vitepress-theme
+
+collections:
+  guide:
+    output: true
+    permalink: "/:name/"
+  reference:
+    output: true
+    permalink: "/:name/"
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+  - scope:
+      type: guide
+    values:
+      layout: default
+  - scope:
+      type: reference
+    values:
+      layout: default
+
+jekyll_vitepress:
+  branding:
+    site_title: hyprmoncfg
+  syntax:
+    light_theme: github
+    dark_theme: github.dark
+  footer:
+    enabled: true
+    show_on_docs: false
+    message: Terminal-first monitor configuration for Hyprland.
+    copyright: MIT licensed.
+  doc_footer:
+    enabled: true
+    previous_label: Previous page
+    next_label: Next page
+  last_updated:
+    enabled: true
+    text: Last updated
+    format: "%Y-%m-%d %H:%M"
+  edit_link:
+    enabled: true
+    pattern: "https://github.com/crmne/hyprmoncfg/edit/main/site/:path"
+    text: Edit this page on GitHub
+  github_star:
+    enabled: true
+    repository: crmne/hyprmoncfg
+    text: Star
+    show_count: true
+
+plugins:
+  - jekyll-vitepress-theme
+  - jekyll-redirect-from
+
+exclude:
+  - _site
+  - .jekyll-cache
+  - .sass-cache
+  - .bundle
+  - vendor
+  - Gemfile
+  - Gemfile.lock

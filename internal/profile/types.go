@@ -16,20 +16,48 @@ type OutputConfig struct {
 	Model     string  `json:"model,omitempty"`
 	Serial    string  `json:"serial,omitempty"`
 	Enabled   bool    `json:"enabled"`
+	Mode      string  `json:"mode,omitempty"`
 	Width     int     `json:"width"`
 	Height    int     `json:"height"`
 	Refresh   float64 `json:"refresh"`
 	X         int     `json:"x"`
 	Y         int     `json:"y"`
 	Scale     float64 `json:"scale"`
+	VRR       int     `json:"vrr,omitempty"`
 	Transform int     `json:"transform"`
 }
 
+type WorkspaceStrategy string
+
+const (
+	WorkspaceStrategyManual     WorkspaceStrategy = "manual"
+	WorkspaceStrategySequential WorkspaceStrategy = "sequential"
+	WorkspaceStrategyInterleave WorkspaceStrategy = "interleave"
+)
+
+type WorkspaceRule struct {
+	Workspace  string `json:"workspace"`
+	OutputKey  string `json:"output_key"`
+	OutputName string `json:"output_name,omitempty"`
+	Default    bool   `json:"default,omitempty"`
+	Persistent bool   `json:"persistent,omitempty"`
+}
+
+type WorkspaceSettings struct {
+	Enabled       bool              `json:"enabled"`
+	Strategy      WorkspaceStrategy `json:"strategy,omitempty"`
+	MaxWorkspaces int               `json:"max_workspaces,omitempty"`
+	GroupSize     int               `json:"group_size,omitempty"`
+	MonitorOrder  []string          `json:"monitor_order,omitempty"`
+	Rules         []WorkspaceRule   `json:"rules,omitempty"`
+}
+
 type Profile struct {
-	Name      string         `json:"name"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	Outputs   []OutputConfig `json:"outputs"`
+	Name       string            `json:"name"`
+	CreatedAt  time.Time         `json:"created_at"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+	Outputs    []OutputConfig    `json:"outputs"`
+	Workspaces WorkspaceSettings `json:"workspaces,omitempty"`
 }
 
 func New(name string, outputs []OutputConfig) Profile {
@@ -45,6 +73,10 @@ func New(name string, outputs []OutputConfig) Profile {
 }
 
 func FromMonitors(name string, monitors []hypr.Monitor) Profile {
+	return FromState(name, monitors, nil)
+}
+
+func FromState(name string, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) Profile {
 	outputs := make([]OutputConfig, 0, len(monitors))
 	for _, m := range monitors {
 		outputs = append(outputs, OutputConfig{
@@ -54,16 +86,20 @@ func FromMonitors(name string, monitors []hypr.Monitor) Profile {
 			Model:     m.Model,
 			Serial:    m.Serial,
 			Enabled:   !m.Disabled,
+			Mode:      m.ModeString(),
 			Width:     m.Width,
 			Height:    m.Height,
 			Refresh:   m.RefreshRate,
 			X:         m.X,
 			Y:         m.Y,
 			Scale:     m.Scale,
+			VRR:       boolToVRR(m.VRR),
 			Transform: m.Transform,
 		})
 	}
-	return New(name, outputs)
+	p := New(name, outputs)
+	p.Workspaces = WorkspaceSettingsFromHypr(monitors, rules)
+	return p
 }
 
 func (p *Profile) SortOutputs() {
@@ -94,6 +130,12 @@ func (p Profile) Validate() error {
 				return fmt.Errorf("output %d has invalid resolution", i)
 			}
 		}
+		if out.VRR < 0 || out.VRR > 2 {
+			return fmt.Errorf("output %d has invalid VRR mode", i)
+		}
+	}
+	if err := p.Workspaces.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -114,4 +156,18 @@ func (p Profile) Keys() []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func (o OutputConfig) NormalizedMode() string {
+	if strings.TrimSpace(o.Mode) != "" {
+		return strings.TrimSpace(o.Mode)
+	}
+	return hypr.FormatMode(o.Width, o.Height, o.Refresh)
+}
+
+func boolToVRR(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }

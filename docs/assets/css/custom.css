@@ -1,0 +1,63 @@
+:root {
+  --vp-c-brand-1: #d2a56e;
+  --vp-c-brand-2: #e0b882;
+  --vp-c-brand-3: #b98848;
+  --vp-c-brand-soft: rgba(210, 165, 110, 0.16);
+  --vp-home-hero-name-color: #f5e7cf;
+}
+
+.dark {
+  --vp-c-brand-1: #e0b882;
+  --vp-c-brand-2: #e9c89a;
+  --vp-c-brand-3: #d2a56e;
+  --vp-c-brand-soft: rgba(224, 184, 130, 0.18);
+}
+
+.VPHero .image .image-container {
+  max-width: 820px;
+}
+
+.VPHero .image .image-src,
+.screenshot {
+  border-radius: 20px;
+  border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.28);
+}
+
+.screenshot-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin: 2rem 0;
+}
+
+.screenshot-card {
+  display: block;
+  text-decoration: none;
+}
+
+.screenshot-card span {
+  display: block;
+  margin-top: 0.75rem;
+  color: var(--vp-c-text-2);
+  font-size: 0.95rem;
+}
+
+.install-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin: 1.5rem 0 2rem;
+}
+
+.install-card {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  background: var(--vp-c-bg-soft);
+}
+
+.install-card h3 {
+  margin-top: 0;
+  margin-bottom: 0.4rem;
+}

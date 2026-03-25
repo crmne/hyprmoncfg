@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,6 +26,11 @@ type Event struct {
 	Type  EventType
 	Value string
 	Raw   string
+}
+
+type VersionInfo struct {
+	Version string `json:"version"`
+	Tag     string `json:"tag"`
 }
 
 type Client struct {
@@ -52,6 +58,62 @@ func (c *Client) Monitors(ctx context.Context) ([]Monitor, error) {
 	return monitors, nil
 }
 
+func (c *Client) Workspaces(ctx context.Context) ([]WorkspaceState, error) {
+	cmd := exec.CommandContext(ctx, c.hyprctl, "-j", "workspaces")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query workspaces: %w", err)
+	}
+	var workspaces []WorkspaceState
+	if err := json.Unmarshal(out, &workspaces); err != nil {
+		return nil, fmt.Errorf("failed to decode hyprctl workspaces JSON: %w", err)
+	}
+	return workspaces, nil
+}
+
+func (c *Client) WorkspaceRules(ctx context.Context) ([]WorkspaceRule, error) {
+	cmd := exec.CommandContext(ctx, c.hyprctl, "-j", "workspacerules")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query workspace rules: %w", err)
+	}
+	var rules []WorkspaceRule
+	if err := json.Unmarshal(out, &rules); err != nil {
+		return nil, fmt.Errorf("failed to decode hyprctl workspace rules JSON: %w", err)
+	}
+	return rules, nil
+}
+
+func (c *Client) Version(ctx context.Context) (VersionInfo, error) {
+	cmd := exec.CommandContext(ctx, c.hyprctl, "-j", "version")
+	out, err := cmd.Output()
+	if err != nil {
+		return VersionInfo{}, fmt.Errorf("failed to query hyprctl version: %w", err)
+	}
+	var version VersionInfo
+	if err := json.Unmarshal(out, &version); err != nil {
+		return VersionInfo{}, fmt.Errorf("failed to decode hyprctl version JSON: %w", err)
+	}
+	return version, nil
+}
+
+func (c *Client) SupportsMonitorV2(ctx context.Context) (bool, error) {
+	version, err := c.Version(ctx)
+	if err != nil {
+		return false, err
+	}
+	return versionAtLeast(firstNonEmpty(version.Version, version.Tag), 0, 50, 0), nil
+}
+
+func (c *Client) Reload(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, c.hyprctl, "reload")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to reload Hyprland: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func (c *Client) KeywordMonitor(ctx context.Context, value string) error {
 	cmd := exec.CommandContext(ctx, c.hyprctl, "keyword", "monitor", value)
 	out, err := cmd.CombinedOutput()
@@ -61,18 +123,55 @@ func (c *Client) KeywordMonitor(ctx context.Context, value string) error {
 	return nil
 }
 
+func (c *Client) KeywordWorkspace(ctx context.Context, value string) error {
+	cmd := exec.CommandContext(ctx, c.hyprctl, "keyword", "workspace", value)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed applying workspace keyword %q: %w (%s)", value, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func (c *Client) Dispatch(ctx context.Context, dispatcher string, args ...string) error {
+	allArgs := append([]string{"dispatch", dispatcher}, args...)
+	cmd := exec.CommandContext(ctx, c.hyprctl, allArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed dispatch %q: %w (%s)", dispatcher, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func (c *Client) BatchKeywordMonitor(ctx context.Context, values []string) error {
 	if len(values) == 0 {
 		return nil
 	}
-	batch := make([]string, 0, len(values))
+	commands := make([]string, 0, len(values))
 	for _, v := range values {
-		batch = append(batch, "keyword monitor "+v)
+		commands = append(commands, "keyword monitor "+v)
 	}
-	cmd := exec.CommandContext(ctx, c.hyprctl, "--batch", strings.Join(batch, " ; "))
+	return c.Batch(ctx, commands)
+}
+
+func (c *Client) BatchKeywordWorkspace(ctx context.Context, values []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	commands := make([]string, 0, len(values))
+	for _, v := range values {
+		commands = append(commands, "keyword workspace "+v)
+	}
+	return c.Batch(ctx, commands)
+}
+
+func (c *Client) Batch(ctx context.Context, commands []string) error {
+	if len(commands) == 0 {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, c.hyprctl, "--batch", strings.Join(commands, " ; "))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed batch monitor apply: %w (%s)", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("failed hyprctl batch apply: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -150,4 +249,44 @@ func parseEvent(line string) (Event, bool) {
 	default:
 		return Event{}, false
 	}
+}
+
+func versionAtLeast(value string, wantMajor, wantMinor, wantPatch int) bool {
+	parts := strings.Split(strings.TrimSpace(strings.TrimPrefix(value, "v")), ".")
+	if len(parts) == 0 {
+		return false
+	}
+	parsed := []int{0, 0, 0}
+	for idx := 0; idx < len(parsed) && idx < len(parts); idx++ {
+		part := parts[idx]
+		end := 0
+		for end < len(part) && part[end] >= '0' && part[end] <= '9' {
+			end++
+		}
+		if end == 0 {
+			continue
+		}
+		n, err := strconv.Atoi(part[:end])
+		if err != nil {
+			continue
+		}
+		parsed[idx] = n
+	}
+
+	if parsed[0] != wantMajor {
+		return parsed[0] > wantMajor
+	}
+	if parsed[1] != wantMinor {
+		return parsed[1] > wantMinor
+	}
+	return parsed[2] >= wantPatch
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

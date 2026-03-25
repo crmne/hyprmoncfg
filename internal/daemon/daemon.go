@@ -14,6 +14,8 @@ type Config struct {
 	Debounce      time.Duration
 	PollInterval  time.Duration
 	ForcedProfile string
+	MonitorsConf  string
+	HyprConfig    string
 	Logf          func(format string, args ...any)
 }
 
@@ -38,8 +40,12 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 	return &Service{
 		client: client,
 		store:  store,
-		engine: apply.Engine{Client: client},
-		cfg:    cfg,
+		engine: apply.Engine{
+			Client:             client,
+			MonitorsConfPath:   cfg.MonitorsConf,
+			HyprlandConfigPath: cfg.HyprConfig,
+		},
+		cfg: cfg,
 	}
 }
 

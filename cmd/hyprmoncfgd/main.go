@@ -31,6 +31,8 @@ func newRootCmd() *cobra.Command {
 	var poll time.Duration
 	var forceProfile string
 	var quiet bool
+	var monitorsConf string
+	var hyprConfig string
 
 	cmd := &cobra.Command{
 		Use:     "hyprmoncfgd",
@@ -60,6 +62,8 @@ func newRootCmd() *cobra.Command {
 				Debounce:      debounce,
 				PollInterval:  poll,
 				ForcedProfile: forceProfile,
+				MonitorsConf:  monitorsConf,
+				HyprConfig:    hyprConfig,
 				Logf:          logf,
 			})
 
@@ -80,6 +84,8 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&debounce, "debounce", 1200*time.Millisecond, "Debounce duration before applying profile")
 	cmd.Flags().DurationVar(&poll, "poll-interval", 5*time.Second, "Polling interval for monitor changes")
 	cmd.Flags().StringVar(&forceProfile, "profile", "", "Force this profile instead of auto-matching")
+	cmd.Flags().StringVar(&monitorsConf, "monitors-conf", "", "Hyprland monitor config target to write and reload (default: ~/.config/hypr/monitors.conf)")
+	cmd.Flags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config to verify source directives against (default: ~/.config/hypr/hyprland.conf)")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "Suppress logs")
 	cmd.AddCommand(newVersionCmd("hyprmoncfgd"))
 

@@ -1,0 +1,8 @@
+- title: Guide
+  url: /getting-started/
+  collections:
+    - guide
+- title: Reference
+  url: /commands/
+  collections:
+    - reference

@@ -3,9 +3,10 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -19,22 +20,34 @@ type uiMode int
 
 const (
 	modeMain uiMode = iota
-	modeEdit
 	modeSave
+	modeSaveConfirm
 	modeConfirm
+	modeModePicker
+	modeNumericInput
 )
 
-type saveSource int
+type mainTab int
 
 const (
-	saveSourceCurrent saveSource = iota
-	saveSourceEdit
+	tabLayout mainTab = iota
+	tabProfiles
+	tabWorkspaces
+)
+
+type layoutFocus int
+
+const (
+	layoutFocusCanvas layoutFocus = iota
+	layoutFocusInspector
 )
 
 type refreshMsg struct {
-	monitors []hypr.Monitor
-	profiles []profile.Profile
-	err      error
+	monitors       []hypr.Monitor
+	profiles       []profile.Profile
+	workspaceRules []hypr.WorkspaceRule
+	workspaces     []hypr.WorkspaceState
+	err            error
 }
 
 type saveMsg struct {
@@ -48,10 +61,9 @@ type deleteMsg struct {
 }
 
 type applyMsg struct {
-	target     string
-	snapshot   []string
-	returnMode uiMode
-	err        error
+	target   string
+	snapshot apply.RevertState
+	err      error
 }
 
 type revertMsg struct {
@@ -59,13 +71,90 @@ type revertMsg struct {
 	reason string
 }
 
+type clearSnapMsg struct {
+	token int
+}
+
 type tickMsg time.Time
 
 type pendingApply struct {
-	snapshot   []string
-	target     string
-	deadline   time.Time
-	returnMode uiMode
+	snapshot apply.RevertState
+	target   string
+	deadline time.Time
+}
+
+type editableOutput struct {
+	Key             string
+	Name            string
+	Description     string
+	Make            string
+	Model           string
+	Serial          string
+	PhysicalWidth   int
+	PhysicalHeight  int
+	Enabled         bool
+	Modes           []string
+	ModeIndex       int
+	Width           int
+	Height          int
+	Refresh         float64
+	X               int
+	Y               int
+	Scale           float64
+	VRR             int
+	Transform       int
+	Focused         bool
+	DPMSStatus      bool
+	MirrorOf        string
+	ActiveWorkspace string
+}
+
+type canvasCell struct {
+	ch   rune
+	fg   string
+	bg   string
+	bold bool
+}
+
+type snapEdge int
+
+const (
+	snapEdgeLeft snapEdge = iota
+	snapEdgeRight
+	snapEdgeTop
+	snapEdgeBottom
+)
+
+type snapMark struct {
+	OutputIndex int
+	Edge        snapEdge
+}
+
+type snapHintState struct {
+	Token int
+	Marks []snapMark
+}
+
+type snapAxisCandidate struct {
+	pos   int
+	dist  int
+	marks []snapMark
+}
+
+type snapAnalysis struct {
+	x snapAxisCandidate
+	y snapAxisCandidate
+}
+
+type workspaceEditor struct {
+	Enabled       bool
+	Strategy      profile.WorkspaceStrategy
+	MaxWorkspaces int
+	GroupSize     int
+	MonitorOrder  []string
+	Rules         []profile.WorkspaceRule
+	SelectedField int
+	SelectedOrder int
 }
 
 type Model struct {
@@ -75,39 +164,57 @@ type Model struct {
 
 	styles styles
 
-	mode      uiMode
-	focusPane int
+	mode        uiMode
+	tab         mainTab
+	layoutFocus layoutFocus
 
-	monitors []hypr.Monitor
-	profiles []profile.Profile
+	monitors       []hypr.Monitor
+	profiles       []profile.Profile
+	workspaceRules []hypr.WorkspaceRule
+	workspaces     []hypr.WorkspaceState
 
-	selectedMonitor int
+	editOutputs     []editableOutput
+	workspaceEdit   workspaceEditor
+	selectedOutput  int
+	inspectorField  int
 	selectedProfile int
 
-	editOutputs []profile.OutputConfig
-	editOutput  int
-	editField   int
-
-	saveName   string
-	saveSource saveSource
-
-	pending *pendingApply
+	pending       *pendingApply
+	saveDialog    *saveDialogState
+	saveOverwrite string
+	picker        *modePickerState
+	input         *numericInputState
+	drag          *canvasDragState
+	snap          *snapHintState
+	snapSeq       int
 
 	status    string
 	statusErr bool
+	dirty     bool
 
 	width  int
 	height int
 }
 
-func NewModel(client *hypr.Client, store *profile.Store) Model {
+func NewModel(client *hypr.Client, store *profile.Store, monitorsConfPath string, hyprlandConfigPath string) Model {
 	return Model{
 		client: client,
 		store:  store,
-		engine: apply.Engine{Client: client},
-		styles: newStyles(),
-		mode:   modeMain,
-		status: "Loading monitors and profiles...",
+		engine: apply.Engine{
+			Client:             client,
+			MonitorsConfPath:   monitorsConfPath,
+			HyprlandConfigPath: hyprlandConfigPath,
+		},
+		styles:      newStyles(),
+		mode:        modeMain,
+		tab:         tabLayout,
+		layoutFocus: layoutFocusCanvas,
+		status:      "Loading Hyprland state...",
+		workspaceEdit: workspaceEditor{
+			Strategy:      profile.WorkspaceStrategySequential,
+			MaxWorkspaces: 9,
+			GroupSize:     3,
+		},
 	}
 }
 
@@ -120,6 +227,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.picker != nil {
+			m.picker.List.SetSize(44, m.modePickerHeight())
+		}
+		if m.saveDialog != nil {
+			m.saveDialog.List.SetSize(52, clampInt(defaultHeight(m.height)-18, 5, 10))
+		}
 		return m, nil
 
 	case refreshMsg:
@@ -127,13 +240,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatusErr(msg.err.Error())
 			return m, nil
 		}
+
 		m.monitors = msg.monitors
 		m.profiles = msg.profiles
-		m.selectedMonitor = clampIndex(m.selectedMonitor, len(m.monitors))
-		m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
-		if m.mode == modeEdit && len(m.editOutputs) == 0 {
-			m.editOutputs = outputsFromMonitors(m.monitors)
+		m.workspaceRules = msg.workspaceRules
+		m.workspaces = msg.workspaces
+
+		if len(m.editOutputs) == 0 || !m.dirty {
+			m.loadLiveState()
 		}
+		m.syncSelections()
 		m.setStatusOK(fmt.Sprintf("Loaded %d monitors and %d profiles", len(m.monitors), len(m.profiles)))
 		return m, nil
 
@@ -144,9 +260,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeMain
-		m.saveName = ""
+		m.saveDialog = nil
+		m.saveOverwrite = ""
 		m.setStatusOK(fmt.Sprintf("Saved profile %q", msg.name))
 		return m, m.refreshCmd()
+
+	case clearSnapMsg:
+		if m.snap != nil && msg.token == m.snap.Token {
+			m.snap = nil
+		}
+		return m, nil
 
 	case deleteMsg:
 		if msg.err != nil {
@@ -154,6 +277,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setStatusOK(fmt.Sprintf("Deleted profile %q", msg.name))
+		m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
 		return m, m.refreshCmd()
 
 	case applyMsg:
@@ -163,15 +287,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pending = &pendingApply{
-			snapshot:   msg.snapshot,
-			target:     msg.target,
-			deadline:   time.Now().Add(10 * time.Second),
-			returnMode: msg.returnMode,
+			snapshot: msg.snapshot,
+			target:   msg.target,
+			deadline: time.Now().Add(10 * time.Second),
 		}
 		m.mode = modeConfirm
 		m.statusErr = false
-		m.status = fmt.Sprintf("Applied %q. Confirm within 10 seconds or it will revert.", msg.target)
-		return m, tea.Batch(m.refreshCmd(), tickCmd())
+		m.status = fmt.Sprintf("%s applied. Changes are live until you confirm or revert.", targetLabel(msg.target))
+		return m, tickCmd()
 
 	case revertMsg:
 		m.mode = modeMain
@@ -180,13 +303,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatusErr(fmt.Sprintf("Revert failed: %v", msg.err))
 			return m, nil
 		}
+		m.dirty = false
 		m.setStatusOK("Configuration reverted: " + msg.reason)
 		return m, m.refreshCmd()
 
 	case tickMsg:
 		if m.mode == modeConfirm && m.pending != nil {
 			if time.Now().After(m.pending.deadline) {
-				snapshot := append([]string(nil), m.pending.snapshot...)
+				snapshot := m.pending.snapshot
 				return m, m.revertCmd(snapshot, "timeout")
 			}
 			return m, tickCmd()
@@ -195,16 +319,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch m.mode {
-		case modeMain:
-			return m.updateMainKeys(msg)
-		case modeEdit:
-			return m.updateEditKeys(msg)
 		case modeSave:
 			return m.updateSaveKeys(msg)
+		case modeSaveConfirm:
+			return m.updateSaveConfirmKeys(msg)
 		case modeConfirm:
 			return m.updateConfirmKeys(msg)
+		case modeModePicker:
+			return m.updateModePickerKeys(msg)
+		case modeNumericInput:
+			return m.updateNumericInputKeys(msg)
+		default:
+			return m.updateMainKeys(msg)
 		}
+
+	case tea.MouseMsg:
+		return m.updateMouse(msg)
 	}
+
 	return m, nil
 }
 
@@ -212,143 +344,196 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
-	case "tab", "left", "right":
-		m.focusPane = 1 - m.focusPane
+	case "1":
+		m.tab = tabLayout
 		return m, nil
-	case "up", "k":
-		if m.focusPane == 0 {
-			m.selectedMonitor = clampIndex(m.selectedMonitor-1, len(m.monitors))
-		} else {
-			m.selectedProfile = clampIndex(m.selectedProfile-1, len(m.profiles))
-		}
+	case "2":
+		m.tab = tabProfiles
 		return m, nil
-	case "down", "j":
-		if m.focusPane == 0 {
-			m.selectedMonitor = clampIndex(m.selectedMonitor+1, len(m.monitors))
-		} else {
-			m.selectedProfile = clampIndex(m.selectedProfile+1, len(m.profiles))
-		}
+	case "3":
+		m.tab = tabWorkspaces
 		return m, nil
 	case "r":
+		m.dirty = false
 		return m, m.refreshCmd()
-	case "e":
-		m.mode = modeEdit
-		m.editOutputs = outputsFromMonitors(m.monitors)
-		m.editOutput = 0
-		m.editField = 0
-		if len(m.editOutputs) == 0 {
-			m.setStatusErr("No monitors available for editing")
-			m.mode = modeMain
+	case "s":
+		return m.openSaveDialog()
+	case "a":
+		if m.tab == tabProfiles {
+			if len(m.profiles) == 0 {
+				m.setStatusErr("No profiles available")
+				return m, nil
+			}
+			target := m.profiles[m.selectedProfile]
+			return m, m.applyCmd(target)
+		}
+		return m, m.applyCmd(m.currentProfile("draft"))
+	}
+
+	switch m.tab {
+	case tabLayout:
+		return m.updateLayoutKeys(msg)
+	case tabProfiles:
+		return m.updateProfileKeys(msg)
+	case tabWorkspaces:
+		return m.updateWorkspaceKeys(msg)
+	default:
+		return m, nil
+	}
+}
+
+func (m Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if len(m.editOutputs) == 0 {
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "tab":
+		if m.layoutFocus == layoutFocusCanvas {
+			m.layoutFocus = layoutFocusInspector
+		} else {
+			m.layoutFocus = layoutFocusCanvas
 		}
 		return m, nil
-	case "s":
-		m.mode = modeSave
-		m.saveSource = saveSourceCurrent
-		m.saveName = defaultProfileName()
+	case "[", "shift+tab":
+		m.selectedOutput = clampIndex(m.selectedOutput-1, len(m.editOutputs))
 		return m, nil
-	case "a", "enter":
-		if len(m.profiles) == 0 {
-			m.setStatusErr("No profiles available")
+	case "]":
+		m.selectedOutput = clampIndex(m.selectedOutput+1, len(m.editOutputs))
+		return m, nil
+	}
+
+	if m.layoutFocus == layoutFocusCanvas {
+		var cmd tea.Cmd
+		switch msg.String() {
+		case "left":
+			m.moveSelectedOutput(-100, 0)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "right":
+			m.moveSelectedOutput(100, 0)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "up":
+			m.moveSelectedOutput(0, -100)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "down":
+			m.moveSelectedOutput(0, 100)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "shift+left":
+			m.moveSelectedOutput(-10, 0)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "shift+right":
+			m.moveSelectedOutput(10, 0)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "shift+up":
+			m.moveSelectedOutput(0, -10)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "shift+down":
+			m.moveSelectedOutput(0, 10)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "ctrl+left":
+			m.moveSelectedOutput(-1, 0)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "ctrl+right":
+			m.moveSelectedOutput(1, 0)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "ctrl+up":
+			m.moveSelectedOutput(0, -1)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "ctrl+down":
+			m.moveSelectedOutput(0, 1)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "H":
+			m.moveSelectedOutput(-500, 0)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "L":
+			m.moveSelectedOutput(500, 0)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "K":
+			m.moveSelectedOutput(0, -500)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case "J":
+			m.moveSelectedOutput(0, 500)
+			cmd = m.showSnapHint(m.previewSelectedSnap(24))
+		case " ":
+			m.toggleSelectedOutput()
+		default:
 			return m, nil
 		}
-		p := m.profiles[m.selectedProfile]
-		snapshot := apply.SnapshotCommands(m.monitors)
-		return m, m.applyCmd(p, snapshot, modeMain)
+		m.dirty = true
+		return m, cmd
+	}
+
+	switch msg.String() {
+	case "up":
+		m.inspectorField = clampIndex(m.inspectorField-1, len(layoutFields))
+	case "down":
+		m.inspectorField = clampIndex(m.inspectorField+1, len(layoutFields))
+	case "left", "h", "-", "_":
+		m.adjustInspectorField(-1)
+	case "right", "l", "+", "=":
+		m.adjustInspectorField(1)
+	case " ", "enter":
+		return m.activateInspectorField()
+	default:
+		return m, nil
+	}
+
+	m.dirty = true
+	return m, nil
+}
+
+func (m Model) updateProfileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		m.selectedProfile = clampIndex(m.selectedProfile-1, len(m.profiles))
+	case "down", "j":
+		m.selectedProfile = clampIndex(m.selectedProfile+1, len(m.profiles))
 	case "d":
 		if len(m.profiles) == 0 {
 			m.setStatusErr("No profiles to delete")
 			return m, nil
 		}
-		name := m.profiles[m.selectedProfile].Name
-		return m, m.deleteCmd(name)
-	}
-	return m, nil
-}
-
-func (m Model) updateEditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		m.mode = modeMain
-		m.editOutputs = nil
-		return m, nil
-	case "up", "k":
-		m.editOutput = clampIndex(m.editOutput-1, len(m.editOutputs))
-		return m, nil
-	case "down", "j":
-		m.editOutput = clampIndex(m.editOutput+1, len(m.editOutputs))
-		return m, nil
-	case "left", "h":
-		m.editField = clampIndex(m.editField-1, len(editFieldNames))
-		return m, nil
-	case "right", "l", "tab":
-		m.editField = clampIndex(m.editField+1, len(editFieldNames))
-		return m, nil
-	case " ":
-		m.toggleEditOutput()
-		return m, nil
-	case "+", "=":
-		m.adjustEditOutput(1)
-		return m, nil
-	case "-", "_":
-		m.adjustEditOutput(-1)
-		return m, nil
-	case "r":
-		m.editOutputs = outputsFromMonitors(m.monitors)
-		m.editOutput = clampIndex(m.editOutput, len(m.editOutputs))
-		m.editField = clampIndex(m.editField, len(editFieldNames))
-		m.setStatusOK("Editor reset to current monitor state")
-		return m, nil
-	case "s":
-		m.mode = modeSave
-		m.saveSource = saveSourceEdit
-		m.saveName = defaultProfileName()
-		return m, nil
-	case "a":
-		p := profile.New("temporary", append([]profile.OutputConfig(nil), m.editOutputs...))
-		snapshot := apply.SnapshotCommands(m.monitors)
-		return m, m.applyCmd(p, snapshot, modeEdit)
-	}
-	return m, nil
-}
-
-func (m Model) updateSaveKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		m.mode = modeMain
-		m.saveName = ""
-		return m, nil
-	case "enter":
-		name := strings.TrimSpace(m.saveName)
-		if name == "" {
-			m.setStatusErr("Profile name cannot be empty")
+		return m, m.deleteCmd(m.profiles[m.selectedProfile].Name)
+	case "enter", "l":
+		if len(m.profiles) == 0 {
+			m.setStatusErr("No profiles to load")
 			return m, nil
 		}
-		var p profile.Profile
-		if m.saveSource == saveSourceEdit {
-			p = profile.New(name, append([]profile.OutputConfig(nil), m.editOutputs...))
-		} else {
-			p = profile.FromMonitors(name, m.monitors)
-		}
-		return m, m.saveCmd(p)
-	case "backspace":
-		if len(m.saveName) > 0 {
-			m.saveName = m.saveName[:len(m.saveName)-1]
-		}
-		return m, nil
+		m.loadProfile(m.profiles[m.selectedProfile])
+		m.tab = tabLayout
 	default:
-		for _, r := range msg.Runes {
-			if unicode.IsPrint(r) {
-				if len(m.saveName) < 64 {
-					m.saveName += string(r)
-				}
-			}
-		}
 		return m, nil
 	}
+
+	return m, nil
+}
+
+func (m Model) updateWorkspaceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up":
+		m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField-1, len(workspaceFields))
+	case "down":
+		m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField+1, len(workspaceFields))
+	case "left", "h", "-", "_":
+		m.adjustWorkspaceField(-1)
+	case "right", "l", "+", "=":
+		m.adjustWorkspaceField(1)
+	case " ", "enter":
+		m.adjustWorkspaceField(1)
+	case "[":
+		m.workspaceEdit.SelectedOrder = clampIndex(m.workspaceEdit.SelectedOrder-1, len(m.workspaceEdit.MonitorOrder))
+	case "]":
+		m.workspaceEdit.SelectedOrder = clampIndex(m.workspaceEdit.SelectedOrder+1, len(m.workspaceEdit.MonitorOrder))
+	case "u":
+		m.moveWorkspaceOrder(-1)
+	case "n":
+		m.moveWorkspaceOrder(1)
+	default:
+		return m, nil
+	}
+
+	m.dirty = true
+	return m, nil
 }
 
 func (m Model) updateConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -356,168 +541,370 @@ func (m Model) updateConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeMain
 		return m, nil
 	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "y", "enter":
-		m.mode = m.pending.returnMode
-		m.setStatusOK(fmt.Sprintf("Kept configuration for %q", m.pending.target))
+		m.mode = modeMain
 		m.pending = nil
+		m.dirty = false
+		m.setStatusOK("Configuration kept")
 		return m, m.refreshCmd()
 	case "n", "esc":
-		snapshot := append([]string(nil), m.pending.snapshot...)
+		snapshot := m.pending.snapshot
 		return m, m.revertCmd(snapshot, "user request")
+	default:
+		return m, nil
 	}
-	return m, nil
 }
 
 func (m Model) View() string {
 	switch m.mode {
-	case modeEdit:
-		return m.renderEdit()
 	case modeSave:
-		return m.renderSavePrompt()
+		return m.renderModalScreen(m.renderSavePrompt())
+	case modeSaveConfirm:
+		return m.renderModalScreen(m.renderSaveConfirm())
 	case modeConfirm:
-		return m.renderConfirm()
+		return m.renderModalScreen(m.renderConfirm())
+	case modeModePicker:
+		return m.renderModalScreen(m.renderModePicker())
+	case modeNumericInput:
+		return m.renderModalScreen(m.renderNumericInput())
 	default:
 		return m.renderMain()
 	}
 }
 
 func (m Model) renderMain() string {
-	title := m.styles.title.Render("hyprmoncfg")
-	panes := m.renderPanes()
+	title := m.renderTitleBar()
+	tabs := m.renderTabs()
+
+	var body string
+	var help string
+	switch m.tab {
+	case tabLayout:
+		body = m.renderLayoutView()
+		help = "mouse drag monitors | arrows move 100px | Shift+arrows move 10px | Ctrl+arrows move 1px | Enter opens pickers | [ ] cycle | Tab switches panes | a apply | s save | r reset"
+	case tabProfiles:
+		body = m.renderProfilesView()
+		help = "mouse click selects profiles | Enter loads into the draft editor | a apply selected | d delete | s save current draft"
+	case tabWorkspaces:
+		body = m.renderWorkspaceView()
+		help = "click to focus fields and monitor order | left/right adjust | [ ] order select | u/n reorder | a apply | s save"
+	}
+
 	status := m.renderStatus()
-	help := m.styles.help.Render("tab switch pane • e edit layout • s save current • a/enter apply profile • d delete profile • r refresh • q quit")
-	return strings.Join([]string{title, "", panes, "", status, help}, "\n")
+	return strings.Join([]string{
+		title,
+		tabs,
+		"",
+		body,
+		"",
+		status,
+		m.styles.help.Render(help),
+	}, "\n")
 }
 
-func (m Model) renderEdit() string {
-	title := m.styles.title.Render("hyprmoncfg • Edit Layout")
-	if len(m.editOutputs) == 0 {
-		return strings.Join([]string{title, "", m.styles.warning.Render("No editable outputs"), m.styles.help.Render("esc back")}, "\n")
+func (m Model) renderTabs() string {
+	labels := []string{"Layout", "Profiles", "Workspaces"}
+	parts := make([]string, 0, len(labels))
+	for idx, label := range labels {
+		style := m.styles.tabInactive
+		if int(m.tab) == idx {
+			style = m.styles.tabActive
+		}
+		parts = append(parts, style.Render(fmt.Sprintf("%d %s", idx+1, label)))
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+}
+
+func (m Model) renderLayoutView() string {
+	canvasWidth := max(48, (m.width*2)/3)
+	inspectorWidth := max(34, m.width-canvasWidth-6)
+	canvas := m.renderCanvasPane(canvasWidth)
+	inspector := m.renderInspectorPane(inspectorWidth)
+	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, "  ", inspector)
+}
+
+func (m Model) renderCanvasPane(width int) string {
+	canvasHeight := clampInt(m.height-12, 12, 26)
+	lines := []string{
+		m.styles.header.Render("Monitor Layout"),
+		m.styles.subtle.Render("Drag cards to reposition monitors. Change Mode to change their size."),
+		"",
+		m.renderCanvas(width-4, canvasHeight),
 	}
 
-	lines := make([]string, 0, len(m.editOutputs)+2)
-	lines = append(lines, m.styles.header.Render("Output [enabled width height refresh x y scale transform]"))
-	for i, out := range m.editOutputs {
-		fieldValues := []string{
-			boolText(out.Enabled),
-			fmt.Sprintf("%d", out.Width),
-			fmt.Sprintf("%d", out.Height),
-			fmt.Sprintf("%.2f", out.Refresh),
-			fmt.Sprintf("%d", out.X),
-			fmt.Sprintf("%d", out.Y),
-			fmt.Sprintf("%.2f", out.Scale),
-			fmt.Sprintf("%d", out.Transform),
+	legend := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		m.styles.badgeAccent.Render("Selected"),
+		" ",
+		m.styles.badgeOn.Render("Enabled"),
+		" ",
+		m.styles.badgeOff.Render("Disabled"),
+	)
+	lines = append(lines, "")
+	lines = append(lines, legend)
+
+	disabled := make([]string, 0)
+	for _, output := range m.editOutputs {
+		if !output.Enabled {
+			disabled = append(disabled, output.Name)
 		}
-		for fi := range fieldValues {
-			if i == m.editOutput && fi == m.editField {
-				fieldValues[fi] = m.styles.focused.Render(fieldValues[fi])
+	}
+	if len(disabled) > 0 {
+		lines = append(lines, m.styles.subtle.Render("Disabled: "+strings.Join(disabled, ", ")))
+	}
+
+	panel := m.styles.inactivePane
+	if m.layoutFocus == layoutFocusCanvas && m.tab == tabLayout {
+		panel = m.styles.activePane
+	}
+	return panel.Width(width).Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderCanvas(width, height int) string {
+	if len(m.editOutputs) == 0 {
+		return "(no monitors)"
+	}
+
+	layout := m.canvasLayout(width, height)
+	if !layout.ok {
+		return "(all monitors disabled)"
+	}
+
+	canvasW := layout.width
+	canvasH := layout.height
+
+	grid := newCanvasCells(canvasW, canvasH)
+
+	rects := append([]canvasRect(nil), layout.rects...)
+	sort.SliceStable(rects, func(i, j int) bool {
+		if rects[i].index == m.selectedOutput {
+			return false
+		}
+		if rects[j].index == m.selectedOutput {
+			return true
+		}
+		return rects[i].index < rects[j].index
+	})
+
+	for _, rect := range rects {
+		output := m.editOutputs[rect.index]
+		selected := rect.index == m.selectedOutput
+		paintMonitorCard(grid, rect, output, selected)
+	}
+	if m.snap != nil {
+		for _, mark := range m.snap.Marks {
+			for _, rect := range layout.rects {
+				if rect.index == mark.OutputIndex {
+					paintSnapMark(grid, rect, mark.Edge)
+				}
 			}
 		}
-		prefix := "  "
-		if i == m.editOutput {
-			prefix = "> "
-		}
-		lines = append(lines, fmt.Sprintf("%s%-10s (%s)  [%s]", prefix, out.Name, out.Key, strings.Join(fieldValues, " ")))
+	}
+	return renderCanvasCells(grid)
+}
+
+func (m Model) renderInspectorPane(width int) string {
+	lines := []string{m.styles.header.Render("Selected Monitor"), m.styles.subtle.Render("Enter opens the active editor. Mouse click selects fields."), ""}
+	if len(m.editOutputs) == 0 {
+		lines = append(lines, "(none)")
+		return m.styles.inactivePane.Width(width).Render(strings.Join(lines, "\n"))
 	}
 
-	body := strings.Join(lines, "\n")
-	status := m.renderStatus()
-	help := m.styles.help.Render("up/down output • left/right field • +/- change • space toggle enabled • a apply • s save profile • r reset • esc back")
-	return strings.Join([]string{title, "", body, "", status, help}, "\n")
+	output := m.editOutputs[m.selectedOutput]
+	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Left, m.styles.badgeAccent.Render(output.Name), " ", m.monitorStateBadge(output)))
+	if desc := strings.TrimSpace(output.Description); desc != "" {
+		lines = append(lines, m.styles.subtle.Render(desc))
+	}
+	lines = append(lines, "")
+
+	for idx, field := range layoutFields {
+		value := m.styles.value.Render(m.layoutFieldValue(output, idx))
+		label := m.styles.label.Render(fmt.Sprintf("%-12s", field))
+		prefix := "  "
+		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
+			prefix = "> "
+			value = m.styles.focused.Render(value)
+		}
+		lines = append(lines, fmt.Sprintf("%s%s %s", prefix, label, value))
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, m.styles.header.Render("Monitor Details"))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Workspace "), m.styles.value.Render(blankFallback(output.ActiveWorkspace, "(none)"))))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Connector "), m.styles.value.Render(output.Name)))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Layout px "), m.styles.value.Render(output.layoutSizeLabel())))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Model     "), m.styles.value.Render(output.displayModelLabel())))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Serial    "), m.styles.value.Render(blankFallback(strings.TrimSpace(output.Serial), "(none)"))))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Mirror    "), m.styles.value.Render(blankFallback(blankMirror(output.MirrorOf), "none"))))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("DPMS      "), m.styles.value.Render(boolText(output.DPMSStatus))))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Focused   "), m.styles.value.Render(boolText(output.Focused))))
+	if output.PhysicalWidth > 0 && output.PhysicalHeight > 0 {
+		lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Panel mm  "), m.styles.value.Render(fmt.Sprintf("%d x %d mm", output.PhysicalWidth, output.PhysicalHeight))))
+	}
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Draft     "), m.unsavedBadge()))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Hardware  "), m.styles.subtle.Render(output.Key)))
+
+	panel := m.styles.inactivePane
+	if m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
+		panel = m.styles.activePane
+	}
+	return panel.Width(width).Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderProfilesView() string {
+	listWidth := max(34, m.width/3)
+	detailWidth := max(40, m.width-listWidth-6)
+
+	listLines := []string{m.styles.header.Render("Saved Profiles"), ""}
+	if len(m.profiles) == 0 {
+		listLines = append(listLines, "(none)")
+	} else {
+		for idx, prof := range m.profiles {
+			prefix := "  "
+			if idx == m.selectedProfile {
+				prefix = "> "
+			}
+			listLines = append(listLines, fmt.Sprintf("%s%-20s outputs:%d", prefix, fitString(prof.Name, 20), len(prof.Outputs)))
+		}
+	}
+
+	detailLines := []string{m.styles.header.Render("Profile Details"), ""}
+	if len(m.profiles) == 0 {
+		detailLines = append(detailLines, "(none)")
+	} else {
+		selected := m.profiles[m.selectedProfile]
+		detailLines = append(detailLines, selected.Name)
+		detailLines = append(detailLines, fmt.Sprintf("Updated: %s", selected.UpdatedAt.Local().Format("2006-01-02 15:04")))
+		detailLines = append(detailLines, "")
+		detailLines = append(detailLines, "Outputs:")
+		for _, output := range selected.Outputs {
+			state := "off"
+			if output.Enabled {
+				state = "on"
+			}
+			detailLines = append(detailLines, fmt.Sprintf("  %s %s %s pos:%dx%d scale:%.2f", output.Name, state, output.NormalizedMode(), output.X, output.Y, output.Scale))
+		}
+
+		preview := profile.WorkspacePreview(selected.Workspaces, selected.Outputs, m.monitors)
+		if len(preview) > 0 {
+			detailLines = append(detailLines, "")
+			detailLines = append(detailLines, "Workspace plan:")
+			for _, line := range m.workspacePreviewLines(preview, selected.Workspaces.MonitorOrder) {
+				detailLines = append(detailLines, "  "+line)
+			}
+		}
+	}
+
+	left := m.styles.activePane.Width(listWidth).Render(strings.Join(listLines, "\n"))
+	right := m.styles.inactivePane.Width(detailWidth).Render(strings.Join(detailLines, "\n"))
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+}
+
+func (m Model) renderWorkspaceView() string {
+	leftWidth := max(40, m.width/3)
+	rightWidth := max(44, m.width-leftWidth-6)
+
+	settings := []string{
+		m.styles.header.Render("Workspace Planner"),
+		"",
+	}
+
+	for idx, field := range workspaceFields {
+		value := m.workspaceFieldValue(idx)
+		prefix := "  "
+		if idx == m.workspaceEdit.SelectedField {
+			prefix = "> "
+			value = m.styles.focused.Render(value)
+		}
+		settings = append(settings, fmt.Sprintf("%s%-14s %s", prefix, field, value))
+	}
+
+	settings = append(settings, "")
+	settings = append(settings, "Monitor order:")
+	if len(m.workspaceEdit.MonitorOrder) == 0 {
+		settings = append(settings, "  (none)")
+	} else {
+		for idx, key := range m.workspaceEdit.MonitorOrder {
+			label := m.outputLabelForKey(key)
+			prefix := "  "
+			if idx == m.workspaceEdit.SelectedOrder {
+				prefix = "[*]"
+			}
+			settings = append(settings, fmt.Sprintf("%s %d. %s", prefix, idx+1, label))
+		}
+	}
+
+	if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual && len(m.workspaceEdit.Rules) > 0 {
+		settings = append(settings, "")
+		settings = append(settings, "Manual rules imported from current state or saved profile.")
+		settings = append(settings, "Switch strategy to sequential or interleave to regenerate them.")
+	}
+
+	preview := profile.WorkspacePreview(m.workspaceEdit.settings(), m.currentProfileOutputs(), m.monitors)
+	previewLines := []string{
+		m.styles.header.Render("Workspace Preview"),
+		"",
+	}
+	if len(preview) == 0 {
+		previewLines = append(previewLines, "(workspace rules disabled)")
+	} else {
+		for _, line := range m.workspacePreviewLines(preview, m.workspaceEdit.MonitorOrder) {
+			previewLines = append(previewLines, line)
+		}
+	}
+
+	left := m.styles.activePane.Width(leftWidth).Render(strings.Join(settings, "\n"))
+	right := m.styles.inactivePane.Width(rightWidth).Render(strings.Join(previewLines, "\n"))
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 }
 
 func (m Model) renderSavePrompt() string {
-	title := m.styles.title.Render("hyprmoncfg • Save Profile")
-	source := "current monitor state"
-	if m.saveSource == saveSourceEdit {
-		source = "edited layout"
+	if m.saveDialog == nil {
+		return m.renderModalFrame("Save Profile", nil)
 	}
-	prompt := fmt.Sprintf("Name (%s): %s", source, m.saveName)
-	status := m.renderStatus()
-	help := m.styles.help.Render("type name • enter save • backspace delete • esc cancel")
-	return strings.Join([]string{title, "", prompt, "", status, help}, "\n")
+	body := []string{
+		fmt.Sprintf("%s %s", m.styles.label.Render("Name"), m.styles.focused.Render(m.saveDialog.Input.View())),
+		"",
+		m.saveDialog.List.View(),
+		"",
+		m.renderStatus(),
+		m.styles.help.Render("Type to filter names. Up/Down selects an existing profile. Enter saves. Esc cancels."),
+	}
+	return m.renderModalFrame("Save Profile", body)
+}
+
+func (m Model) renderSaveConfirm() string {
+	body := []string{
+		m.styles.warning.Render(fmt.Sprintf("Overwrite profile %q?", m.saveOverwrite)),
+		m.styles.subtle.Render("The existing profile will be replaced with the current draft."),
+		"",
+		m.styles.help.Render("Enter or y overwrites. Esc or n cancels."),
+	}
+	return m.renderModalFrame("Confirm Overwrite", body)
 }
 
 func (m Model) renderConfirm() string {
-	title := m.styles.title.Render("hyprmoncfg • Confirm Apply")
 	if m.pending == nil {
-		return title
+		return m.renderModalFrame("Confirm Apply", nil)
 	}
+
 	remaining := int(time.Until(m.pending.deadline).Seconds())
 	if remaining < 0 {
 		remaining = 0
 	}
-	body := m.styles.warning.Render(fmt.Sprintf("Applied %q. Confirm in %ds or revert.", m.pending.target, remaining))
-	status := m.renderStatus()
-	help := m.styles.help.Render("y keep configuration • n revert")
-	return strings.Join([]string{title, "", body, "", status, help}, "\n")
-}
 
-func (m Model) renderPanes() string {
-	paneWidth := 50
-	if m.width > 120 {
-		paneWidth = (m.width - 6) / 2
+	body := []string{
+		m.styles.warning.Render(fmt.Sprintf("%s is live now.", targetLabel(m.pending.target))),
+		m.styles.subtle.Render(fmt.Sprintf("Keep it within %ds or the previous state will be restored.", remaining)),
+		"",
+		m.renderStatus(),
+		m.styles.help.Render("Enter or y keeps the change. Esc or n reverts it."),
 	}
-	if paneWidth < 40 {
-		paneWidth = 40
-	}
-
-	left := m.renderMonitorPane(paneWidth)
-	right := m.renderProfilePane(paneWidth)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
-}
-
-func (m Model) renderMonitorPane(width int) string {
-	lines := make([]string, 0, len(m.monitors)+1)
-	lines = append(lines, m.styles.header.Render("Monitors"))
-	if len(m.monitors) == 0 {
-		lines = append(lines, "(none)")
-	} else {
-		for i, mon := range m.monitors {
-			prefix := "  "
-			if i == m.selectedMonitor && m.focusPane == 0 {
-				prefix = "> "
-			}
-			state := "on"
-			if mon.Disabled {
-				state = "off"
-			}
-			line := fmt.Sprintf("%s%-8s %s %dx%d@%.1f pos:%dx%d scale:%.2f %s", prefix, mon.Name, state, mon.Width, mon.Height, mon.RefreshRate, mon.X, mon.Y, mon.Scale, mon.HardwareKey())
-			lines = append(lines, line)
-		}
-	}
-	body := strings.Join(lines, "\n")
-	panel := m.styles.inactive
-	if m.focusPane == 0 {
-		panel = m.styles.activePane
-	}
-	return panel.Width(width).Render(body)
-}
-
-func (m Model) renderProfilePane(width int) string {
-	lines := make([]string, 0, len(m.profiles)+1)
-	lines = append(lines, m.styles.header.Render("Profiles"))
-	if len(m.profiles) == 0 {
-		lines = append(lines, "(none)")
-	} else {
-		for i, p := range m.profiles {
-			prefix := "  "
-			if i == m.selectedProfile && m.focusPane == 1 {
-				prefix = "> "
-			}
-			line := fmt.Sprintf("%s%-20s outputs:%d updated:%s", prefix, p.Name, len(p.Outputs), p.UpdatedAt.Local().Format("2006-01-02 15:04"))
-			lines = append(lines, line)
-		}
-	}
-	body := strings.Join(lines, "\n")
-	panel := m.styles.inactive
-	if m.focusPane == 1 {
-		panel = m.styles.activePane
-	}
-	return panel.Width(width).Render(body)
+	return m.renderModalFrame("Confirm Apply", body)
 }
 
 func (m Model) renderStatus() string {
@@ -530,83 +917,292 @@ func (m Model) renderStatus() string {
 	return m.styles.statusOK.Render(m.status)
 }
 
-var editFieldNames = []string{"enabled", "width", "height", "refresh", "x", "y", "scale", "transform"}
-
-func (m *Model) toggleEditOutput() {
-	if len(m.editOutputs) == 0 {
-		return
+func (m *Model) loadLiveState() {
+	prevOutputs := m.editOutputs
+	selectedKey := ""
+	if m.selectedOutput >= 0 && m.selectedOutput < len(prevOutputs) {
+		selectedKey = prevOutputs[m.selectedOutput].Key
 	}
-	m.editOutputs[m.editOutput].Enabled = !m.editOutputs[m.editOutput].Enabled
+	m.editOutputs = make([]editableOutput, 0, len(m.monitors))
+	for _, monitor := range m.monitors {
+		m.editOutputs = append(m.editOutputs, editableOutputFromMonitor(monitor))
+	}
+
+	settings := profile.WorkspaceSettingsFromHypr(m.monitors, m.workspaceRules)
+	m.workspaceEdit = workspaceEditorFromSettings(settings, m.editOutputs)
+	if idx := focusedOutputIndex(m.editOutputs); idx >= 0 {
+		m.selectedOutput = idx
+	} else if selectedKey != "" {
+		m.selectedOutput = outputIndexByKey(m.editOutputs, selectedKey)
+	}
+	m.selectedOutput = clampIndex(m.selectedOutput, len(m.editOutputs))
+	m.inspectorField = clampIndex(m.inspectorField, len(layoutFields))
+	m.picker = nil
+	m.input = nil
+	m.drag = nil
+	m.dirty = false
 }
 
-func (m *Model) adjustEditOutput(delta int) {
+func (m *Model) loadProfile(p profile.Profile) {
+	outputs := make([]editableOutput, 0, len(p.Outputs))
+	for _, saved := range p.Outputs {
+		live, ok := m.findLiveMonitor(saved.Key, saved.Name)
+		outputs = append(outputs, editableOutputFromProfile(saved, live, ok))
+	}
+	m.editOutputs = outputs
+	m.workspaceEdit = workspaceEditorFromSettings(p.Workspaces, m.editOutputs)
+	m.selectedOutput = clampIndex(0, len(m.editOutputs))
+	m.inspectorField = 0
+	m.picker = nil
+	m.input = nil
+	m.drag = nil
+	m.dirty = true
+	m.setStatusOK(fmt.Sprintf("Loaded profile %q into editor", p.Name))
+}
+
+func (m *Model) syncSelections() {
+	m.selectedOutput = clampIndex(m.selectedOutput, len(m.editOutputs))
+	m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
+	m.inspectorField = clampIndex(m.inspectorField, len(layoutFields))
+	m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField, len(workspaceFields))
+	m.workspaceEdit.SelectedOrder = clampIndex(m.workspaceEdit.SelectedOrder, len(m.workspaceEdit.MonitorOrder))
+}
+
+func (m Model) profileExists(name string) bool {
+	name = strings.TrimSpace(strings.ToLower(name))
+	for _, prof := range m.profiles {
+		if strings.TrimSpace(strings.ToLower(prof.Name)) == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) moveSelectedOutput(dx, dy int) {
 	if len(m.editOutputs) == 0 {
 		return
 	}
-	out := &m.editOutputs[m.editOutput]
-	switch m.editField {
+	m.editOutputs[m.selectedOutput].X += dx
+	m.editOutputs[m.selectedOutput].Y += dy
+}
+
+func (m *Model) toggleSelectedOutput() {
+	if len(m.editOutputs) == 0 {
+		return
+	}
+	m.editOutputs[m.selectedOutput].Enabled = !m.editOutputs[m.selectedOutput].Enabled
+}
+
+func (m Model) analyzeSelectedSnap(threshold int) snapAnalysis {
+	analysis := snapAnalysis{
+		x: snapAxisCandidate{dist: threshold + 1},
+		y: snapAxisCandidate{dist: threshold + 1},
+	}
+	if len(m.editOutputs) == 0 || m.selectedOutput < 0 || m.selectedOutput >= len(m.editOutputs) {
+		return analysis
+	}
+
+	selected := m.editOutputs[m.selectedOutput]
+	if !selected.Enabled {
+		return analysis
+	}
+
+	width, height := selected.logicalSize()
+	analysis.x.pos = selected.X
+	analysis.y.pos = selected.Y
+
+	considerX := func(pos int, marks ...snapMark) {
+		dist := abs(selected.X - pos)
+		if dist < analysis.x.dist {
+			analysis.x = snapAxisCandidate{pos: pos, dist: dist, marks: append([]snapMark(nil), marks...)}
+		}
+	}
+	considerY := func(pos int, marks ...snapMark) {
+		dist := abs(selected.Y - pos)
+		if dist < analysis.y.dist {
+			analysis.y = snapAxisCandidate{pos: pos, dist: dist, marks: append([]snapMark(nil), marks...)}
+		}
+	}
+
+	for idx, other := range m.editOutputs {
+		if idx == m.selectedOutput || !other.Enabled {
+			continue
+		}
+
+		otherW, otherH := other.logicalSize()
+		if spansOverlap(selected.Y, selected.Y+height, other.Y, other.Y+otherH) {
+			considerX(other.X-width,
+				snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeRight},
+				snapMark{OutputIndex: idx, Edge: snapEdgeLeft},
+			)
+			considerX(other.X+otherW,
+				snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeLeft},
+				snapMark{OutputIndex: idx, Edge: snapEdgeRight},
+			)
+		}
+		considerX(other.X,
+			snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeLeft},
+			snapMark{OutputIndex: idx, Edge: snapEdgeLeft},
+		)
+		considerX(other.X+otherW-width,
+			snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeRight},
+			snapMark{OutputIndex: idx, Edge: snapEdgeRight},
+		)
+		if spansOverlap(selected.X, selected.X+width, other.X, other.X+otherW) {
+			considerY(other.Y-height,
+				snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeBottom},
+				snapMark{OutputIndex: idx, Edge: snapEdgeTop},
+			)
+			considerY(other.Y+otherH,
+				snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeTop},
+				snapMark{OutputIndex: idx, Edge: snapEdgeBottom},
+			)
+		}
+		considerY(other.Y,
+			snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeTop},
+			snapMark{OutputIndex: idx, Edge: snapEdgeTop},
+		)
+		considerY(other.Y+otherH-height,
+			snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeBottom},
+			snapMark{OutputIndex: idx, Edge: snapEdgeBottom},
+		)
+	}
+
+	considerX(0)
+	considerY(0)
+	return analysis
+}
+
+func (m Model) previewSelectedSnap(threshold int) *snapHintState {
+	analysis := m.analyzeSelectedSnap(threshold)
+	var marks []snapMark
+	if analysis.x.dist <= threshold {
+		marks = append(marks, analysis.x.marks...)
+	}
+	if analysis.y.dist <= threshold {
+		marks = append(marks, analysis.y.marks...)
+	}
+	if len(marks) == 0 {
+		return nil
+	}
+	return &snapHintState{Marks: marks}
+}
+
+func (m *Model) applySelectedSnap(threshold int) *snapHintState {
+	analysis := m.analyzeSelectedSnap(threshold)
+	if len(m.editOutputs) == 0 || m.selectedOutput < 0 || m.selectedOutput >= len(m.editOutputs) {
+		return nil
+	}
+
+	selected := &m.editOutputs[m.selectedOutput]
+	var marks []snapMark
+	if analysis.x.dist <= threshold {
+		selected.X = analysis.x.pos
+		marks = append(marks, analysis.x.marks...)
+	}
+	if analysis.y.dist <= threshold {
+		selected.Y = analysis.y.pos
+		marks = append(marks, analysis.y.marks...)
+	}
+	if len(marks) == 0 {
+		return nil
+	}
+	return &snapHintState{Marks: marks}
+}
+
+func spansOverlap(a1, a2, b1, b2 int) bool {
+	return a1 < b2 && a2 > b1
+}
+
+func abs(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+func (m *Model) adjustInspectorField(delta int) {
+	if len(m.editOutputs) == 0 {
+		return
+	}
+
+	output := &m.editOutputs[m.selectedOutput]
+	switch m.inspectorField {
 	case 0:
-		out.Enabled = !out.Enabled
+		output.Enabled = !output.Enabled
 	case 1:
-		out.Width = max(320, out.Width+delta*10)
+		if len(output.Modes) == 0 {
+			return
+		}
+		output.ModeIndex = wrapIndex(output.ModeIndex+delta, len(output.Modes))
+		output.applyMode(output.Modes[output.ModeIndex])
 	case 2:
-		out.Height = max(200, out.Height+delta*10)
+		output.Scale = clampFloat(output.Scale+float64(delta)*0.05, 0.25, 4.0)
 	case 3:
-		out.Refresh = clampFloat(out.Refresh+float64(delta)*0.5, 10, 360)
+		output.VRR = wrapValue(output.VRR+delta, 0, 2)
 	case 4:
-		out.X += delta * 10
+		output.Transform = wrapValue(output.Transform+delta, 0, 7)
 	case 5:
-		out.Y += delta * 10
+		output.X += delta * 10
 	case 6:
-		out.Scale = clampFloat(out.Scale+float64(delta)*0.05, 0.25, 4)
-	case 7:
-		out.Transform += delta
-		if out.Transform < 0 {
-			out.Transform = 7
-		}
-		if out.Transform > 7 {
-			out.Transform = 0
-		}
+		output.Y += delta * 10
 	}
 }
 
-func (m *Model) setStatusErr(msg string) {
-	m.status = msg
-	m.statusErr = true
-}
-
-func (m *Model) setStatusOK(msg string) {
-	m.status = msg
-	m.statusErr = false
-}
-
-func outputsFromMonitors(monitors []hypr.Monitor) []profile.OutputConfig {
-	outs := make([]profile.OutputConfig, 0, len(monitors))
-	for _, mon := range monitors {
-		outs = append(outs, profile.OutputConfig{
-			Key:       mon.HardwareKey(),
-			Name:      mon.Name,
-			Make:      mon.Make,
-			Model:     mon.Model,
-			Serial:    mon.Serial,
-			Enabled:   !mon.Disabled,
-			Width:     max(320, mon.Width),
-			Height:    max(200, mon.Height),
-			Refresh:   clampFloat(mon.RefreshRate, 10, 360),
-			X:         mon.X,
-			Y:         mon.Y,
-			Scale:     clampFloat(mon.Scale, 0.25, 4),
-			Transform: mon.Transform,
-		})
+func (m *Model) adjustWorkspaceField(delta int) {
+	switch m.workspaceEdit.SelectedField {
+	case 0:
+		m.workspaceEdit.Enabled = !m.workspaceEdit.Enabled
+	case 1:
+		strategies := []profile.WorkspaceStrategy{
+			profile.WorkspaceStrategyManual,
+			profile.WorkspaceStrategySequential,
+			profile.WorkspaceStrategyInterleave,
+		}
+		current := 0
+		for idx, strategy := range strategies {
+			if strategy == m.workspaceEdit.Strategy {
+				current = idx
+				break
+			}
+		}
+		m.workspaceEdit.Strategy = strategies[wrapIndex(current+delta, len(strategies))]
+	case 2:
+		m.workspaceEdit.MaxWorkspaces = clampInt(m.workspaceEdit.MaxWorkspaces+delta, 1, 30)
+	case 3:
+		m.workspaceEdit.GroupSize = clampInt(m.workspaceEdit.GroupSize+delta, 1, 10)
 	}
-	return outs
+}
+
+func (m *Model) moveWorkspaceOrder(delta int) {
+	idx := m.workspaceEdit.SelectedOrder
+	next := idx + delta
+	if idx < 0 || idx >= len(m.workspaceEdit.MonitorOrder) || next < 0 || next >= len(m.workspaceEdit.MonitorOrder) {
+		return
+	}
+	m.workspaceEdit.MonitorOrder[idx], m.workspaceEdit.MonitorOrder[next] = m.workspaceEdit.MonitorOrder[next], m.workspaceEdit.MonitorOrder[idx]
+	m.workspaceEdit.SelectedOrder = next
+}
+
+func (m Model) currentProfile(name string) profile.Profile {
+	p := profile.New(name, m.currentProfileOutputs())
+	p.Workspaces = m.workspaceEdit.settings()
+	return p
+}
+
+func (m Model) currentProfileOutputs() []profile.OutputConfig {
+	outputs := make([]profile.OutputConfig, 0, len(m.editOutputs))
+	for _, output := range m.editOutputs {
+		outputs = append(outputs, output.profileOutput())
+	}
+	return outputs
 }
 
 func (m Model) refreshCmd() tea.Cmd {
 	client := m.client
 	store := m.store
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
 		monitors, err := client.Monitors(ctx)
@@ -617,7 +1213,21 @@ func (m Model) refreshCmd() tea.Cmd {
 		if err != nil {
 			return refreshMsg{err: err}
 		}
-		return refreshMsg{monitors: monitors, profiles: profiles}
+		workspaceRules, err := client.WorkspaceRules(ctx)
+		if err != nil {
+			return refreshMsg{err: err}
+		}
+		workspaces, err := client.Workspaces(ctx)
+		if err != nil {
+			return refreshMsg{err: err}
+		}
+
+		return refreshMsg{
+			monitors:       monitors,
+			profiles:       profiles,
+			workspaceRules: workspaceRules,
+			workspaces:     workspaces,
+		}
 	}
 }
 
@@ -641,35 +1251,625 @@ func (m Model) deleteCmd(name string) tea.Cmd {
 	}
 }
 
-func (m Model) applyCmd(p profile.Profile, snapshot []string, returnMode uiMode) tea.Cmd {
+func (m Model) applyCmd(p profile.Profile) tea.Cmd {
 	client := m.client
 	engine := m.engine
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
 		monitors, err := client.Monitors(ctx)
 		if err != nil {
 			return applyMsg{target: p.Name, err: err}
 		}
-		if _, err := engine.Apply(ctx, p, monitors); err != nil {
+		snapshot, err := engine.Apply(ctx, p, monitors)
+		if err != nil {
 			return applyMsg{target: p.Name, err: err}
 		}
-		return applyMsg{target: p.Name, snapshot: snapshot, returnMode: returnMode}
+		return applyMsg{target: p.Name, snapshot: snapshot}
 	}
 }
 
-func (m Model) revertCmd(snapshot []string, reason string) tea.Cmd {
+func (m Model) revertCmd(snapshot apply.RevertState, reason string) tea.Cmd {
 	engine := m.engine
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		err := engine.Revert(ctx, snapshot)
 		return revertMsg{err: err, reason: reason}
 	}
 }
 
+func (m Model) layoutFieldValue(output editableOutput, field int) string {
+	switch field {
+	case 0:
+		return boolText(output.Enabled)
+	case 1:
+		if len(output.Modes) == 0 {
+			return output.DisplayMode()
+		}
+		return fmt.Sprintf("%s (%d/%d)", output.DisplayMode(), output.ModeIndex+1, len(output.Modes))
+	case 2:
+		return fmt.Sprintf("%.2f", output.Scale)
+	case 3:
+		return vrrLabel(output.VRR)
+	case 4:
+		return transformLabel(output.Transform)
+	case 5:
+		return fmt.Sprintf("%d", output.X)
+	case 6:
+		return fmt.Sprintf("%d", output.Y)
+	default:
+		return ""
+	}
+}
+
+func (m Model) workspaceFieldValue(field int) string {
+	switch field {
+	case 0:
+		return boolText(m.workspaceEdit.Enabled)
+	case 1:
+		return string(blankStrategy(m.workspaceEdit.Strategy))
+	case 2:
+		return fmt.Sprintf("%d", m.workspaceEdit.MaxWorkspaces)
+	case 3:
+		return fmt.Sprintf("%d", m.workspaceEdit.GroupSize)
+	default:
+		return ""
+	}
+}
+
+func (m Model) workspacePreviewLines(preview map[string][]string, order []string) []string {
+	lines := make([]string, 0, len(preview))
+	seen := make(map[string]bool, len(preview))
+
+	for _, key := range order {
+		label := m.outputLabelForKey(key)
+		if workspaces, ok := preview[label]; ok {
+			lines = append(lines, fmt.Sprintf("%s: %s", label, strings.Join(workspaces, ", ")))
+			seen[label] = true
+		}
+	}
+
+	for label, workspaces := range preview {
+		if seen[label] {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", label, strings.Join(workspaces, ", ")))
+	}
+	return lines
+}
+
+func (m Model) outputLabelForKey(key string) string {
+	for _, output := range m.editOutputs {
+		if output.Key == key {
+			return output.Name
+		}
+	}
+	return key
+}
+
+func (m Model) findLiveMonitor(key, name string) (hypr.Monitor, bool) {
+	for _, monitor := range m.monitors {
+		if monitor.HardwareKey() == key || monitor.Name == name {
+			return monitor, true
+		}
+	}
+	return hypr.Monitor{}, false
+}
+
+func (m *Model) setStatusErr(msg string) {
+	m.status = msg
+	m.statusErr = true
+}
+
+func (m *Model) setStatusOK(msg string) {
+	m.status = msg
+	m.statusErr = false
+}
+
+func editableOutputFromMonitor(m hypr.Monitor) editableOutput {
+	output := editableOutput{
+		Key:             m.HardwareKey(),
+		Name:            m.Name,
+		Description:     m.Description,
+		Make:            m.Make,
+		Model:           m.Model,
+		Serial:          m.Serial,
+		PhysicalWidth:   m.PhysicalWidth,
+		PhysicalHeight:  m.PhysicalHeight,
+		Enabled:         !m.Disabled,
+		Width:           m.Width,
+		Height:          m.Height,
+		Refresh:         m.RefreshRate,
+		X:               m.X,
+		Y:               m.Y,
+		Scale:           clampFloat(m.Scale, 0.25, 4.0),
+		VRR:             boolToVRR(m.VRR),
+		Transform:       m.Transform,
+		Focused:         m.Focused,
+		DPMSStatus:      m.DPMSStatus,
+		MirrorOf:        m.MirrorOf,
+		ActiveWorkspace: m.ActiveWorkspace.Name,
+	}
+
+	output.Modes = normalizeModes(m.AvailableModes, m.ModeString())
+	output.ModeIndex = indexOf(output.Modes, m.ModeString())
+	if output.ModeIndex < 0 {
+		output.ModeIndex = 0
+	}
+	if len(output.Modes) > 0 {
+		output.applyMode(output.Modes[output.ModeIndex])
+	}
+	return output
+}
+
+func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, hasLive bool) editableOutput {
+	output := editableOutput{
+		Key:       saved.Key,
+		Name:      saved.Name,
+		Make:      saved.Make,
+		Model:     saved.Model,
+		Serial:    saved.Serial,
+		Enabled:   saved.Enabled,
+		Width:     saved.Width,
+		Height:    saved.Height,
+		Refresh:   saved.Refresh,
+		X:         saved.X,
+		Y:         saved.Y,
+		Scale:     clampFloat(saved.Scale, 0.25, 4.0),
+		VRR:       saved.VRR,
+		Transform: saved.Transform,
+	}
+
+	mode := saved.NormalizedMode()
+	if hasLive {
+		output.Description = live.Description
+		output.PhysicalWidth = live.PhysicalWidth
+		output.PhysicalHeight = live.PhysicalHeight
+		output.Focused = live.Focused
+		output.DPMSStatus = live.DPMSStatus
+		output.MirrorOf = live.MirrorOf
+		output.ActiveWorkspace = live.ActiveWorkspace.Name
+		output.Modes = normalizeModes(live.AvailableModes, mode)
+	} else {
+		output.Modes = normalizeModes(nil, mode)
+	}
+	output.ModeIndex = indexOf(output.Modes, mode)
+	if output.ModeIndex < 0 {
+		output.ModeIndex = 0
+	}
+	if len(output.Modes) > 0 {
+		output.applyMode(output.Modes[output.ModeIndex])
+	}
+	return output
+}
+
+func workspaceEditorFromSettings(settings profile.WorkspaceSettings, outputs []editableOutput) workspaceEditor {
+	order := append([]string(nil), settings.MonitorOrder...)
+	if len(order) == 0 {
+		for _, output := range outputs {
+			order = append(order, output.Key)
+		}
+	}
+
+	seen := make(map[string]bool, len(order))
+	normalized := make([]string, 0, len(outputs))
+	for _, key := range order {
+		if key == "" || seen[key] {
+			continue
+		}
+		normalized = append(normalized, key)
+		seen[key] = true
+	}
+	for _, output := range outputs {
+		if !seen[output.Key] {
+			normalized = append(normalized, output.Key)
+			seen[output.Key] = true
+		}
+	}
+
+	strategy := settings.Strategy
+	if strategy == "" {
+		if len(settings.Rules) > 0 {
+			strategy = profile.WorkspaceStrategyManual
+		} else {
+			strategy = profile.WorkspaceStrategySequential
+		}
+	}
+
+	maxWorkspaces := settings.MaxWorkspaces
+	if maxWorkspaces <= 0 {
+		maxWorkspaces = 9
+	}
+	groupSize := settings.GroupSize
+	if groupSize <= 0 {
+		groupSize = 3
+	}
+
+	return workspaceEditor{
+		Enabled:       settings.Enabled,
+		Strategy:      strategy,
+		MaxWorkspaces: maxWorkspaces,
+		GroupSize:     groupSize,
+		MonitorOrder:  normalized,
+		Rules:         append([]profile.WorkspaceRule(nil), settings.Rules...),
+	}
+}
+
+func (w workspaceEditor) settings() profile.WorkspaceSettings {
+	return profile.WorkspaceSettings{
+		Enabled:       w.Enabled,
+		Strategy:      w.Strategy,
+		MaxWorkspaces: w.MaxWorkspaces,
+		GroupSize:     w.GroupSize,
+		MonitorOrder:  append([]string(nil), w.MonitorOrder...),
+		Rules:         append([]profile.WorkspaceRule(nil), w.Rules...),
+	}
+}
+
+func (o *editableOutput) applyMode(mode string) {
+	width, height, refresh, ok := hypr.ParseMode(mode)
+	if !ok {
+		return
+	}
+	o.Width = width
+	o.Height = height
+	o.Refresh = refresh
+}
+
+func (o editableOutput) DisplayMode() string {
+	if len(o.Modes) > 0 && o.ModeIndex >= 0 && o.ModeIndex < len(o.Modes) {
+		return strings.TrimSpace(o.Modes[o.ModeIndex])
+	}
+	return hypr.FormatMode(o.Width, o.Height, o.Refresh)
+}
+
+func (o editableOutput) profileOutput() profile.OutputConfig {
+	return profile.OutputConfig{
+		Key:       o.Key,
+		Name:      o.Name,
+		Make:      o.Make,
+		Model:     o.Model,
+		Serial:    o.Serial,
+		Enabled:   o.Enabled,
+		Mode:      o.DisplayMode(),
+		Width:     o.Width,
+		Height:    o.Height,
+		Refresh:   o.Refresh,
+		X:         o.X,
+		Y:         o.Y,
+		Scale:     o.Scale,
+		VRR:       o.VRR,
+		Transform: o.Transform,
+	}
+}
+
+func (o editableOutput) logicalSize() (int, int) {
+	scale := o.Scale
+	if scale <= 0 {
+		scale = 1
+	}
+	width := int(math.Round(float64(o.Width) / scale))
+	height := int(math.Round(float64(o.Height) / scale))
+	if o.Transform%2 == 1 {
+		width, height = height, width
+	}
+	return max(1, width), max(1, height)
+}
+
+func (o editableOutput) layoutSizeLabel() string {
+	width, height := o.logicalSize()
+	return fmt.Sprintf("%d x %d", width, height)
+}
+
+func (o editableOutput) displayModelLabel() string {
+	if label := strings.TrimSpace(o.Make + " " + o.Model); label != "" {
+		return label
+	}
+	if model := strings.TrimSpace(o.Model); model != "" {
+		return model
+	}
+	if desc := strings.TrimSpace(o.Description); desc != "" {
+		return desc
+	}
+	return "(unknown)"
+}
+
+type cardLine struct {
+	text string
+	fg   string
+	bold bool
+}
+
+func (o editableOutput) cardModelLabel() string {
+	return o.displayModelLabel()
+}
+
+func (o editableOutput) cardLines(maxLines int, fg string, muted string) []cardLine {
+	if maxLines <= 0 {
+		return nil
+	}
+
+	scaleLayout := fmt.Sprintf("%.2fx=%s", o.Scale, strings.ReplaceAll(o.layoutSizeLabel(), " ", ""))
+	position := fmt.Sprintf("pos %d,%d", o.X, o.Y)
+	full := []cardLine{
+		{text: o.Name, fg: fg, bold: true},
+		{text: o.cardModelLabel(), fg: muted},
+		{text: o.DisplayMode(), fg: muted},
+		{text: scaleLayout, fg: muted},
+		{text: position, fg: muted},
+	}
+	if maxLines >= len(full) {
+		return full
+	}
+
+	switch maxLines {
+	case 4:
+		return []cardLine{
+			full[0],
+			full[1],
+			full[2],
+			{text: scaleLayout + "  " + position, fg: muted},
+		}
+	case 3:
+		return []cardLine{
+			full[0],
+			full[2],
+			{text: scaleLayout + "  " + position, fg: muted},
+		}
+	case 2:
+		return []cardLine{
+			full[0],
+			full[3],
+		}
+	default:
+		return []cardLine{full[0]}
+	}
+}
+
+func newCanvasCells(width, height int) [][]canvasCell {
+	grid := make([][]canvasCell, height)
+	for y := 0; y < height; y++ {
+		row := make([]canvasCell, width)
+		for x := 0; x < width; x++ {
+			cell := canvasCell{ch: ' ', fg: "#2A2F3A", bg: "#16181D"}
+			switch {
+			case y%4 == 0 && x%8 == 0:
+				cell.ch = '┼'
+				cell.fg = "#242936"
+			case y%4 == 0:
+				cell.ch = '─'
+				cell.fg = "#202532"
+			case x%8 == 0:
+				cell.ch = '│'
+				cell.fg = "#202532"
+			}
+			row[x] = cell
+		}
+		grid[y] = row
+	}
+	return grid
+}
+
+func paintMonitorCard(grid [][]canvasCell, rect canvasRect, output editableOutput, selected bool) {
+	if len(grid) == 0 || len(grid[0]) == 0 {
+		return
+	}
+
+	bg := "#343946"
+	border := "#5E6575"
+	fg := "#E9EDF5"
+	muted := "#BAC2D0"
+	if !output.Enabled {
+		bg = "#38282D"
+		border = "#735259"
+		fg = "#E5D8DB"
+		muted = "#C8B6BA"
+	}
+	if selected {
+		bg = "#355C8A"
+		border = "#8EC5FF"
+		fg = "#F8FBFF"
+		muted = "#DDEAFF"
+	}
+
+	x1 := clampInt(rect.x, 0, len(grid[0])-1)
+	y1 := clampInt(rect.y, 0, len(grid)-1)
+	x2 := clampInt(rect.x+rect.w-1, 0, len(grid[0])-1)
+	y2 := clampInt(rect.y+rect.h-1, 0, len(grid)-1)
+	if x2-x1 < 2 || y2-y1 < 2 {
+		return
+	}
+
+	for y := y1; y <= y2; y++ {
+		for x := x1; x <= x2; x++ {
+			grid[y][x] = canvasCell{ch: ' ', fg: fg, bg: bg}
+		}
+	}
+
+	for x := x1 + 1; x < x2; x++ {
+		grid[y1][x] = canvasCell{ch: '─', fg: border, bg: bg, bold: selected}
+		grid[y2][x] = canvasCell{ch: '─', fg: border, bg: bg, bold: selected}
+	}
+	for y := y1 + 1; y < y2; y++ {
+		grid[y][x1] = canvasCell{ch: '│', fg: border, bg: bg, bold: selected}
+		grid[y][x2] = canvasCell{ch: '│', fg: border, bg: bg, bold: selected}
+	}
+	grid[y1][x1] = canvasCell{ch: '╭', fg: border, bg: bg, bold: selected}
+	grid[y1][x2] = canvasCell{ch: '╮', fg: border, bg: bg, bold: selected}
+	grid[y2][x1] = canvasCell{ch: '╰', fg: border, bg: bg, bold: selected}
+	grid[y2][x2] = canvasCell{ch: '╯', fg: border, bg: bg, bold: selected}
+
+	availableHeight := y2 - y1 - 1
+	lines := output.cardLines(max(1, availableHeight), fg, muted)
+	startY := y1 + 1 + max(0, (availableHeight-len(lines))/2)
+	for idx, line := range lines {
+		y := startY + idx
+		if y <= y1 || y >= y2 {
+			continue
+		}
+		paintCanvasTextCentered(grid, x1+1, x2-1, y, fitString(line.text, x2-x1-1), line.fg, bg, line.bold)
+	}
+}
+
+func paintCanvasTextCentered(grid [][]canvasCell, left, right, y int, text string, fg string, bg string, bold bool) {
+	if y < 0 || y >= len(grid) || left > right {
+		return
+	}
+	runes := []rune(text)
+	width := right - left + 1
+	if len(runes) > width {
+		runes = []rune(fitString(text, width))
+	}
+	start := left + max(0, (width-len(runes))/2)
+	for idx, r := range runes {
+		x := start + idx
+		if x < left || x > right || x < 0 || x >= len(grid[y]) {
+			continue
+		}
+		grid[y][x] = canvasCell{ch: r, fg: fg, bg: bg, bold: bold}
+	}
+}
+
+func paintSnapMark(grid [][]canvasCell, rect canvasRect, edge snapEdge) {
+	if len(grid) == 0 || len(grid[0]) == 0 {
+		return
+	}
+
+	x1 := clampInt(rect.x, 0, len(grid[0])-1)
+	y1 := clampInt(rect.y, 0, len(grid)-1)
+	x2 := clampInt(rect.x+rect.w-1, 0, len(grid[0])-1)
+	y2 := clampInt(rect.y+rect.h-1, 0, len(grid)-1)
+	highlight := "#F5C86A"
+
+	switch edge {
+	case snapEdgeLeft:
+		for y := y1; y <= y2; y++ {
+			grid[y][x1] = canvasCell{ch: '┃', fg: highlight, bg: grid[y][x1].bg, bold: true}
+		}
+	case snapEdgeRight:
+		for y := y1; y <= y2; y++ {
+			grid[y][x2] = canvasCell{ch: '┃', fg: highlight, bg: grid[y][x2].bg, bold: true}
+		}
+	case snapEdgeTop:
+		for x := x1; x <= x2; x++ {
+			grid[y1][x] = canvasCell{ch: '━', fg: highlight, bg: grid[y1][x].bg, bold: true}
+		}
+	case snapEdgeBottom:
+		for x := x1; x <= x2; x++ {
+			grid[y2][x] = canvasCell{ch: '━', fg: highlight, bg: grid[y2][x].bg, bold: true}
+		}
+	}
+}
+
+func renderCanvasCells(grid [][]canvasCell) string {
+	lines := make([]string, len(grid))
+	for y, row := range grid {
+		var line strings.Builder
+		var run strings.Builder
+		cur := canvasCell{}
+		have := false
+		flush := func() {
+			if !have || run.Len() == 0 {
+				return
+			}
+			style := lipgloss.NewStyle()
+			if cur.fg != "" {
+				style = style.Foreground(lipgloss.Color(cur.fg))
+			}
+			if cur.bg != "" {
+				style = style.Background(lipgloss.Color(cur.bg))
+			}
+			if cur.bold {
+				style = style.Bold(true)
+			}
+			line.WriteString(style.Render(run.String()))
+			run.Reset()
+		}
+		for _, cell := range row {
+			if !have || cell.fg != cur.fg || cell.bg != cur.bg || cell.bold != cur.bold {
+				flush()
+				cur = cell
+				have = true
+			}
+			run.WriteRune(cell.ch)
+		}
+		flush()
+		lines[y] = line.String()
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeModes(modes []string, current string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(modes)+1)
+	add := func(mode string) {
+		mode = strings.TrimSpace(mode)
+		if mode == "" || seen[mode] {
+			return
+		}
+		seen[mode] = true
+		out = append(out, mode)
+	}
+
+	add(current)
+	for _, mode := range modes {
+		add(mode)
+	}
+	return out
+}
+
+func indexOf(values []string, target string) int {
+	target = strings.TrimSpace(target)
+	for idx, value := range values {
+		if strings.TrimSpace(value) == target {
+			return idx
+		}
+	}
+	return -1
+}
+
+func fitString(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width <= 3 {
+		return string(runes[:width])
+	}
+	return string(runes[:width-3]) + "..."
+}
+
+func blankFallback(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
 func defaultProfileName() string {
 	return "profile-" + time.Now().Format("20060102-150405")
+}
+
+func (m *Model) showSnapHint(hint *snapHintState) tea.Cmd {
+	if hint == nil {
+		m.snap = nil
+		return nil
+	}
+	m.snapSeq++
+	hint.Token = m.snapSeq
+	m.snap = hint
+	return clearSnapCmd(hint.Token)
+}
+
+func clearSnapCmd(token int) tea.Cmd {
+	return tea.Tick(700*time.Millisecond, func(time.Time) tea.Msg {
+		return clearSnapMsg{token: token}
+	})
 }
 
 func tickCmd() tea.Cmd {
@@ -678,11 +1878,90 @@ func tickCmd() tea.Cmd {
 	})
 }
 
+func targetLabel(name string) string {
+	if strings.TrimSpace(name) == "" || name == "draft" {
+		return "Draft changes"
+	}
+	return fmt.Sprintf("Profile %q", name)
+}
+
 func boolText(v bool) string {
 	if v {
 		return "on"
 	}
 	return "off"
+}
+
+func vrrLabel(v int) string {
+	switch v {
+	case 1:
+		return "on"
+	case 2:
+		return "fullscreen"
+	default:
+		return "off"
+	}
+}
+
+func transformLabel(v int) string {
+	switch v {
+	case 0:
+		return "normal"
+	case 1:
+		return "90"
+	case 2:
+		return "180"
+	case 3:
+		return "270"
+	case 4:
+		return "flip"
+	case 5:
+		return "flip-90"
+	case 6:
+		return "flip-180"
+	case 7:
+		return "flip-270"
+	default:
+		return fmt.Sprintf("%d", v)
+	}
+}
+
+func blankMirror(value string) string {
+	if value == "" || value == "none" {
+		return ""
+	}
+	return value
+}
+
+func blankStrategy(strategy profile.WorkspaceStrategy) profile.WorkspaceStrategy {
+	if strategy == "" {
+		return profile.WorkspaceStrategySequential
+	}
+	return strategy
+}
+
+func wrapIndex(idx, length int) int {
+	if length <= 0 {
+		return 0
+	}
+	for idx < 0 {
+		idx += length
+	}
+	return idx % length
+}
+
+func wrapValue(value, minValue, maxValue int) int {
+	if maxValue < minValue {
+		return minValue
+	}
+	rangeSize := maxValue - minValue + 1
+	for value < minValue {
+		value += rangeSize
+	}
+	for value > maxValue {
+		value -= rangeSize
+	}
+	return value
 }
 
 func clampIndex(idx, length int) int {
@@ -698,14 +1977,31 @@ func clampIndex(idx, length int) int {
 	return idx
 }
 
-func clampFloat(v, minV, maxV float64) float64 {
-	if v < minV {
-		return minV
+func clampFloat(value, minValue, maxValue float64) float64 {
+	if value < minValue {
+		return minValue
 	}
-	if v > maxV {
-		return maxV
+	if value > maxValue {
+		return maxValue
 	}
-	return v
+	return value
+}
+
+func clampInt(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func max(a, b int) int {
@@ -713,4 +2009,46 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func focusedOutputIndex(outputs []editableOutput) int {
+	for idx, output := range outputs {
+		if output.Focused {
+			return idx
+		}
+	}
+	return -1
+}
+
+func outputIndexByKey(outputs []editableOutput, key string) int {
+	for idx, output := range outputs {
+		if output.Key == key {
+			return idx
+		}
+	}
+	return 0
+}
+
+var layoutFields = []string{
+	"Enabled",
+	"Mode",
+	"Scale",
+	"VRR",
+	"Transform",
+	"Position X",
+	"Position Y",
+}
+
+var workspaceFields = []string{
+	"Enabled",
+	"Strategy",
+	"Max workspaces",
+	"Group size",
+}
+
+func boolToVRR(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }

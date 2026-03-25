@@ -1,0 +1,6 @@
+source "https://rubygems.org"
+
+gem "jekyll", "~> 4.4"
+gem "webrick", "~> 1.8"
+gem "jekyll-vitepress-theme", git: "https://github.com/crmne/jekyll-vitepress-theme.git"
+gem "jekyll-redirect-from"

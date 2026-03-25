@@ -1,33 +1,39 @@
 # hyprmoncfg
 
-A terminal-first monitor configurator for Hyprland, built in Go.
+Terminal-first monitor configuration for Hyprland.
 
-It ships two binaries:
+`hyprmoncfg` ships two binaries:
 
-- `hyprmoncfg`: interactive TUI + CLI for monitor profiles.
-- `hyprmoncfgd`: daemon that auto-applies best matching profile on monitor hotplug events.
+- `hyprmoncfg`: TUI + CLI for monitor layout editing, profile management, and workspace planning
+- `hyprmoncfgd`: background daemon that auto-applies the best matching profile on monitor changes
 
-Both binaries expose build metadata with `version`, which is populated in release builds.
+![hyprmoncfg layout editor](docs/assets/images/screenshots/layout.png)
 
-## Why this project
+## Why it exists
 
-This aims to cover a Monique-like workflow without Python runtime dependencies, while keeping profile switching robust in long-running sessions.
+`hyprmoncfg` is aimed at the same general problem space as Monique, but with a different set of constraints:
+
+- no Python runtime dependency
+- a terminal-first interface instead of GTK
+- one apply engine shared by both the interactive UI and the daemon
+- explicit verification that the chosen `monitors.conf` is actually sourced by Hyprland before writing it
 
 ## Features
 
-- Save and manage named monitor profiles.
-- Apply profiles with safe confirm-or-revert guard (10 second timeout).
-- Interactive TUI editor for layout fields:
-  - enabled/disabled
-  - width/height/refresh
-  - x/y position
-  - scale
-  - transform
-- Automatic profile switching daemon:
-  - listens to Hyprland `socket2` monitor events
-  - polling fallback for resilience
-  - debounced apply to avoid hotplug flapping
-- Profiles keyed by hardware identity (`make|model|serial`) with connector-name fallback.
+- spatial monitor layout editor in the terminal
+- right-hand inspector for per-monitor properties
+- mode picker and typed numeric entry for scale and exact position
+- save, load, overwrite, and delete named profiles
+- workspace planner with `manual`, `sequential`, and `interleave` strategies
+- safe apply with confirm-or-revert support
+- automatic profile matching daemon with socket2 events and polling fallback
+- profile matching by hardware identity with connector-name fallback
+
+## Screenshots
+
+| Layout | Save Dialog |
+| --- | --- |
+| ![Layout editor](docs/assets/images/screenshots/layout.png) | ![Save profile dialog](docs/assets/images/screenshots/save-profile.png) |
 
 ## Build
 
@@ -36,99 +42,65 @@ go build -o bin/hyprmoncfg ./cmd/hyprmoncfg
 go build -o bin/hyprmoncfgd ./cmd/hyprmoncfgd
 ```
 
-## Release pipeline
+## Install locally
 
-GitHub Actions ships:
-
-- CI in `.github/workflows/ci.yml`
-- tagged releases in `.github/workflows/release.yml`
-
-Create a release by pushing a semver tag such as `v0.1.0`. Goreleaser will build Linux `amd64` and `arm64` archives, attach checksums, and include the packaged systemd units.
+```bash
+install -Dm755 bin/hyprmoncfg ~/.local/bin/hyprmoncfg
+install -Dm755 bin/hyprmoncfgd ~/.local/bin/hyprmoncfgd
+```
 
 ## CLI usage
 
 ```bash
-hyprmoncfg                 # open TUI
+hyprmoncfg                 # open the TUI
 hyprmoncfg monitors        # list current outputs
 hyprmoncfg profiles        # list saved profiles
-hyprmoncfg save desk       # save current layout as profile "desk"
-hyprmoncfg apply desk      # apply profile with 10s confirm/revert
-hyprmoncfg delete desk     # delete a profile
+hyprmoncfg save desk       # save current state as profile "desk"
+hyprmoncfg apply desk      # apply a saved profile
+hyprmoncfg delete desk     # delete a saved profile
+hyprmoncfg version         # build metadata
 ```
 
-### Apply options
+Useful flags:
 
 ```bash
+hyprmoncfg --config-dir /path/to/config
+hyprmoncfg --monitors-conf /path/to/monitors.conf
+hyprmoncfg --hypr-config /path/to/hyprland.conf
 hyprmoncfg apply desk --confirm-timeout 0
 ```
 
-Set `--confirm-timeout 0` to disable rollback prompt for non-interactive or scripted usage.
+## TUI controls
 
-## TUI keybindings
+Main controls:
 
-### Main screen
-
-- `tab`: switch focus between monitors and profiles
-- `up/down` or `j/k`: move selection
-- `e`: open layout editor
-- `s`: save current monitor state to new profile
-- `a` or `enter`: apply selected profile
-- `d`: delete selected profile
-- `r`: refresh monitor/profile data
+- `1`, `2`, `3`: switch tabs
+- `a`: apply current draft or selected profile
+- `s`: save current draft as a profile
+- `r`: reset from live Hyprland state
 - `q`: quit
 
-### Edit screen
+Layout tab:
 
-- `up/down`: select output
-- `left/right` or `tab`: select field
-- `+/-`: adjust selected field
-- `space`: toggle output enabled
-- `a`: apply edited layout (temporary)
-- `s`: save edited layout as profile
-- `r`: reset editor from current state
-- `esc`: back to main screen
+- drag monitors with the mouse
+- arrows move by `100px`
+- `Shift+arrows` move by `10px`
+- `Ctrl+arrows` move by `1px`
+- `Enter` opens pickers or typed numeric editors
+- `[` and `]` cycle selected monitor
+- `Tab` switches between canvas and inspector
 
-### Confirm screen
-
-- `y` or `enter`: keep configuration
-- `n` or `esc`: revert configuration
-
-## Daemon usage
+## Daemon
 
 ```bash
 hyprmoncfgd
-```
-
-Options:
-
-```bash
+hyprmoncfgd --profile desk
 hyprmoncfgd --debounce 1500ms --poll-interval 5s
-hyprmoncfgd --profile desk     # force one profile instead of auto-matching
-hyprmoncfgd --quiet
+hyprmoncfgd --monitors-conf ~/.config/hypr/monitors.conf
+hyprmoncfgd --hypr-config ~/.config/hypr/hyprland.conf
 ```
 
-## Configuration and profile files
-
-Default config directory:
-
-- `~/.config/hyprmoncfg`
-
-Profiles are stored as JSON in:
-
-- `~/.config/hyprmoncfg/profiles/*.json`
-
-Override with:
-
-```bash
-hyprmoncfg --config-dir /path/to/config ...
-hyprmoncfgd --config-dir /path/to/config ...
-```
-
-## Systemd user service (optional)
-
-For packaged installs, the user unit is installed to `/usr/lib/systemd/user/hyprmoncfgd.service`.
-
-For manual local installs to `~/.local/bin`, use `packaging/systemd/hyprmoncfgd.local.service`:
+Systemd user service for local installs:
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -137,34 +109,68 @@ systemctl --user daemon-reload
 systemctl --user enable --now hyprmoncfgd
 ```
 
-## Arch and Omarchy packaging
+## How apply works
 
-Recipes live under `packaging/arch`:
+The apply engine used by both the TUI and the daemon does this:
 
-- `packaging/arch/hyprmoncfg`: stable package from tagged releases
-- `packaging/arch/hyprmoncfg-git`: rolling package from Git
+1. resolve the target `monitors.conf`
+2. verify that `hyprland.conf` actually sources that file
+3. write the new config atomically
+4. run `hyprctl reload`
+5. re-read monitor state and verify the result
+6. restore the previous file on revert or failed verification
 
-Examples:
+This avoids the common failure mode where a tool rewrites a config file that Hyprland is not even reading.
 
-```bash
-cd packaging/arch/hyprmoncfg-git
-makepkg -si
+## Configuration files
+
+Default profile storage:
+
+```text
+~/.config/hyprmoncfg/profiles/*.json
 ```
 
-```bash
-cd packaging/arch/hyprmoncfg
-makepkg -si
+Default Hyprland targets:
+
+```text
+~/.config/hypr/monitors.conf
+~/.config/hypr/hyprland.conf
 ```
 
-For Omarchy, the `hyprmoncfg-git` package is the better fit while the project is still evolving quickly.
+Profiles are stored as JSON because they are machine-owned state, not hand-authored configuration.
+
+## Packaging
+
+Arch recipes live in `packaging/arch`:
+
+- `packaging/arch/hyprmoncfg`
+- `packaging/arch/hyprmoncfg-git`
+
+## Docs site
+
+A Jekyll site using the VitePress-style theme lives in `docs/`.
+
+Local preview:
+
+```bash
+cd docs
+bundle install
+bundle exec jekyll serve --livereload
+```
+
+GitHub Pages deployment is defined in `.github/workflows/docs.yml`.
+
+## Regenerate screenshots
+
+```bash
+./scripts/capture_screenshots.sh
+```
+
+The script launches a dedicated terminal window, captures the TUI with `grim`, and writes the PNGs to `docs/assets/images/screenshots/`.
 
 ## Development
 
 ```bash
 go test ./...
+go vet ./...
 ```
-
-## Notes
-
-- Requires a running Hyprland session and `hyprctl` in `PATH`.
-- Apply operations use `hyprctl keyword monitor ...` commands.

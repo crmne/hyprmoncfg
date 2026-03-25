@@ -29,34 +29,38 @@ func main() {
 
 func newRootCmd() *cobra.Command {
 	var configDir string
+	var monitorsConf string
+	var hyprConfig string
 
 	root := &cobra.Command{
 		Use:     "hyprmoncfg",
 		Short:   "Monitor profile manager for Hyprland",
 		Version: buildinfo.Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTUI(configDir)
+			return runTUI(configDir, monitorsConf, hyprConfig)
 		},
 	}
 	root.PersistentFlags().StringVar(&configDir, "config-dir", "", "Config directory (default: ~/.config/hyprmoncfg)")
+	root.PersistentFlags().StringVar(&monitorsConf, "monitors-conf", "", "Hyprland monitor config target to write and reload (default: ~/.config/hypr/monitors.conf)")
+	root.PersistentFlags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config to verify source directives against (default: ~/.config/hypr/hyprland.conf)")
 
-	root.AddCommand(newTUICmd(&configDir))
+	root.AddCommand(newTUICmd(&configDir, &monitorsConf, &hyprConfig))
 	root.AddCommand(newMonitorsCmd(&configDir))
 	root.AddCommand(newProfilesCmd(&configDir))
 	root.AddCommand(newSaveCmd(&configDir))
-	root.AddCommand(newApplyCmd(&configDir))
+	root.AddCommand(newApplyCmd(&configDir, &monitorsConf, &hyprConfig))
 	root.AddCommand(newDeleteCmd(&configDir))
 	root.AddCommand(newVersionCmd("hyprmoncfg"))
 
 	return root
 }
 
-func newTUICmd(configDir *string) *cobra.Command {
+func newTUICmd(configDir *string, monitorsConf *string, hyprConfig *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
 		Short: "Launch interactive terminal UI",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTUI(*configDir)
+			return runTUI(*configDir, *monitorsConf, *hyprConfig)
 		},
 	}
 }
@@ -139,7 +143,11 @@ func newSaveCmd(configDir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p := profile.FromMonitors(args[0], monitors)
+			rules, err := client.WorkspaceRules(ctx)
+			if err != nil {
+				return err
+			}
+			p := profile.FromState(args[0], monitors, rules)
 			if err := store.Save(p); err != nil {
 				return err
 			}
@@ -150,7 +158,7 @@ func newSaveCmd(configDir *string) *cobra.Command {
 	return cmd
 }
 
-func newApplyCmd(configDir *string) *cobra.Command {
+func newApplyCmd(configDir *string, monitorsConf *string, hyprConfig *string) *cobra.Command {
 	var confirmTimeout int
 
 	cmd := &cobra.Command{
@@ -173,10 +181,14 @@ func newApplyCmd(configDir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			snapshot := apply.SnapshotCommands(monitors)
 
-			engine := apply.Engine{Client: client}
-			if _, err := engine.Apply(ctx, p, monitors); err != nil {
+			engine := apply.Engine{
+				Client:             client,
+				MonitorsConfPath:   *monitorsConf,
+				HyprlandConfigPath: *hyprConfig,
+			}
+			snapshot, err := engine.Apply(ctx, p, monitors)
+			if err != nil {
 				return err
 			}
 			fmt.Printf("Applied profile %q\n", p.Name)
@@ -236,14 +248,14 @@ func newVersionCmd(name string) *cobra.Command {
 	}
 }
 
-func runTUI(configDir string) error {
+func runTUI(configDir string, monitorsConf string, hyprConfig string) error {
 	client, store, err := bootstrap(configDir)
 	if err != nil {
 		return err
 	}
 
-	model := tui.NewModel(client, store)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	model := tui.NewModel(client, store, monitorsConf, hyprConfig)
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err
 }

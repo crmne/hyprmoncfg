@@ -2,12 +2,30 @@ package hypr
 
 import (
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 )
 
 type Workspace struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+}
+
+type WorkspaceState struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Monitor      string `json:"monitor"`
+	MonitorID    int    `json:"monitorID"`
+	Windows      int    `json:"windows"`
+	IsPersistent bool   `json:"ispersistent"`
+}
+
+type WorkspaceRule struct {
+	WorkspaceString string `json:"workspaceString"`
+	Monitor         string `json:"monitor"`
+	Default         bool   `json:"default"`
+	Persistent      bool   `json:"persistent"`
 }
 
 type Monitor struct {
@@ -19,6 +37,8 @@ type Monitor struct {
 	Serial          string    `json:"serial"`
 	Width           int       `json:"width"`
 	Height          int       `json:"height"`
+	PhysicalWidth   int       `json:"physicalWidth"`
+	PhysicalHeight  int       `json:"physicalHeight"`
 	RefreshRate     float64   `json:"refreshRate"`
 	X               int       `json:"x"`
 	Y               int       `json:"y"`
@@ -26,7 +46,10 @@ type Monitor struct {
 	Transform       int       `json:"transform"`
 	Focused         bool      `json:"focused"`
 	DPMSStatus      bool      `json:"dpmsStatus"`
+	VRR             bool      `json:"vrr"`
 	Disabled        bool      `json:"disabled"`
+	MirrorOf        string    `json:"mirrorOf"`
+	AvailableModes  []string  `json:"availableModes"`
 	ActiveWorkspace Workspace `json:"activeWorkspace"`
 }
 
@@ -57,17 +80,82 @@ func (m Monitor) HardwareKey() string {
 }
 
 func (m Monitor) ModeString() string {
-	if m.Width == 0 || m.Height == 0 {
-		return "preferred"
+	return FormatMode(m.Width, m.Height, m.RefreshRate)
+}
+
+func (m Monitor) MonitorSelector() string {
+	if desc := strings.TrimSpace(m.Description); desc != "" {
+		return "desc:" + desc
 	}
-	if m.RefreshRate <= 0 {
-		return fmt.Sprintf("%dx%d", m.Width, m.Height)
+	return m.Name
+}
+
+func (m Monitor) LogicalSize() (int, int) {
+	scale := m.Scale
+	if scale <= 0 {
+		scale = 1
 	}
-	return fmt.Sprintf("%dx%d@%.3f", m.Width, m.Height, m.RefreshRate)
+	width := int(math.Round(float64(m.Width) / scale))
+	height := int(math.Round(float64(m.Height) / scale))
+
+	if m.Transform%2 == 1 {
+		width, height = height, width
+	}
+	return width, height
 }
 
 func cleanIDPart(v string) string {
 	v = strings.TrimSpace(strings.ToLower(v))
 	v = strings.Join(strings.Fields(v), " ")
 	return v
+}
+
+func FormatMode(width, height int, refresh float64) string {
+	if width == 0 || height == 0 {
+		return "preferred"
+	}
+	if refresh <= 0 {
+		return fmt.Sprintf("%dx%d", width, height)
+	}
+	return fmt.Sprintf("%dx%d@%.2fHz", width, height, refresh)
+}
+
+func ParseMode(mode string) (int, int, float64, bool) {
+	mode = strings.TrimSpace(strings.TrimSuffix(mode, "Hz"))
+	if mode == "" || mode == "preferred" {
+		return 0, 0, 0, false
+	}
+
+	var (
+		width   int
+		height  int
+		refresh float64
+	)
+
+	if _, err := fmt.Sscanf(mode, "%dx%d@%f", &width, &height, &refresh); err == nil {
+		return width, height, refresh, true
+	}
+	if _, err := fmt.Sscanf(mode, "%dx%d", &width, &height); err == nil {
+		return width, height, 0, true
+	}
+	return 0, 0, 0, false
+}
+
+func MonitorOrder(monitors []Monitor) []string {
+	sorted := append([]Monitor(nil), monitors...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].X != sorted[j].X {
+			return sorted[i].X < sorted[j].X
+		}
+		if sorted[i].Y != sorted[j].Y {
+			return sorted[i].Y < sorted[j].Y
+		}
+		return sorted[i].Name < sorted[j].Name
+	})
+
+	keys := make([]string, 0, len(sorted))
+	for _, monitor := range sorted {
+		keys = append(keys, monitor.HardwareKey())
+	}
+	return keys
 }
