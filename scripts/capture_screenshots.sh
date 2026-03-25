@@ -11,6 +11,10 @@ window_width="${WINDOW_WIDTH:-1500}"
 window_height="${WINDOW_HEIGHT:-980}"
 window_x="${WINDOW_X:-320}"
 window_y="${WINDOW_Y:-120}"
+capture_margin_left="${CAPTURE_MARGIN_LEFT:-0}"
+capture_margin_right="${CAPTURE_MARGIN_RIGHT:-0}"
+capture_margin_top="${CAPTURE_MARGIN_TOP:-8}"
+capture_margin_bottom="${CAPTURE_MARGIN_BOTTOM:-6}"
 
 mkdir -p "$output_dir"
 
@@ -116,7 +120,19 @@ capture_state() {
   w="$(printf '%s' "$client" | jq -r '.size[0]')"
   h="$(printf '%s' "$client" | jq -r '.size[1]')"
 
-  grim -g "$x,$y ${w}x${h}" "$screenshot"
+  local capture_x capture_y capture_w capture_h
+  capture_x=$((x - capture_margin_left))
+  capture_y=$((y - capture_margin_top))
+  if (( capture_x < 0 )); then
+    capture_x=0
+  fi
+  if (( capture_y < 0 )); then
+    capture_y=0
+  fi
+  capture_w=$((w + capture_margin_left + capture_margin_right))
+  capture_h=$((h + capture_margin_top + capture_margin_bottom))
+
+  grim -g "$capture_x,$capture_y ${capture_w}x${capture_h}" "$screenshot"
   close_window "$term_pid" "$address"
 }
 
