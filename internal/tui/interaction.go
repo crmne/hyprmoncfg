@@ -784,7 +784,7 @@ func (m Model) inspectorFieldAt(y, bodyY int) (int, bool) {
 func (m Model) canvasLayout(width, height int) canvasGeometry {
 	layout := canvasGeometry{
 		width:  clampInt(width-2, 20, 120),
-		height: clampInt(height, 6, 30),
+		height: clampInt(height, 3, 30),
 		cellW:  2.2,
 	}
 
