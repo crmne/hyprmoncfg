@@ -5,7 +5,7 @@ description: Hyprland monitor configuration that actually works.
 permalink: /
 hero:
   name: hyprmoncfg
-  text: Stop editing monitor lines by hand
+  text: Stop editing Hyprland monitor lines by hand
   tagline: A spatial layout editor, named profiles, automatic hotplug switching, and workspace planning. From the terminal. No Python, no GTK, no nonsense.
   actions:
     - theme: brand
