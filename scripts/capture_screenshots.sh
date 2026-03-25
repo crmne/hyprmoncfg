@@ -7,10 +7,12 @@ output_dir="${1:-$repo_root/docs/assets/images/screenshots}"
 app_bin="${APP_BIN:-$HOME/.local/bin/hyprmoncfg}"
 terminal_bin="${TERMINAL_BIN:-alacritty}"
 window_class="${WINDOW_CLASS:-hyprmoncfg-docshot}"
-window_width="${WINDOW_WIDTH:-1500}"
+window_width="${WINDOW_WIDTH:-1800}"
 window_height="${WINDOW_HEIGHT:-1080}"
 window_x="${WINDOW_X:-320}"
 window_y="${WINDOW_Y:-80}"
+terminal_columns="${TERMINAL_COLUMNS:-160}"
+terminal_lines="${TERMINAL_LINES:-38}"
 capture_margin_left="${CAPTURE_MARGIN_LEFT:-0}"
 capture_margin_right="${CAPTURE_MARGIN_RIGHT:-0}"
 capture_margin_top="${CAPTURE_MARGIN_TOP:-0}"
@@ -62,6 +64,10 @@ wait_for_client() {
   return 1
 }
 
+focused_monitor() {
+  hyprctl -j monitors | jq -c 'if length == 0 then empty else ((map(select(.focused)) | .[0]) // .[0]) end'
+}
+
 focus_client() {
   local address="$1"
   hyprctl dispatch focuswindow "address:$address" >/dev/null
@@ -86,8 +92,8 @@ capture_state() {
   env -u NO_COLOR COLORTERM=truecolor TERM=xterm-256color "$terminal_bin" \
     --title "$title" \
     --class "$window_class,$window_class" \
-    -o "window.dimensions.columns=132" \
-    -o "window.dimensions.lines=38" \
+    -o "window.dimensions.columns=$terminal_columns" \
+    -o "window.dimensions.lines=$terminal_lines" \
     -o "font.size=14" \
     -o "window.opacity=1" \
     -o "window.padding.x=12" \
@@ -99,10 +105,46 @@ capture_state() {
   client="$(wait_for_client "$title")"
   local address
   address="$(printf '%s' "$client" | jq -r '.address')"
+  local monitor
+  monitor="$(focused_monitor)"
+  local monitor_x monitor_y monitor_w monitor_h monitor_scale
+  monitor_x="$(printf '%s' "$monitor" | jq -r '.x')"
+  monitor_y="$(printf '%s' "$monitor" | jq -r '.y')"
+  monitor_w="$(printf '%s' "$monitor" | jq -r '.width')"
+  monitor_h="$(printf '%s' "$monitor" | jq -r '.height')"
+  monitor_scale="$(printf '%s' "$monitor" | jq -r '.scale')"
+  local logical_monitor_w logical_monitor_h
+  logical_monitor_w="$(awk -v w="$monitor_w" -v s="$monitor_scale" 'BEGIN { printf "%d", w / s }')"
+  logical_monitor_h="$(awk -v h="$monitor_h" -v s="$monitor_scale" 'BEGIN { printf "%d", h / s }')"
+  local target_w target_h target_x target_y max_x max_y
+  target_w="$window_width"
+  target_h="$window_height"
+  if (( target_w > logical_monitor_w )); then
+    target_w="$logical_monitor_w"
+  fi
+  if (( target_h > logical_monitor_h )); then
+    target_h="$logical_monitor_h"
+  fi
+  max_x=$((monitor_x + logical_monitor_w - target_w))
+  max_y=$((monitor_y + logical_monitor_h - target_h))
+  target_x="$window_x"
+  target_y="$window_y"
+  if (( target_x < monitor_x )); then
+    target_x="$monitor_x"
+  fi
+  if (( target_y < monitor_y )); then
+    target_y="$monitor_y"
+  fi
+  if (( target_x > max_x )); then
+    target_x="$max_x"
+  fi
+  if (( target_y > max_y )); then
+    target_y="$max_y"
+  fi
 
   hyprctl dispatch setfloating "address:$address" >/dev/null
-  hyprctl dispatch resizewindowpixel "exact $window_width $window_height,address:$address" >/dev/null
-  hyprctl dispatch movewindowpixel "exact $window_x $window_y,address:$address" >/dev/null
+  hyprctl dispatch resizewindowpixel "exact $target_w $target_h,address:$address" >/dev/null
+  hyprctl dispatch movewindowpixel "exact $target_x $target_y,address:$address" >/dev/null
 
   sleep 0.9
   focus_client "$address"

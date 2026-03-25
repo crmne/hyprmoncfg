@@ -26,16 +26,18 @@ Existing tools try to help but bring their own baggage: Python runtimes, GTK dep
 
 ## How it compares
 
-| | hyprmoncfg | Monique | nwg-displays | kanshi |
-|---|---|---|---|---|
-| Interface | TUI | GTK4 GUI | GTK3 GUI | Config file |
-| Profiles | Yes | Yes | No | Yes |
-| Auto-switching daemon | Yes | Yes | No | Yes |
-| Workspace management | Yes | Yes | Basic | No |
-| Confirm/revert safety | Yes | Yes | No | No |
-| Runtime dependencies | None | Python + GTK4 | Python + GTK3 | None |
-| Works over SSH | Yes | No | No | N/A |
-| Source-chain verification | Yes | No | No | No |
+| | hyprmoncfg | Monique | HyprDynamicMonitors | HyprMon | nwg-displays | kanshi |
+|---|---|---|---|---|---|---|
+| Spatial layout editor | Yes | Yes (GTK4) | Partial (TUI) | Yes | Yes (GTK3) | No |
+| Drag-and-drop | Yes | Yes | No | Yes | Yes | No |
+| Snapping | Yes | Not documented | No | Yes | Yes | No |
+| Profiles | Yes | Yes | Yes | Yes | No | Yes |
+| Auto-switching daemon | Yes | Yes | Yes | No (roadmap) | No | Yes |
+| Workspace planning | Yes | Yes | No | No | Basic | No |
+| Safe apply with revert | Yes | Yes | No | Partial (manual rollback) | No | No |
+| Source-chain verification | Yes | No | No | No | No | No |
+| Works over SSH | Yes | No | No | No | No | N/A |
+| Runtime dependencies | None | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
 
 ## Screenshots
 

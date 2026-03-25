@@ -20,8 +20,8 @@ hero:
   image:
     src: /assets/images/screenshots/layout.png
     alt: hyprmoncfg layout editor
-    width: 2000
-    height: 1306
+    width: 2700
+    height: 1620
 features:
   - icon: 🖥️
     title: Spatial Layout Editor
