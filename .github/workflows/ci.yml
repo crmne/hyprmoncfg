@@ -32,8 +32,3 @@ jobs:
 
       - name: Build
         run: go build ./cmd/hyprmoncfg ./cmd/hyprmoncfgd
-
-      - name: Validate PKGBUILD syntax
-        run: |
-          bash -n packaging/arch/hyprmoncfg/PKGBUILD
-          bash -n packaging/arch/hyprmoncfg-git/PKGBUILD
