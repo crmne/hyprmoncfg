@@ -38,7 +38,8 @@ jekyll_vitepress:
   branding:
     site_title: hyprmoncfg
     logo:
-      default: /assets/images/favicon.svg
+      default: /assets/images/logo.svg
+      alt: hyprmoncfg
   syntax:
     light_theme: github
     dark_theme: github.dark
