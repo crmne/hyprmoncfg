@@ -1,7 +1,9 @@
 package profile
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/crmne/hyprmoncfg/internal/hypr"
@@ -79,4 +81,41 @@ func MonitorSetHash(monitors []hypr.Monitor) string {
 	}
 	sort.Strings(keys)
 	return strings.Join(keys, ",")
+}
+
+func MonitorStateHash(monitors []hypr.Monitor) string {
+	if len(monitors) == 0 {
+		return "none"
+	}
+
+	states := make([]string, 0, len(monitors))
+	for _, m := range monitors {
+		states = append(states, monitorStateSignature(m))
+	}
+	sort.Strings(states)
+	return strings.Join(states, ",")
+}
+
+func monitorStateSignature(m hypr.Monitor) string {
+	return fmt.Sprintf(
+		"%s|%s|disabled=%t|%dx%d@%.2f|%dx%d|scale=%s|transform=%d|vrr=%t",
+		m.HardwareKey(),
+		strings.ToLower(strings.TrimSpace(m.Name)),
+		m.Disabled,
+		m.Width,
+		m.Height,
+		m.RefreshRate,
+		m.X,
+		m.Y,
+		strconv.FormatFloat(clampStateScale(m.Scale), 'f', 3, 64),
+		m.Transform,
+		m.VRR,
+	)
+}
+
+func clampStateScale(scale float64) float64 {
+	if scale <= 0 {
+		return 1
+	}
+	return scale
 }

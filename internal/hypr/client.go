@@ -243,12 +243,13 @@ func parseEvent(line string) (Event, bool) {
 	typeName := strings.TrimSpace(parts[0])
 	value := strings.TrimSpace(parts[1])
 
-	switch EventType(typeName) {
-	case EventMonitorAdded, EventMonitorRemoved:
-		return Event{Type: EventType(typeName), Value: value, Raw: line}, true
-	default:
-		return Event{}, false
+	switch {
+	case strings.HasPrefix(typeName, string(EventMonitorAdded)):
+		return Event{Type: EventMonitorAdded, Value: value, Raw: line}, true
+	case strings.HasPrefix(typeName, string(EventMonitorRemoved)):
+		return Event{Type: EventMonitorRemoved, Value: value, Raw: line}, true
 	}
+	return Event{}, false
 }
 
 func versionAtLeast(value string, wantMajor, wantMinor, wantPatch int) bool {

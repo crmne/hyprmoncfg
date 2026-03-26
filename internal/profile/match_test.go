@@ -40,3 +40,44 @@ func TestMonitorSetHashIsStable(t *testing.T) {
 		t.Fatalf("expected stable hash, got %q vs %q", h1, h2)
 	}
 }
+
+func TestMonitorStateHashIsStableAndTracksState(t *testing.T) {
+	m1 := hypr.Monitor{
+		Name:        "DP-1",
+		Make:        "Dell",
+		Model:       "U2720Q",
+		Serial:      "A1",
+		Width:       2560,
+		Height:      1440,
+		RefreshRate: 144,
+		X:           0,
+		Y:           0,
+		Scale:       1,
+	}
+	m2 := hypr.Monitor{
+		Name:        "eDP-1",
+		Make:        "BOE",
+		Model:       "Panel",
+		Serial:      "C3",
+		Width:       1920,
+		Height:      1200,
+		RefreshRate: 60,
+		X:           2560,
+		Y:           0,
+		Scale:       1.25,
+	}
+
+	h1 := MonitorStateHash([]hypr.Monitor{m1, m2})
+	h2 := MonitorStateHash([]hypr.Monitor{m2, m1})
+
+	if h1 != h2 {
+		t.Fatalf("expected stable hash, got %q vs %q", h1, h2)
+	}
+
+	changed := m1
+	changed.Disabled = true
+
+	if MonitorStateHash([]hypr.Monitor{changed, m2}) == h1 {
+		t.Fatalf("expected disabled state change to affect monitor state hash")
+	}
+}

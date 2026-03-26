@@ -100,7 +100,7 @@ func (s *Service) Run(ctx context.Context) error {
 				s.cfg.Logf("poll monitors failed: %v", err)
 				continue
 			}
-			h := profile.MonitorSetHash(monitors)
+			h := profile.MonitorStateHash(monitors)
 			if h != lastSeenHash {
 				lastSeenHash = h
 				pushTrigger("poll-change")
@@ -136,7 +136,7 @@ func (s *Service) applyBest(ctx context.Context) error {
 		return nil
 	}
 
-	hash := profile.MonitorSetHash(monitors)
+	hash := profile.MonitorStateHash(monitors)
 
 	var target profile.Profile
 	if s.cfg.ForcedProfile != "" {
@@ -166,7 +166,16 @@ func (s *Service) applyBest(ctx context.Context) error {
 	if _, err := s.engine.Apply(ctx, target, monitors); err != nil {
 		return err
 	}
-	s.applied = applyKey
+
+	appliedHash := hash
+	appliedMonitors, err := s.client.Monitors(ctx)
+	if err != nil {
+		s.cfg.Logf("refresh monitors after apply failed: %v", err)
+	} else {
+		appliedHash = profile.MonitorStateHash(appliedMonitors)
+	}
+
+	s.applied = target.Name + "|" + appliedHash
 	s.cfg.Logf("applied profile: %s", target.Name)
 	return nil
 }
