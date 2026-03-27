@@ -10,6 +10,7 @@ import (
 
 const (
 	repoURL        = "https://github.com/crmne/hyprmoncfg"
+	releasesURL    = repoURL + "/releases"
 	sponsorURL     = "https://github.com/sponsors/crmne"
 	communityURL   = repoURL + "/discussions"
 	footerMinHelpW = 20
@@ -62,14 +63,14 @@ func (m Model) footerInfoItems(width int) []footerItem {
 		{
 			{label: "Ask", url: communityURL},
 			{label: "Donate", url: sponsorURL},
-			{label: version},
+			{label: version, url: releasesURL},
 		},
 		{
 			{label: "Donate", url: sponsorURL},
-			{label: version},
+			{label: version, url: releasesURL},
 		},
 		{
-			{label: version},
+			{label: version, url: releasesURL},
 		},
 	}
 
@@ -194,6 +195,6 @@ func (m Model) decorateFooterBar(view, footer string) string {
 	styled = strings.ReplaceAll(styled, "Ask", osc8Link(communityURL, m.styles.footerLinkWarm.Render("Ask")))
 	styled = strings.ReplaceAll(styled, "Donate", osc8Link(sponsorURL, m.styles.footerLinkAccent.Render("Donate")))
 	version := footerVersionLabel()
-	styled = strings.ReplaceAll(styled, version, m.styles.footerVersion.Render(version))
+	styled = strings.ReplaceAll(styled, version, osc8Link(releasesURL, m.styles.footerVersion.Render(version)))
 	return strings.Replace(view, footer, styled, 1)
 }

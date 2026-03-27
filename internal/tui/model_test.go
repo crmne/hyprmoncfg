@@ -81,7 +81,7 @@ func TestRenderMainShowsFooterProjectLinks(t *testing.T) {
 	}
 
 	view := m.renderMain()
-	for _, want := range []string{"Ask", "Donate", "v1.2.3", sponsorURL, communityURL} {
+	for _, want := range []string{"Ask", "Donate", "v1.2.3", sponsorURL, communityURL, releasesURL} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected footer to include %q, got:\n%s", want, view)
 		}
@@ -137,8 +137,8 @@ func TestFooterLinkAtReturnsClickableRegionsOnly(t *testing.T) {
 
 	m := Model{styles: newStyles(), width: 120, height: 24}
 	layout := m.footerLayout()
-	if len(layout.links) != 2 {
-		t.Fatalf("expected 2 clickable footer links, got %+v", layout.links)
+	if len(layout.links) != 3 {
+		t.Fatalf("expected 3 clickable footer links, got %+v", layout.links)
 	}
 
 	askX := m.footerColumnX() + layout.links[0].start
@@ -148,8 +148,9 @@ func TestFooterLinkAtReturnsClickableRegionsOnly(t *testing.T) {
 	}
 
 	versionX := m.footerColumnX() + strings.LastIndex(layout.text, "v1.2.3")
-	if _, ok := m.footerLinkAt(versionX, m.footerRowY()); ok {
-		t.Fatal("expected version label to remain non-clickable")
+	link, ok = m.footerLinkAt(versionX, m.footerRowY())
+	if !ok || link.label != "v1.2.3" || link.url != releasesURL {
+		t.Fatalf("expected version hit, got ok=%v link=%+v", ok, link)
 	}
 }
 
