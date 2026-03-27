@@ -128,7 +128,7 @@ func newStyles() styles {
 		selectedDesc:     withBG(withFG(lipgloss.NewStyle(), p.selectedDesc), p.fieldSelectedBg),
 		footerLinkWarm:   withFG(lipgloss.NewStyle().Underline(true), p.footerWarm),
 		footerLinkAccent: withFG(lipgloss.NewStyle().Underline(true), p.footerAccent),
-		footerVersion:    withFG(lipgloss.NewStyle(), p.footerVersion),
+		footerVersion:    withFG(lipgloss.NewStyle().Underline(true), p.footerVersion),
 		warning:          withFG(lipgloss.NewStyle().Bold(true), p.warning),
 		badgeAccent:      withBG(withFG(lipgloss.NewStyle().Padding(0, 1).Bold(true), p.badgeAccentFg), p.badgeAccentBg),
 		badgeOn:          withBG(withFG(lipgloss.NewStyle().Padding(0, 1).Bold(true), p.badgeOnFg), p.badgeOnBg),
