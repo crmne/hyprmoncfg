@@ -1,6 +1,11 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+)
 
 type palette struct {
 	text               string
@@ -120,7 +125,7 @@ func newStyles() styles {
 		statusOK:         withFG(lipgloss.NewStyle().Bold(true), p.statusOK),
 		statusError:      withFG(lipgloss.NewStyle().Bold(true), p.statusError),
 		help:             withFG(lipgloss.NewStyle(), p.help),
-		selectedDesc:     withFG(lipgloss.NewStyle(), p.selectedDesc),
+		selectedDesc:     withBG(withFG(lipgloss.NewStyle(), p.selectedDesc), p.fieldSelectedBg),
 		footerLinkWarm:   withFG(lipgloss.NewStyle().Underline(true), p.footerWarm),
 		footerLinkAccent: withFG(lipgloss.NewStyle().Underline(true), p.footerAccent),
 		footerVersion:    withFG(lipgloss.NewStyle(), p.footerVersion),
@@ -137,123 +142,89 @@ func newStyles() styles {
 }
 
 func newPalette() palette {
-	if lipgloss.HasDarkBackground() {
-		return palette{
-			text:               "#E5E7EB",
-			titleFg:            "#F3E7D7",
-			titleBg:            "#3B2B22",
-			subtitle:           "#8E96A8",
-			header:             "#F4F6FB",
-			subtle:             "#8A93A5",
-			label:              "#9CA8BA",
-			value:              "#F4F6FB",
-			field:              "#E5E7EB",
-			fieldSelectedFg:    "#F8FBFF",
-			fieldSelectedBg:    "#365E8B",
-			groupTitle:         "#D2A56E",
-			paneBorder:         "#374151",
-			paneActiveBorder:   "#5E86BF",
-			tabBorder:          "#374151",
-			tabActiveBorder:    "#5E86BF",
-			tabInactiveFg:      "#A0A8B8",
-			tabActiveFg:        "#F8FBFF",
-			tabActiveBg:        "#243C5A",
-			statusOK:           "#8BCF63",
-			statusError:        "#E67C73",
-			help:               "#768093",
-			footerWarm:         "#D6A948",
-			footerAccent:       "#C792EA",
-			footerVersion:      "#8E96A8",
-			warning:            "#D6A948",
-			badgeAccentFg:      "#111827",
-			badgeAccentBg:      "#D2A56E",
-			badgeOnFg:          "#0F1A10",
-			badgeOnBg:          "#8BCF63",
-			badgeOffFg:         "#D7DCE5",
-			badgeOffBg:         "#475266",
-			badgeMutedFg:       "#E5E7EB",
-			badgeMutedBg:       "#64748B",
-			modalBorder:        "#7EA8FF",
-			modalBg:            "#131924",
-			modalTitle:         "#F3E7D7",
-			selectedDesc:       "#DDEAFF",
-			panelBg:            "",
-			canvasBg:           "",
-			canvasGrid:         "#273142",
-			canvasAxis:         "#364153",
-			cardBorder:         "#6B778C",
-			cardBg:             "",
-			cardFg:             "#E9EDF5",
-			cardMuted:          "#BAC2D0",
-			cardDisabledBorder: "#8F6A72",
-			cardDisabledBg:     "",
-			cardDisabledFg:     "#D7C1C5",
-			cardDisabledMuted:  "#B79FA4",
-			cardSelectedBorder: "#8EC5FF",
-			cardSelectedBg:     "#355C8A",
-			cardSelectedFg:     "#F8FBFF",
-			cardSelectedMuted:  "#DDEAFF",
-			snapHighlight:      "#F5C86A",
-		}
-	}
+	fgColor := termenv.ForegroundColor()
+	bgColor := termenv.BackgroundColor()
+	defaultFG := terminalColorString(fgColor, "7")
+	defaultBG := terminalColorString(bgColor, "0")
+	supportText := blendedTerminalColor(fgColor, bgColor, 0.42, "7")
+	chrome := blendedTerminalColor(fgColor, bgColor, 0.68, "8")
+	softFill := blendedTerminalColor(fgColor, bgColor, 0.82, "8")
+	canvasAxis := blendedTerminalColor(fgColor, bgColor, 0.55, "7")
 
 	return palette{
-		text:               "#1F2937",
-		titleFg:            "#6C4320",
-		titleBg:            "#EAD5C2",
-		subtitle:           "#667085",
-		header:             "#111827",
-		subtle:             "#667085",
-		label:              "#6B7280",
-		value:              "#111827",
-		field:              "#1F2937",
-		fieldSelectedFg:    "#F8FBFF",
-		fieldSelectedBg:    "#2F6FBC",
-		groupTitle:         "#9A5B13",
-		paneBorder:         "#B8C3D4",
-		paneActiveBorder:   "#2F6FBC",
-		tabBorder:          "#C8D1DE",
-		tabActiveBorder:    "#2F6FBC",
-		tabInactiveFg:      "#4B5563",
-		tabActiveFg:        "#173A5E",
-		tabActiveBg:        "#E4EEF9",
-		statusOK:           "#2F7A2F",
-		statusError:        "#BE3A34",
-		help:               "#64748B",
-		footerWarm:         "#A16207",
-		footerAccent:       "#7C3AED",
-		footerVersion:      "#667085",
-		warning:            "#A16207",
-		badgeAccentFg:      "#111827",
-		badgeAccentBg:      "#E0B15C",
-		badgeOnFg:          "#FFFFFF",
-		badgeOnBg:          "#4E8F3A",
-		badgeOffFg:         "#334155",
-		badgeOffBg:         "#D5DCE7",
-		badgeMutedFg:       "#334155",
-		badgeMutedBg:       "#CBD5E1",
-		modalBorder:        "#4A7CC2",
-		modalBg:            "#F8FAFC",
-		modalTitle:         "#6C4320",
-		selectedDesc:       "#2B5E98",
+		text:               "",
+		titleFg:            "",
+		titleBg:            softFill,
+		subtitle:           supportText,
+		header:             "",
+		subtle:             supportText,
+		label:              supportText,
+		value:              "",
+		field:              "",
+		fieldSelectedFg:    defaultBG,
+		fieldSelectedBg:    defaultFG,
+		groupTitle:         "3",
+		paneBorder:         chrome,
+		paneActiveBorder:   "2",
+		tabBorder:          chrome,
+		tabActiveBorder:    "2",
+		tabInactiveFg:      supportText,
+		tabActiveFg:        defaultBG,
+		tabActiveBg:        defaultFG,
+		statusOK:           "2",
+		statusError:        "1",
+		help:               supportText,
+		footerWarm:         "3",
+		footerAccent:       "6",
+		footerVersion:      supportText,
+		warning:            "3",
+		badgeAccentFg:      "0",
+		badgeAccentBg:      "3",
+		badgeOnFg:          "15",
+		badgeOnBg:          "2",
+		badgeOffFg:         "",
+		badgeOffBg:         softFill,
+		badgeMutedFg:       "",
+		badgeMutedBg:       softFill,
+		modalBorder:        "2",
+		modalBg:            softFill,
+		modalTitle:         "",
+		selectedDesc:       defaultBG,
 		panelBg:            "",
 		canvasBg:           "",
-		canvasGrid:         "#D6DDE7",
-		canvasAxis:         "#C2CBD8",
-		cardBorder:         "#8A99AF",
+		canvasGrid:         chrome,
+		canvasAxis:         canvasAxis,
+		cardBorder:         chrome,
 		cardBg:             "",
-		cardFg:             "#1F2937",
-		cardMuted:          "#617187",
-		cardDisabledBorder: "#B88A8A",
+		cardFg:             "",
+		cardMuted:          supportText,
+		cardDisabledBorder: "1",
 		cardDisabledBg:     "",
-		cardDisabledFg:     "#7C5A5A",
-		cardDisabledMuted:  "#927878",
-		cardSelectedBorder: "#2F6FBC",
-		cardSelectedBg:     "#DCEAF9",
-		cardSelectedFg:     "#123B65",
-		cardSelectedMuted:  "#345A84",
-		snapHighlight:      "#B7791F",
+		cardDisabledFg:     supportText,
+		cardDisabledMuted:  supportText,
+		cardSelectedBorder: "2",
+		cardSelectedBg:     defaultFG,
+		cardSelectedFg:     defaultBG,
+		cardSelectedMuted:  defaultBG,
+		snapHighlight:      "3",
 	}
+}
+
+func terminalColorString(color termenv.Color, fallback string) string {
+	if color == nil {
+		return fallback
+	}
+	if value := fmt.Sprint(color); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func blendedTerminalColor(fgColor, bgColor termenv.Color, bgWeight float64, fallback string) string {
+	if fmt.Sprint(fgColor) == "" || fmt.Sprint(bgColor) == "" {
+		return fallback
+	}
+	return termenv.ConvertToRGB(fgColor).BlendLab(termenv.ConvertToRGB(bgColor), bgWeight).Clamped().Hex()
 }
 
 func withFG(style lipgloss.Style, value string) lipgloss.Style {

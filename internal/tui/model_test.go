@@ -81,7 +81,7 @@ func TestRenderMainShowsFooterProjectLinks(t *testing.T) {
 	}
 
 	view := m.renderMain()
-	for _, want := range []string{"Issues", "Donate", "v1.2.3", sponsorURL, communityURL} {
+	for _, want := range []string{"Ask", "Donate", "v1.2.3", sponsorURL, communityURL} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected footer to include %q, got:\n%s", want, view)
 		}
@@ -95,7 +95,7 @@ func TestRenderFooterInfoIncludesVersion(t *testing.T) {
 
 	m := Model{styles: newStyles(), width: 120}
 	info := m.renderFooterInfo(118)
-	for _, want := range []string{"Issues", "Donate", "v1.2.3"} {
+	for _, want := range []string{"Ask", "Donate", "v1.2.3"} {
 		if !strings.Contains(info, want) {
 			t.Fatalf("expected footer info to include %q, got %q", want, info)
 		}
@@ -141,10 +141,10 @@ func TestFooterLinkAtReturnsClickableRegionsOnly(t *testing.T) {
 		t.Fatalf("expected 2 clickable footer links, got %+v", layout.links)
 	}
 
-	issuesX := m.footerColumnX() + layout.links[0].start
-	link, ok := m.footerLinkAt(issuesX, m.footerRowY())
-	if !ok || link.label != "Issues" || link.url != communityURL {
-		t.Fatalf("expected Issues hit, got ok=%v link=%+v", ok, link)
+	askX := m.footerColumnX() + layout.links[0].start
+	link, ok := m.footerLinkAt(askX, m.footerRowY())
+	if !ok || link.label != "Ask" || link.url != communityURL {
+		t.Fatalf("expected Ask hit, got ok=%v link=%+v", ok, link)
 	}
 
 	versionX := m.footerColumnX() + strings.LastIndex(layout.text, "v1.2.3")
@@ -200,12 +200,12 @@ func TestFooterClickRunsBrowserOpenCommand(t *testing.T) {
 func TestOpenURLMsgSetsErrorStatus(t *testing.T) {
 	m := Model{styles: newStyles()}
 
-	updated, _ := m.Update(openURLMsg{label: "Issues", url: communityURL, err: errors.New("boom")})
+	updated, _ := m.Update(openURLMsg{label: "Ask", url: communityURL, err: errors.New("boom")})
 	got := updated.(Model)
 	if !got.statusErr {
 		t.Fatal("expected failed open-url status to be marked as error")
 	}
-	if !strings.Contains(got.status, "Failed to open Issues link") {
+	if !strings.Contains(got.status, "Failed to open Ask link") {
 		t.Fatalf("expected open-url failure in status, got %q", got.status)
 	}
 }
