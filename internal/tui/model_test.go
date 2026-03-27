@@ -527,6 +527,54 @@ func TestRenderMainFitsShortTerminalHeight(t *testing.T) {
 	}
 }
 
+func TestRenderInspectorPaneCompactsFieldsOnShortHeight(t *testing.T) {
+	m := Model{
+		styles:         newStyles(),
+		tab:            tabLayout,
+		layoutFocus:    layoutFocusInspector,
+		inspectorField: 2,
+		editOutputs: []editableOutput{{
+			Key:             "microstep|mpg321ur-qd",
+			Name:            "DP-1",
+			Description:     "Microstep MPG321UR-QD",
+			Enabled:         true,
+			Modes:           []string{"3840x2160@143.99Hz"},
+			ModeIndex:       0,
+			Width:           3840,
+			Height:          2160,
+			Refresh:         143.99,
+			X:               0,
+			Y:               120,
+			Scale:           1.33,
+			VRR:             1,
+			Transform:       0,
+			ActiveWorkspace: "1",
+		}},
+	}
+
+	view := m.renderInspectorPane(48, 8)
+	for _, want := range []string{"Mode", "3840x2160@143.99Hz", "Scale", "VRR", "X", "Y"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected compact inspector to include %q, got:\n%s", want, view)
+		}
+	}
+}
+
+func TestCompactLayoutHeightsReserveSpaceForInspector(t *testing.T) {
+	m := Model{}
+
+	canvas, inspector := m.compactLayoutHeights(18)
+	if inspector < 10 {
+		t.Fatalf("expected compact layout to reserve at least 10 rows for the inspector, got canvas=%d inspector=%d", canvas, inspector)
+	}
+	if canvas < 4 {
+		t.Fatalf("expected compact layout to preserve a usable canvas, got canvas=%d inspector=%d", canvas, inspector)
+	}
+	if canvas+inspector != 18 {
+		t.Fatalf("expected compact layout heights to add up to 18, got canvas=%d inspector=%d", canvas, inspector)
+	}
+}
+
 func TestRenderMainFitsTallMediumWidth(t *testing.T) {
 	m := Model{
 		styles:      newStyles(),

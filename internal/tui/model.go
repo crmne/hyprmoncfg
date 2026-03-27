@@ -677,8 +677,8 @@ func (m Model) renderCanvasPane(width int, height int) string {
 	innerWidth := max(1, width-panel.GetHorizontalFrameSize())
 	innerHeight := max(1, height-panel.GetVerticalFrameSize())
 
-	showHint := innerHeight >= 9
-	showLegend := innerHeight >= 6
+	showHint := innerHeight >= 8 && innerWidth >= 44
+	showLegend := innerHeight >= 6 && innerWidth >= 34
 
 	nonCanvasLines := 1
 	if showHint {
@@ -701,9 +701,13 @@ func (m Model) renderCanvasPane(width int, height int) string {
 	canvasHeight := clampInt(innerHeight-nonCanvasLines, 1, 26)
 	lines := []string{m.styles.header.Render("Monitor Layout")}
 	if showHint {
-		lines = append(lines, m.styles.subtle.Render("Drag cards to reposition monitors. Change Mode to change their size."), "")
+		hint := "Drag to reposition monitors. Change Mode to resize them."
+		if innerWidth >= 64 {
+			hint = "Drag cards to reposition monitors. Change Mode to change their size."
+		}
+		lines = append(lines, m.styles.subtle.Render(hint), "")
 	}
-	lines = append(lines, m.renderCanvas(innerWidth-2, canvasHeight))
+	lines = append(lines, m.renderCanvas(max(1, innerWidth-2), canvasHeight))
 
 	legend := lipgloss.JoinHorizontal(
 		lipgloss.Left,
@@ -783,53 +787,44 @@ func (m Model) renderInspectorPane(width int, height int) string {
 	innerWidth := max(1, width-panel.GetHorizontalFrameSize())
 	innerHeight := max(1, height-panel.GetVerticalFrameSize())
 
-	lines := []string{m.styles.header.Render("Selected Monitor"), m.styles.subtle.Render("Enter opens the active editor. Mouse click selects fields."), ""}
+	lines := []string{m.styles.header.Render("Selected Monitor")}
 	if len(m.editOutputs) == 0 {
 		lines = append(lines, "(none)")
 		return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 	}
 
 	output := m.editOutputs[m.selectedOutput]
+	badgeLine := lipgloss.JoinHorizontal(lipgloss.Left, m.styles.badgeAccent.Render(output.Name), " ", m.monitorStateBadge(output))
 	if innerHeight <= 4 {
-		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Left, m.styles.badgeAccent.Render(output.Name), " ", m.monitorStateBadge(output)))
+		lines = append(lines, badgeLine)
 		if innerHeight >= 3 {
-			lines = append(lines, m.styles.subtle.Render(fitString(output.displayModelLabel(), innerWidth)))
+			lines = append(lines, m.inspectorCompactFieldLine("Mode", 1, output))
 		}
 		return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 	}
 
-	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Left, m.styles.badgeAccent.Render(output.Name), " ", m.monitorStateBadge(output)))
-	if desc := strings.TrimSpace(output.Description); desc != "" {
-		lines = append(lines, m.styles.subtle.Render(desc))
-	}
-	lines = append(lines, "")
-
-	for idx, field := range layoutFields {
-		value := m.styles.value.Render(m.layoutFieldValue(output, idx))
-		label := m.styles.label.Render(fmt.Sprintf("%-12s", field))
-		prefix := "  "
-		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
-			prefix = "> "
-			value = m.styles.focused.Render(value)
+	compact := innerWidth < 54 || innerHeight < 14
+	lines = append(lines, badgeLine)
+	if !compact {
+		lines = append(lines, m.styles.subtle.Render("Enter opens the active editor. Mouse click selects fields."))
+		if desc := strings.TrimSpace(output.Description); desc != "" {
+			lines = append(lines, m.styles.subtle.Render(desc))
 		}
-		lines = append(lines, fmt.Sprintf("%s%s %s", prefix, label, value))
 	}
 
-	lines = append(lines, "")
-	lines = append(lines, m.styles.header.Render("Monitor Details"))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Workspace "), m.styles.value.Render(blankFallback(output.ActiveWorkspace, "(none)"))))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Connector "), m.styles.value.Render(output.Name)))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Layout px "), m.styles.value.Render(output.layoutSizeLabel())))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Model     "), m.styles.value.Render(output.displayModelLabel())))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Serial    "), m.styles.value.Render(blankFallback(strings.TrimSpace(output.Serial), "(none)"))))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Mirror    "), m.styles.value.Render(blankFallback(blankMirror(output.MirrorOf), "none"))))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("DPMS      "), m.styles.value.Render(boolText(output.DPMSStatus))))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Focused   "), m.styles.value.Render(boolText(output.Focused))))
-	if output.PhysicalWidth > 0 && output.PhysicalHeight > 0 {
-		lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Panel mm  "), m.styles.value.Render(fmt.Sprintf("%d x %d mm", output.PhysicalWidth, output.PhysicalHeight))))
+	fieldLines := m.inspectorFieldLines(output, innerWidth, compact)
+	lines = append(lines, fieldLines...)
+
+	detailLines := m.inspectorDetailLines(output)
+	if !compact {
+		lines = append(lines, "", m.styles.header.Render("Monitor Details"))
+		lines = append(lines, detailLines...)
+	} else {
+		extra := innerHeight - len(lines)
+		if extra > 0 {
+			lines = append(lines, detailLines[:min(len(detailLines), extra)]...)
+		}
 	}
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Draft     "), m.unsavedBadge()))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Hardware  "), m.styles.subtle.Render(output.Key)))
 
 	return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 }
@@ -1022,26 +1017,137 @@ func (m Model) useCompactLayout(bodyHeight int) bool {
 }
 
 func (m Model) compactLayoutHeights(total int) (int, int) {
-	if total <= 7 {
-		top := max(3, total/2)
-		return top, max(3, total-top)
+	if total <= 6 {
+		canvas := max(2, (total+1)/2)
+		return canvas, max(1, total-canvas)
 	}
 
-	inspector := clampInt(total/3, 4, 6)
+	inspector := clampInt((total*7)/12, 4, 12)
 	canvas := total - inspector
-	if canvas < 5 {
-		canvas = 5
+	if canvas < 4 {
+		canvas = 4
 		inspector = total - canvas
 	}
 	if inspector < 4 {
 		inspector = 4
 		canvas = total - inspector
 	}
-	if canvas < 4 {
-		canvas = max(3, total/2)
+	if canvas < 3 {
+		canvas = max(2, total/2)
 		inspector = total - canvas
 	}
-	return canvas, max(3, inspector)
+	return max(2, canvas), max(1, inspector)
+}
+
+func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compact bool) []string {
+	if compact {
+		return m.compactInspectorFieldLines(output, innerWidth)
+	}
+
+	labelWidth := 12
+	shortLabels := innerWidth < 34
+	if shortLabels {
+		labelWidth = 8
+	}
+
+	lines := make([]string, 0, len(layoutFields))
+	for idx := range layoutFields {
+		labelText := layoutFields[idx]
+		if shortLabels {
+			labelText = layoutFieldShortLabel(idx)
+		}
+
+		value := m.styles.value.Render(m.layoutFieldValue(output, idx))
+		prefix := "  "
+		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
+			prefix = "> "
+			value = m.styles.focused.Render(value)
+		}
+		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
+		lines = append(lines, fmt.Sprintf("%s%s %s", prefix, label, value))
+	}
+
+	return lines
+}
+
+func (m Model) compactInspectorFieldLines(output editableOutput, innerWidth int) []string {
+	switch {
+	case innerWidth >= 48:
+		return []string{
+			m.inspectorCompactFieldLine("Mode", 1, output),
+			joinInspectorTokens(
+				m.inspectorCompactFieldToken("On", 0, output),
+				m.inspectorCompactFieldToken("Scale", 2, output),
+				m.inspectorCompactFieldToken("VRR", 3, output),
+			),
+			joinInspectorTokens(
+				m.inspectorCompactFieldToken("Rot", 4, output),
+				m.inspectorCompactFieldToken("X", 5, output),
+				m.inspectorCompactFieldToken("Y", 6, output),
+			),
+		}
+	case innerWidth >= 36:
+		return []string{
+			m.inspectorCompactFieldLine("Mode", 1, output),
+			joinInspectorTokens(
+				m.inspectorCompactFieldToken("On", 0, output),
+				m.inspectorCompactFieldToken("Scale", 2, output),
+			),
+			joinInspectorTokens(
+				m.inspectorCompactFieldToken("VRR", 3, output),
+				m.inspectorCompactFieldToken("Rot", 4, output),
+			),
+			joinInspectorTokens(
+				m.inspectorCompactFieldToken("X", 5, output),
+				m.inspectorCompactFieldToken("Y", 6, output),
+			),
+		}
+	default:
+		return []string{
+			m.inspectorCompactFieldLine("Mode", 1, output),
+			m.inspectorCompactFieldLine("On", 0, output),
+			m.inspectorCompactFieldLine("Scale", 2, output),
+			joinInspectorTokens(
+				m.inspectorCompactFieldToken("VRR", 3, output),
+				m.inspectorCompactFieldToken("Rot", 4, output),
+			),
+			joinInspectorTokens(
+				m.inspectorCompactFieldToken("X", 5, output),
+				m.inspectorCompactFieldToken("Y", 6, output),
+			),
+		}
+	}
+}
+
+func (m Model) inspectorCompactFieldLine(label string, field int, output editableOutput) string {
+	return joinInspectorTokens(m.inspectorCompactFieldToken(label, field, output))
+}
+
+func (m Model) inspectorCompactFieldToken(label string, field int, output editableOutput) string {
+	value := m.styles.value.Render(m.layoutFieldValue(output, field))
+	if m.layoutFocus == layoutFocusInspector && field == m.inspectorField && m.tab == tabLayout {
+		value = m.styles.focused.Render(value)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Left, m.styles.label.Render(label), " ", value)
+}
+
+func (m Model) inspectorDetailLines(output editableOutput) []string {
+	lines := []string{
+		fmt.Sprintf("%s %s", m.styles.label.Render("Workspace "), m.styles.value.Render(blankFallback(output.ActiveWorkspace, "(none)"))),
+		fmt.Sprintf("%s %s", m.styles.label.Render("Connector "), m.styles.value.Render(output.Name)),
+		fmt.Sprintf("%s %s", m.styles.label.Render("Layout px "), m.styles.value.Render(output.layoutSizeLabel())),
+		fmt.Sprintf("%s %s", m.styles.label.Render("Model     "), m.styles.value.Render(output.displayModelLabel())),
+		fmt.Sprintf("%s %s", m.styles.label.Render("Serial    "), m.styles.value.Render(blankFallback(strings.TrimSpace(output.Serial), "(none)"))),
+		fmt.Sprintf("%s %s", m.styles.label.Render("Mirror    "), m.styles.value.Render(blankFallback(blankMirror(output.MirrorOf), "none"))),
+		fmt.Sprintf("%s %s", m.styles.label.Render("DPMS      "), m.styles.value.Render(boolText(output.DPMSStatus))),
+		fmt.Sprintf("%s %s", m.styles.label.Render("Focused   "), m.styles.value.Render(boolText(output.Focused))),
+	}
+	if output.PhysicalWidth > 0 && output.PhysicalHeight > 0 {
+		lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Panel mm  "), m.styles.value.Render(fmt.Sprintf("%d x %d mm", output.PhysicalWidth, output.PhysicalHeight))))
+	}
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Draft     "), m.unsavedBadge()))
+	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Hardware  "), m.styles.subtle.Render(output.Key)))
+	return lines
 }
 
 func fitBlock(text string, width int, height int) string {
@@ -2030,6 +2136,17 @@ func fitString(value string, width int) string {
 	return string(runes[:width-3]) + "..."
 }
 
+func joinInspectorTokens(tokens ...string) string {
+	parts := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+		parts = append(parts, token)
+	}
+	return strings.Join(parts, "  ")
+}
+
 func blankFallback(value string, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback
@@ -2223,6 +2340,21 @@ var layoutFields = []string{
 	"Transform",
 	"Position X",
 	"Position Y",
+}
+
+func layoutFieldShortLabel(field int) string {
+	switch field {
+	case 0:
+		return "On"
+	case 4:
+		return "Rot"
+	case 5:
+		return "X"
+	case 6:
+		return "Y"
+	default:
+		return layoutFields[field]
+	}
 }
 
 var workspaceFields = []string{
