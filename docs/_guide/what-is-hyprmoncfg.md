@@ -6,9 +6,9 @@ nav_order: 0
 
 ## The problem with Hyprland monitor configuration
 
-Configuring monitors in Hyprland means writing `monitor=` lines by hand. You guess at coordinates, reload, realize they're wrong, edit again. There's no visual feedback until after you've committed to a config.
+Configuring monitors in Hyprland means writing `monitor=` lines by hand. A 4K display at 1.33x scale is effectively 2880x1620 pixels, so the monitor next to it needs to start at x=2880. Vertically centering a 1080p panel against it means doing division in your head to get the y-offset right. You reload, you're off by 40 pixels, you edit, you reload again. There's no visual feedback until after you've committed to a config.
 
-Then it gets worse. You unplug your laptop, go to a conference, plug into a projector -- and you're back to editing config files backstage before your talk. You come home, dock the laptop, and the layout is wrong again because `DP-1` and `DP-2` swapped since last boot.
+Then it gets worse. You unplug your laptop, go to a conference, plug into a projector, and you're back to editing config files backstage before your talk. You come home, dock the laptop, and the layout is wrong again.
 
 Existing tools try to help but bring their own baggage: Python runtimes, GTK dependencies, fragile hotplug behavior. Some only do visual arrangement with no profiles. Others do profiles but have no editor. None of them verify that Hyprland is actually reading the file they're writing.
 
