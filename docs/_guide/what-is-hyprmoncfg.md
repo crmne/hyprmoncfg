@@ -22,7 +22,7 @@ Existing tools try to help but bring their own baggage: Python runtimes, GTK dep
 
 **It verifies the source chain.** Before writing anything, hyprmoncfg checks that `hyprland.conf` actually sources the target `monitors.conf`. Other tools skip this and silently update files that Hyprland never reads.
 
-**Zero runtime dependencies.** Two compiled Go binaries. No Python, no GTK, no GObject introspection, no D-Bus. Install them and you're done. They even work over SSH.
+**One runtime dependency: Hyprland.** Two compiled Go binaries. No Python, no GTK, no GObject introspection, no D-Bus. Install them and you're done. They even work over SSH.
 
 ## How it compares
 
@@ -38,7 +38,7 @@ Existing tools try to help but bring their own baggage: Python runtimes, GTK dep
 | Safe apply with revert | Yes | Yes | No | Partial (manual rollback) | No | No |
 | Source-chain verification | Yes | No | No | No | No | No |
 | Works over SSH | Yes | No | No | No | No | N/A |
-| Runtime dependencies | None | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
+| Additional runtime dependencies | None | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
 
 ## Screenshots
 

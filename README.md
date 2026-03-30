@@ -8,7 +8,7 @@ hyprmoncfg fixes this.
 
 Open a terminal. See your monitors laid out spatially. Drag them where you want. Save the layout as a profile. Next time you plug in the same monitors, the daemon applies it automatically.
 
-Two binaries. Zero runtime dependencies. Runs over SSH. No Python, no GTK, no D-Bus.
+Two binaries. One runtime dependency: Hyprland. Runs over SSH. No Python, no GTK, no D-Bus.
 
 ![hyprmoncfg layout editor](docs/assets/images/screenshots/layout.png)
 
@@ -44,8 +44,7 @@ Both use the same apply engine: write `monitors.conf` atomically, reload Hyprlan
 - **Workspace planner** -- sequential, interleave, or manual workspace placement across monitors
 - **Safe apply with revert** -- a 10-second confirmation window so you never get locked out
 - **Source-chain verification** -- refuses to write a `monitors.conf` that Hyprland isn't even reading
-- **Zero runtime dependencies** -- compiled Go, statically linked, nothing to install
-
+- **One runtime dependency: Hyprland** -- compiled Go, statically linked, nothing else to install
 ## Screenshots
 
 | Layout editor | Save dialog |
@@ -132,7 +131,7 @@ You don't commit `monitors.conf`. You commit your profiles. The tool writes `mon
 | Safe apply with revert | Yes | Yes | No | Partial (manual rollback) | No | No |
 | Source-chain verification | Yes | No | No | No | No | No |
 | Works over SSH | Yes | No | No | No | No | N/A |
-| Runtime dependencies | None | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
+| Additional runtime dependencies | None | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
 
 ## Docs
 
