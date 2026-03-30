@@ -155,6 +155,9 @@ func MonitorOrder(monitors []Monitor) []string {
 
 	keys := make([]string, 0, len(sorted))
 	for _, monitor := range sorted {
+		if monitor.MirrorOf != "" {
+			continue
+		}
 		keys = append(keys, monitor.HardwareKey())
 	}
 	return keys

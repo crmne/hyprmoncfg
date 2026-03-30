@@ -168,7 +168,7 @@ func generatedWorkspaceRules(p Profile, monitors []hypr.Monitor, interleave bool
 func orderedOutputKeys(p Profile, monitors []hypr.Monitor) []string {
 	byKey := make(map[string]OutputConfig, len(p.Outputs))
 	for _, output := range p.Outputs {
-		if output.Enabled {
+		if output.Enabled && output.MirrorOf == "" {
 			byKey[output.Key] = output
 		}
 	}

@@ -1195,6 +1195,7 @@ func (m *Model) loadLiveState() {
 		}
 		m.editOutputs = append(m.editOutputs, output)
 	}
+	m.recoverMirroredIdentity()
 
 	settings := profile.WorkspaceSettingsFromHypr(m.monitors, m.workspaceRules)
 	m.workspaceEdit = workspaceEditorFromSettings(settings, m.editOutputs)
@@ -1227,6 +1228,31 @@ func (m *Model) loadProfile(p profile.Profile) {
 	m.dirty = true
 	m.draftSaved = true
 	m.setStatusOK(fmt.Sprintf("Loaded profile %q into editor", p.Name))
+}
+
+// recoverMirroredIdentity restores Make/Model/Serial/Key for monitors whose
+// identity was degraded by Hyprland while mirroring. It looks up the real
+// identity from saved profiles by matching connector names.
+func (m *Model) recoverMirroredIdentity() {
+	for i, output := range m.editOutputs {
+		if output.MirrorOf == "" || strings.TrimSpace(output.Make+" "+output.Model) != "" {
+			continue
+		}
+		for _, prof := range m.profiles {
+			for _, saved := range prof.Outputs {
+				if saved.Name == output.Name && strings.TrimSpace(saved.Make+" "+saved.Model) != "" {
+					m.editOutputs[i].Make = saved.Make
+					m.editOutputs[i].Model = saved.Model
+					m.editOutputs[i].Serial = saved.Serial
+					m.editOutputs[i].Key = saved.Key
+					break
+				}
+			}
+			if strings.TrimSpace(m.editOutputs[i].Make+" "+m.editOutputs[i].Model) != "" {
+				break
+			}
+		}
+	}
 }
 
 func (m *Model) syncSelections() {
@@ -1589,10 +1615,7 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 		}
 		for _, other := range m.editOutputs {
 			if other.Key == output.MirrorOf {
-				if other.Description != "" {
-					return other.Description
-				}
-				return other.Name
+				return other.displayModelLabel()
 			}
 		}
 		return output.MirrorOf
@@ -1640,7 +1663,13 @@ func (m Model) workspacePreviewLines(preview map[string][]string, order []string
 func (m Model) outputLabelForKey(key string) string {
 	for _, output := range m.editOutputs {
 		if output.Key == key {
-			return output.Name
+			label := output.Name
+			for _, other := range m.editOutputs {
+				if other.MirrorOf == key {
+					label += " + " + other.Name
+				}
+			}
+			return label
 		}
 	}
 	return key
@@ -1737,7 +1766,6 @@ func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, ha
 		output.PhysicalHeight = live.PhysicalHeight
 		output.Focused = live.Focused
 		output.DPMSStatus = live.DPMSStatus
-		output.MirrorOf = live.MirrorOf
 		output.ActiveWorkspace = live.ActiveWorkspace.Name
 		output.Modes = normalizeModes(live.AvailableModes, mode)
 	} else {
@@ -1754,24 +1782,33 @@ func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, ha
 }
 
 func workspaceEditorFromSettings(settings profile.WorkspaceSettings, outputs []editableOutput) workspaceEditor {
+	mirroredKeys := make(map[string]bool)
+	for _, output := range outputs {
+		if output.MirrorOf != "" {
+			mirroredKeys[output.Key] = true
+		}
+	}
+
 	order := append([]string(nil), settings.MonitorOrder...)
 	if len(order) == 0 {
 		for _, output := range outputs {
-			order = append(order, output.Key)
+			if output.MirrorOf == "" {
+				order = append(order, output.Key)
+			}
 		}
 	}
 
 	seen := make(map[string]bool, len(order))
 	normalized := make([]string, 0, len(outputs))
 	for _, key := range order {
-		if key == "" || seen[key] {
+		if key == "" || seen[key] || mirroredKeys[key] {
 			continue
 		}
 		normalized = append(normalized, key)
 		seen[key] = true
 	}
 	for _, output := range outputs {
-		if !seen[output.Key] {
+		if !seen[output.Key] && !mirroredKeys[output.Key] {
 			normalized = append(normalized, output.Key)
 			seen[output.Key] = true
 		}
@@ -1879,8 +1916,12 @@ func (o editableOutput) displayModelLabel() string {
 	if model := strings.TrimSpace(o.Model); model != "" {
 		return model
 	}
-	if desc := strings.TrimSpace(o.Description); desc != "" {
-		return desc
+	// Hyprland may report a placeholder description (e.g. "mirror-0") for
+	// monitors that are actively mirroring. Skip Description in that case.
+	if o.MirrorOf == "" {
+		if desc := strings.TrimSpace(o.Description); desc != "" {
+			return desc
+		}
 	}
 	return "(unknown)"
 }
