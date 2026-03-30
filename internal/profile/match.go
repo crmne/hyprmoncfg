@@ -20,7 +20,9 @@ func MatchScore(p Profile, monitors []hypr.Monitor) int {
 	}
 
 	profileEnabled := make(map[string]struct{})
+	profileKnown := make(map[string]struct{})
 	for _, o := range p.Outputs {
+		profileKnown[o.Key] = struct{}{}
 		if o.Enabled {
 			profileEnabled[o.Key] = struct{}{}
 		}
@@ -29,21 +31,36 @@ func MatchScore(p Profile, monitors []hypr.Monitor) int {
 		return 0
 	}
 
-	intersection := 0
+	enabledMatch := 0
 	for key := range connected {
 		if _, ok := profileEnabled[key]; ok {
-			intersection++
+			enabledMatch++
 		}
 	}
-	if intersection == 0 {
+	if enabledMatch == 0 {
 		return 0
 	}
 
-	missingFromCurrent := len(profileEnabled) - intersection
-	unknownCurrent := len(connected) - intersection
+	disabledMatch := 0
+	for key := range connected {
+		if _, inKnown := profileKnown[key]; inKnown {
+			if _, inEnabled := profileEnabled[key]; !inEnabled {
+				disabledMatch++
+			}
+		}
+	}
 
-	// High reward for overlap, moderate penalty for mismatch.
-	return intersection*100 - missingFromCurrent*30 - unknownCurrent*20
+	missingFromCurrent := len(profileEnabled) - enabledMatch
+	unknownCurrent := 0
+	for key := range connected {
+		if _, ok := profileKnown[key]; !ok {
+			unknownCurrent++
+		}
+	}
+
+	// High reward for enabled match, moderate reward for disabled match,
+	// moderate penalty for mismatch.
+	return enabledMatch*100 + disabledMatch*50 - missingFromCurrent*30 - unknownCurrent*20
 }
 
 func BestMatch(profiles []Profile, monitors []hypr.Monitor) (Profile, int, bool) {

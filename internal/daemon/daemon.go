@@ -20,11 +20,12 @@ type Config struct {
 }
 
 type Service struct {
-	client  *hypr.Client
-	store   *profile.Store
-	engine  apply.Engine
-	cfg     Config
-	applied string
+	client       *hypr.Client
+	store        *profile.Store
+	engine       apply.Engine
+	cfg          Config
+	applied      string
+	lastSeenHash string
 }
 
 func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
@@ -83,7 +84,6 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	pending := false
-	lastSeenHash := ""
 
 	for {
 		select {
@@ -101,8 +101,8 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			h := profile.MonitorStateHash(monitors)
-			if h != lastSeenHash {
-				lastSeenHash = h
+			if h != s.lastSeenHash {
+				s.lastSeenHash = h
 				pushTrigger("poll-change")
 			}
 		case reason := <-triggerCh:
@@ -176,6 +176,7 @@ func (s *Service) applyBest(ctx context.Context) error {
 	}
 
 	s.applied = target.Name + "|" + appliedHash
+	s.lastSeenHash = appliedHash
 	s.cfg.Logf("applied profile: %s", target.Name)
 	return nil
 }
