@@ -138,11 +138,12 @@ func TestFooterLinkAtReturnsClickableRegionsOnly(t *testing.T) {
 		t.Fatalf("expected at least 3 clickable footer links, got %+v", layout.links)
 	}
 
-	// Find the Ask link
+	// Find the Ask link — simulate a real click on the rendered footer,
+	// which is shifted right by the badge padding added during decoration.
 	var askFound bool
 	for _, link := range layout.links {
 		if link.label == "Ask" && link.url == communityURL {
-			lx := m.footerColumnX() + link.start
+			lx := m.footerColumnX() + m.badgeExtraWidth() + link.start
 			hit, ok := m.footerLinkAt(lx, m.footerRowY())
 			if !ok || hit.label != "Ask" {
 				t.Fatalf("expected Ask hit at x=%d, got ok=%v link=%+v", lx, ok, hit)

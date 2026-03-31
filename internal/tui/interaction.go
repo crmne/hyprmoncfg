@@ -110,7 +110,7 @@ type canvasGeometry struct {
 }
 
 func (m Model) renderTitleBar() string {
-	width := m.terminalWidth()
+	width := m.footerContentWidth()
 	titleText := m.styles.title.Underline(true).Render("hyprmoncfg")
 	title := osc8Link(homeURL, titleText)
 
@@ -122,6 +122,22 @@ func (m Model) renderTitleBar() string {
 	if width < 104 {
 		subtitleText = "Hyprland monitor planner"
 	}
+
+	// Only show daemon status when it needs attention
+	if !m.daemonOK {
+		daemonLabel := m.daemonStatusLabel()
+		daemonStyle := m.styles.statusError.Underline(true)
+		daemon := osc8Link(daemonURL, daemonStyle.Render(daemonLabel))
+		daemonWidth := lipgloss.Width(daemonLabel)
+
+		subtitleBudget := max(12, width-lipgloss.Width(title)-daemonWidth-6)
+		subtitle := m.styles.subtitle.Render(fitString(subtitleText, subtitleBudget))
+
+		left := lipgloss.JoinHorizontal(lipgloss.Left, title, " ", subtitle)
+		gap := max(1, width-lipgloss.Width(left)-daemonWidth)
+		return left + strings.Repeat(" ", gap) + daemon
+	}
+
 	subtitleBudget := max(12, width-lipgloss.Width(title)-4)
 	subtitle := m.styles.subtitle.Render(fitString(subtitleText, subtitleBudget))
 	return lipgloss.JoinHorizontal(lipgloss.Left, title, " ", subtitle)
@@ -612,6 +628,13 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		titleWidth := lipgloss.Width(m.styles.title.Render("hyprmoncfg"))
 		if msg.X >= 1 && msg.X < 1+titleWidth {
 			return m, m.openURLCmd("hyprmoncfg", homeURL)
+		}
+		// Daemon status link on the right side of title bar
+		daemonWidth := lipgloss.Width(m.daemonStatusLabel())
+		contentWidth := m.footerContentWidth()
+		daemonStart := 1 + contentWidth - daemonWidth
+		if msg.X >= daemonStart && msg.X < daemonStart+daemonWidth {
+			return m, m.openURLCmd(m.daemonStatusLabel(), daemonURL)
 		}
 	}
 

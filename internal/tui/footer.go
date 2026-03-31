@@ -104,7 +104,7 @@ func (m Model) unsavedLabel() string {
 }
 
 func (m Model) footerStatusLine() string {
-	parts := []string{m.unsavedLabel(), m.daemonStatusLabel()}
+	parts := []string{m.unsavedLabel()}
 	if m.status != "" {
 		parts = append(parts, m.status)
 	}
@@ -143,21 +143,7 @@ func (m Model) footerLayout() footerLayout {
 
 	layout := footerLayout{
 		text:  left + strings.Repeat(" ", gap) + right,
-		links: make([]footerLinkRegion, 0, len(items)+1),
-	}
-
-	// Daemon status link — find its position within the left side
-	daemonLabel := m.daemonStatusLabel()
-	if idx := strings.Index(left, daemonLabel); idx >= 0 {
-		// Account for ANSI escape codes: find the visual position
-		beforeDaemon := left[:idx]
-		daemonStart := lipgloss.Width(beforeDaemon)
-		layout.links = append(layout.links, footerLinkRegion{
-			label: daemonLabel,
-			url:   daemonURL,
-			start: daemonStart,
-			end:   daemonStart + lipgloss.Width(daemonLabel),
-		})
+		links: make([]footerLinkRegion, 0, len(items)),
 	}
 
 	cursor := leftWidth + gap + lipgloss.Width(help)
@@ -200,7 +186,9 @@ func (m Model) footerLinkAt(x, y int) (footerLinkRegion, bool) {
 		return footerLinkRegion{}, false
 	}
 
-	localX := x - m.footerColumnX()
+	// The badge decoration adds padding that shifts all content right;
+	// adjust the click coordinate to match the plain-text link positions.
+	localX := x - m.footerColumnX() - m.badgeExtraWidth()
 	if localX < 0 || localX >= m.footerContentWidth() {
 		return footerLinkRegion{}, false
 	}
@@ -306,14 +294,6 @@ func (m Model) decorateFooterBar(footer string) string {
 	// Links
 	styled = strings.ReplaceAll(styled, "Donate", osc8Link(sponsorURL, m.styles.footerLinkAccent.Render("Donate")))
 	styled = strings.ReplaceAll(styled, "Ask", osc8Link(communityURL, m.styles.footerLinkWarm.Render("Ask")))
-
-	// Daemon status — replace last to avoid URL conflicts
-	daemonLabel := m.daemonStatusLabel()
-	daemonStyle := m.styles.statusOK.Underline(true)
-	if !m.daemonOK {
-		daemonStyle = m.styles.statusError.Underline(true)
-	}
-	styled = strings.Replace(styled, daemonLabel, osc8Link(daemonURL, daemonStyle.Render(daemonLabel)), 1)
 
 	return styled
 }
