@@ -31,8 +31,8 @@ Profiles are matched by hardware identity (make, model, serial) — not connecto
 |---|---|
 | Monitor enabled in profile and connected | +100 |
 | Monitor disabled in profile but connected | +50 |
+| Connected monitor not in the profile | −20 |
 | Monitor enabled in profile but not connected | −30 |
-| Connected monitor not in the profile at all | −20 |
 
 Highest score wins. Ties break alphabetically. The daemon skips re-applying the same profile twice.
 
