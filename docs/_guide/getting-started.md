@@ -64,7 +64,7 @@ Launch the TUI:
 hyprmoncfg
 ```
 
-![Layout editor]({{ '/assets/images/screenshots/layout.png' | relative_url }})
+![Layout editor]({{ '/assets/images/screenshots/layout-dark.png' | relative_url }})
 {: .screenshot }
 
 You'll see your connected monitors laid out spatially. Drag them to arrange, use the inspector on the right to tweak mode, scale, and position. When the layout looks right:

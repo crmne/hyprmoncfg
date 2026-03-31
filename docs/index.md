@@ -18,10 +18,10 @@ hero:
       text: GitHub
       link: https://github.com/crmne/hyprmoncfg
   image:
-    src: /assets/images/screenshots/layout.png
-    alt: hyprmoncfg layout editor
-    width: 2700
-    height: 1620
+    src: /assets/images/demo.gif
+    alt: hyprmoncfg demo
+    width: 1400
+    height: 800
 features:
   - icon: 🖥️
     title: Spatial Layout Editor

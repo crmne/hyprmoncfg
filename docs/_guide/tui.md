@@ -13,7 +13,7 @@ The layout tab is where you spend most of your time. It's split into two panes:
 
 Drag monitors on the canvas to reposition them. The inspector updates in real time. When you need pixel-perfect placement, use the `Position X` and `Position Y` fields in the inspector.
 
-![Layout editor]({{ '/assets/images/screenshots/layout.png' | relative_url }})
+![Layout editor]({{ '/assets/images/screenshots/layout-dark.png' | relative_url }})
 {: .screenshot }
 
 ### Main controls
@@ -56,7 +56,7 @@ Press `s` from the layout tab. You'll see a text input and the list of existing 
 - Arrow keys to select one (overwrites after confirmation)
 - Type a new name and press `Enter` to create a fresh profile
 
-![Save profile dialog]({{ '/assets/images/screenshots/save-profile.png' | relative_url }})
+![Save profile dialog]({{ '/assets/images/screenshots/save-profile-dark.png' | relative_url }})
 {: .screenshot }
 
 ## Workspace planner

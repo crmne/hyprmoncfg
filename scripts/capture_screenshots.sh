@@ -4,7 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_dir="${1:-$repo_root/docs/assets/images/screenshots}"
-app_bin="${APP_BIN:-$HOME/.local/bin/hyprmoncfg}"
+app_bin="${APP_BIN:-go run $repo_root/cmd/hyprmoncfg}"
 terminal_bin="${TERMINAL_BIN:-alacritty}"
 window_class="${WINDOW_CLASS:-hyprmoncfg-docshot}"
 window_width="${WINDOW_WIDTH:-1800}"
@@ -13,40 +13,17 @@ window_x="${WINDOW_X:-320}"
 window_y="${WINDOW_Y:-80}"
 terminal_columns="${TERMINAL_COLUMNS:-160}"
 terminal_lines="${TERMINAL_LINES:-38}"
-capture_margin_left="${CAPTURE_MARGIN_LEFT:-0}"
-capture_margin_right="${CAPTURE_MARGIN_RIGHT:-0}"
-capture_margin_top="${CAPTURE_MARGIN_TOP:-0}"
-capture_margin_bottom="${CAPTURE_MARGIN_BOTTOM:-0}"
-terminal_override_colors="${TERMINAL_OVERRIDE_COLORS:-1}"
-terminal_bg="${TERMINAL_BG:-0x111318}"
-terminal_fg="${TERMINAL_FG:-0xE7E9EE}"
+light_theme="${LIGHT_THEME:-ruby-llm}"
+dark_theme="${DARK_THEME:-ruby-llm-dark}"
 
 mkdir -p "$output_dir"
 
-if ! command -v "$terminal_bin" >/dev/null 2>&1; then
-  echo "missing terminal emulator: $terminal_bin" >&2
-  exit 1
-fi
-if ! command -v hyprctl >/dev/null 2>&1; then
-  echo "missing hyprctl" >&2
-  exit 1
-fi
-if ! command -v grim >/dev/null 2>&1; then
-  echo "missing grim" >&2
-  exit 1
-fi
-if ! command -v jq >/dev/null 2>&1; then
-  echo "missing jq" >&2
-  exit 1
-fi
-if ! command -v wtype >/dev/null 2>&1; then
-  echo "missing wtype" >&2
-  exit 1
-fi
-if [[ ! -x "$app_bin" ]]; then
-  echo "missing executable: $app_bin" >&2
-  exit 1
-fi
+for cmd in "$terminal_bin" hyprctl grim jq wtype; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "missing: $cmd" >&2
+    exit 1
+  fi
+done
 
 client_by_title() {
   local title="$1"
@@ -86,6 +63,14 @@ close_window() {
   wait "$pid" 2>/dev/null || true
 }
 
+# Get the inset needed to crop out rounded corners and borders.
+window_inset() {
+  local border rounding
+  border="$(hyprctl getoption general:border_size -j | jq '.int')"
+  rounding="$(hyprctl getoption decoration:rounding -j | jq '.int')"
+  echo $(( border + rounding ))
+}
+
 capture_state() {
   local name="$1"
   local key_action="${2:-}"
@@ -101,16 +86,10 @@ capture_state() {
     -o "window.padding.x=12"
     -o "window.padding.y=10"
   )
-  if [[ "$terminal_override_colors" != "0" ]]; then
-    terminal_args+=(
-      -o "colors.primary.background='$terminal_bg'"
-      -o "colors.primary.foreground='$terminal_fg'"
-    )
-  fi
 
   env -u NO_COLOR COLORTERM=truecolor TERM=xterm-256color "$terminal_bin" \
     "${terminal_args[@]}" \
-    -e bash -lc "cd '$repo_root' && '$app_bin'" >/dev/null 2>&1 &
+    -e bash -lc "cd '$repo_root' && $app_bin" >/dev/null 2>&1 &
   local term_pid=$!
 
   local client
@@ -174,23 +153,46 @@ capture_state() {
   w="$(printf '%s' "$client" | jq -r '.size[0]')"
   h="$(printf '%s' "$client" | jq -r '.size[1]')"
 
+  # Inset to crop out rounded corners and window borders.
+  local inset
+  inset="$(window_inset)"
   local capture_x capture_y capture_w capture_h
-  capture_x=$((x - capture_margin_left))
-  capture_y=$((y - capture_margin_top))
-  if (( capture_x < 0 )); then
-    capture_x=0
-  fi
-  if (( capture_y < 0 )); then
-    capture_y=0
-  fi
-  capture_w=$((w + capture_margin_left + capture_margin_right))
-  capture_h=$((h + capture_margin_top + capture_margin_bottom))
+  capture_x=$((x + inset))
+  capture_y=$((y + inset))
+  capture_w=$((w - 2 * inset))
+  capture_h=$((h - 2 * inset))
 
   grim -g "$capture_x,$capture_y ${capture_w}x${capture_h}" "$screenshot"
   close_window "$term_pid" "$address"
 }
 
-capture_state "layout"
-capture_state "save-profile" "wtype -k s"
+capture_themed() {
+  local theme="$1"
+  local suffix="$2"
+
+  printf 'Switching to %s...\n' "$theme"
+  omarchy-theme-set "$theme"
+  sleep 2
+
+  capture_state "layout${suffix}"
+  capture_state "save-profile${suffix}" "wtype -k s"
+  capture_state "profiles${suffix}" "wtype -k Escape; sleep 0.3; wtype -k 2"
+  capture_state "workspaces${suffix}" "wtype -k Escape; sleep 0.3; wtype -k 3"
+}
+
+original_theme="$(cat "$HOME/.config/omarchy/current/theme.name" 2>/dev/null || echo "")"
+
+capture_themed "$light_theme" "-light"
+capture_themed "$dark_theme" "-dark"
+
+# Also save the light variants as the default (used in docs without suffix).
+cp "$output_dir/layout-light.png" "$output_dir/layout.png"
+cp "$output_dir/save-profile-light.png" "$output_dir/save-profile.png"
+
+# Restore original theme.
+if [[ -n "$original_theme" ]]; then
+  printf 'Restoring theme %s...\n' "$original_theme"
+  omarchy-theme-set "$original_theme"
+fi
 
 printf 'Captured screenshots in %s\n' "$output_dir"

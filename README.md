@@ -10,7 +10,7 @@ Open a terminal. See your monitors laid out spatially. Drag them where you want.
 
 Two binaries. One runtime dependency: Hyprland. Runs over SSH. No Python, no GTK, no D-Bus.
 
-![hyprmoncfg layout editor](docs/assets/images/screenshots/layout.png)
+![hyprmoncfg demo](docs/assets/images/demo.gif)
 
 ## The problem with Hyprland monitor configuration
 
@@ -47,9 +47,11 @@ Both use the same apply engine: write `monitors.conf` atomically, reload Hyprlan
 - **One runtime dependency: Hyprland** -- compiled Go, statically linked, nothing else to install
 ## Screenshots
 
+hyprmoncfg adapts to your theme. Here are some examples:
+
 | Layout editor | Save dialog |
 | --- | --- |
-| ![Layout editor](docs/assets/images/screenshots/layout.png) | ![Save profile dialog](docs/assets/images/screenshots/save-profile.png) |
+| ![Layout editor](docs/assets/images/screenshots/layout-dark.png) | ![Save profile dialog](docs/assets/images/screenshots/save-profile-dark.png) |
 
 ## Quick start
 

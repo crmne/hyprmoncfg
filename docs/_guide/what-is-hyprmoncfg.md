@@ -40,15 +40,52 @@ Existing tools try to help but bring their own baggage: Python runtimes, GTK dep
 | Works over SSH | Yes | No | No | No | No | N/A |
 | Additional runtime dependencies | None | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
 
+## Demo
+
+<video class="screenshot" src="{{ '/assets/images/demo.mp4' | relative_url }}" autoplay loop muted playsinline controls style="width:100%; max-width:1400px; border-radius:8px;">
+  Your browser does not support the video tag.
+</video>
+
 ## Screenshots
 
+### Dark theme
+
 <div class="screenshot-grid">
-  <a class="screenshot-card" href="{{ '/assets/images/screenshots/layout.png' | relative_url }}">
-    <img class="screenshot" src="{{ '/assets/images/screenshots/layout.png' | relative_url }}" alt="Layout editor screenshot">
-    <span>Spatial layout editor with drag-and-drop canvas and per-monitor inspector.</span>
+  <a class="screenshot-card" href="{{ '/assets/images/screenshots/layout-dark.png' | relative_url }}">
+    <img class="screenshot" src="{{ '/assets/images/screenshots/layout-dark.png' | relative_url }}" alt="Layout editor (dark)">
+    <span>Layout editor</span>
   </a>
-  <a class="screenshot-card" href="{{ '/assets/images/screenshots/save-profile.png' | relative_url }}">
-    <img class="screenshot" src="{{ '/assets/images/screenshots/save-profile.png' | relative_url }}" alt="Save profile dialog screenshot">
-    <span>Save dialog with name filtering and overwrite confirmation.</span>
+  <a class="screenshot-card" href="{{ '/assets/images/screenshots/save-profile-dark.png' | relative_url }}">
+    <img class="screenshot" src="{{ '/assets/images/screenshots/save-profile-dark.png' | relative_url }}" alt="Save profile dialog (dark)">
+    <span>Save profile dialog</span>
+  </a>
+  <a class="screenshot-card" href="{{ '/assets/images/screenshots/profiles-dark.png' | relative_url }}">
+    <img class="screenshot" src="{{ '/assets/images/screenshots/profiles-dark.png' | relative_url }}" alt="Profiles tab (dark)">
+    <span>Profiles tab</span>
+  </a>
+  <a class="screenshot-card" href="{{ '/assets/images/screenshots/workspaces-dark.png' | relative_url }}">
+    <img class="screenshot" src="{{ '/assets/images/screenshots/workspaces-dark.png' | relative_url }}" alt="Workspaces tab (dark)">
+    <span>Workspace planner</span>
+  </a>
+</div>
+
+### Light theme
+
+<div class="screenshot-grid">
+  <a class="screenshot-card" href="{{ '/assets/images/screenshots/layout-light.png' | relative_url }}">
+    <img class="screenshot" src="{{ '/assets/images/screenshots/layout-light.png' | relative_url }}" alt="Layout editor (light)">
+    <span>Layout editor</span>
+  </a>
+  <a class="screenshot-card" href="{{ '/assets/images/screenshots/save-profile-light.png' | relative_url }}">
+    <img class="screenshot" src="{{ '/assets/images/screenshots/save-profile-light.png' | relative_url }}" alt="Save profile dialog (light)">
+    <span>Save profile dialog</span>
+  </a>
+  <a class="screenshot-card" href="{{ '/assets/images/screenshots/profiles-light.png' | relative_url }}">
+    <img class="screenshot" src="{{ '/assets/images/screenshots/profiles-light.png' | relative_url }}" alt="Profiles tab (light)">
+    <span>Profiles tab</span>
+  </a>
+  <a class="screenshot-card" href="{{ '/assets/images/screenshots/workspaces-light.png' | relative_url }}">
+    <img class="screenshot" src="{{ '/assets/images/screenshots/workspaces-light.png' | relative_url }}" alt="Workspaces tab (light)">
+    <span>Workspace planner</span>
   </a>
 </div>
