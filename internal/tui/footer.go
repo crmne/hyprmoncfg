@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/crmne/hyprmoncfg/internal/buildinfo"
 )
@@ -110,8 +111,14 @@ func (m Model) footerStatusLine() string {
 	return strings.Join(parts, "  ")
 }
 
+func (m Model) badgeExtraWidth() int {
+	return lipgloss.Width(m.unsavedBadge()) - lipgloss.Width(m.unsavedLabel())
+}
+
 func (m Model) footerLayout() footerLayout {
-	width := max(20, m.footerContentWidth())
+	// decorateFooterBar replaces the plain unsaved label with a styled badge
+	// that has padding, adding extra visible width. Reserve space for it.
+	width := max(20, m.footerContentWidth()-m.badgeExtraWidth())
 	help := m.footerHelpText()
 	items := m.footerInfoItems(width)
 	info := joinFooterItems(items)
@@ -210,7 +217,11 @@ func (m Model) footerLinkAt(x, y int) (footerLinkRegion, bool) {
 
 func (m Model) footerContentWidth() int {
 	app := m.styles.app
-	return max(1, m.terminalWidth()-app.GetHorizontalFrameSize())
+	frame := app.GetHorizontalFrameSize()
+	// renderMain sets app.Width(terminalWidth - frame). Lipgloss treats Width
+	// as total output width (including padding), so the actual content area is
+	// Width - frame = terminalWidth - 2*frame.
+	return max(1, m.terminalWidth()-2*frame)
 }
 
 func (m Model) renderFooterInfo(width int) string {
@@ -241,9 +252,7 @@ func replaceLastOccurrence(s, old, new string) string {
 }
 
 func osc8Link(url, label string) string {
-	const osc8 = "\x1b]8;;"
-	const st = "\x1b\\"
-	return osc8 + url + st + label + osc8 + st
+	return ansi.SetHyperlink(url) + label + ansi.ResetHyperlink()
 }
 
 func (m Model) decorateFooterBar(footer string) string {
