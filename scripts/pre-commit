@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Pre-commit hook that mirrors CI checks.
+# Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+set -euo pipefail
+
+echo "pre-commit: go mod tidy"
+go mod tidy
+if ! git diff --quiet go.mod go.sum; then
+  echo "error: go.mod/go.sum not tidy — staged the fix, please re-commit"
+  git add go.mod go.sum
+  exit 1
+fi
+
+echo "pre-commit: go vet"
+go vet ./...
+
+echo "pre-commit: go test"
+go test ./...
+
+echo "pre-commit: go build"
+go build ./cmd/hyprmoncfg ./cmd/hyprmoncfgd

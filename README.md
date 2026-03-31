@@ -164,10 +164,13 @@ Full documentation at **[hyprmoncfg.dev](https://hyprmoncfg.dev)**.
 
 ## Development
 
+Install the pre-commit hook to run CI checks locally before each commit:
+
 ```bash
-go test ./...
-go vet ./...
+ln -sf "$(pwd)/scripts/pre-commit" .git/hooks/pre-commit
 ```
+
+The hook runs `go mod tidy`, `go vet`, `go test`, and `go build`.
 
 Regenerate screenshots:
 
