@@ -25,17 +25,26 @@ The daemon uses the **same apply engine** as the TUI. There is no separate "best
 
 ## Profile matching
 
-Profiles are scored based on how well their stored hardware identities match what's currently plugged in. A profile saved with a Dell UltraSharp and a laptop display will score highest when exactly those monitors are connected.
+Profiles are matched by hardware identity (make, model, serial) — not connector name. Each profile is scored against the connected monitors:
 
-The scoring rewards overlap and penalizes mismatches:
+| Condition | Points |
+|---|---|
+| Monitor enabled in profile and connected | +100 |
+| Monitor disabled in profile but connected | +50 |
+| Monitor enabled in profile but not connected | −30 |
+| Connected monitor not in the profile at all | −20 |
 
-- Monitors in both the profile and the current set: high score
-- Monitors in the profile but not connected: moderate penalty
-- Connected monitors not in the profile: smaller penalty
-
-Ties are broken alphabetically. The daemon tracks what it last applied and skips redundant re-applications.
+Highest score wins. Ties break alphabetically. The daemon skips re-applying the same profile twice.
 
 ## Setup
+
+If you installed via the AUR or a package manager, the systemd service is already installed. Just enable it:
+
+```bash
+systemctl --user enable --now hyprmoncfgd
+```
+
+If you built from source and the service file is not installed:
 
 ```bash
 mkdir -p ~/.config/systemd/user
