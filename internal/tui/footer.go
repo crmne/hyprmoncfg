@@ -90,7 +90,7 @@ func (m Model) daemonStatusLabel() string {
 	if m.daemonOK {
 		return "Daemon running"
 	}
-	return "Daemon not running"
+	return "Daemon not running: click to setup"
 }
 
 func (m Model) unsavedLabel() string {
