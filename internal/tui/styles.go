@@ -135,7 +135,7 @@ func newStyles() styles {
 		badgeOff:         withBG(withFG(lipgloss.NewStyle().Padding(0, 1), p.badgeOffFg), p.badgeOffBg),
 		badgeMuted:       withBG(withFG(lipgloss.NewStyle().Padding(0, 1), p.badgeMutedFg), p.badgeMutedBg),
 		modalBackdrop:    lipgloss.NewStyle().Padding(0, 1),
-		modal:            withBG(lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color(p.modalBorder)).Padding(1, 2), p.modalBg),
+		modal:            withBG(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(p.modalBorder)).Padding(1, 2), p.modalBg),
 		modalTitle:       withFG(lipgloss.NewStyle().Bold(true), p.modalTitle),
 		canvas:           withBG(lipgloss.NewStyle().Padding(0), p.canvasBg),
 	}
@@ -187,7 +187,7 @@ func newPalette() palette {
 		badgeMutedFg:       "",
 		badgeMutedBg:       softFill,
 		modalBorder:        "2",
-		modalBg:            softFill,
+		modalBg:            "",
 		modalTitle:         "",
 		selectedDesc:       defaultBG,
 		panelBg:            "",

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"strings"
@@ -53,6 +54,27 @@ func (i profileListItem) Description() string {
 		return fmt.Sprintf("%d outputs", i.outputs)
 	}
 	return fmt.Sprintf("updated %s  •  %d outputs", i.updated.Local().Format("2006-01-02 15:04"), i.outputs)
+}
+
+// arrowDelegate wraps list.DefaultDelegate and prepends a ▸ arrow on the selected item.
+type arrowDelegate struct {
+	list.DefaultDelegate
+}
+
+func (d arrowDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	var buf strings.Builder
+	d.DefaultDelegate.Render(&buf, m, index, item)
+	isSelected := index == m.Index()
+	for i, line := range strings.Split(buf.String(), "\n") {
+		if i > 0 {
+			fmt.Fprint(w, "\n")
+		}
+		if i == 0 && isSelected {
+			fmt.Fprintf(w, "▸ %s", line)
+		} else {
+			fmt.Fprintf(w, "  %s", line)
+		}
+	}
 }
 
 type saveDialogState struct {
@@ -167,14 +189,15 @@ func (m Model) activateInspectorField() (tea.Model, tea.Cmd) {
 		for _, mode := range output.Modes {
 			items = append(items, pickerItem(mode))
 		}
-		delegate := list.NewDefaultDelegate()
-		delegate.SetHeight(1)
-		delegate.SetSpacing(0)
-		delegate.Styles.NormalTitle = m.styles.value
-		delegate.Styles.SelectedTitle = m.styles.focused.Copy().UnsetPadding()
-		delegate.Styles.DimmedTitle = m.styles.subtle
-		delegate.Styles.FilterMatch = m.styles.badgeAccent
-		picker := list.New(items, delegate, m.modePickerWidth(), m.modePickerHeight())
+		inner := list.NewDefaultDelegate()
+		inner.SetHeight(1)
+		inner.SetSpacing(0)
+		inner.Styles.NormalTitle = m.styles.value
+		inner.Styles.SelectedTitle = m.styles.focused.Copy().UnsetPadding()
+		inner.Styles.DimmedTitle = m.styles.subtle
+		inner.Styles.FilterMatch = m.styles.badgeAccent
+		delegate := arrowDelegate{inner}
+		picker := list.New(items, delegate, m.modePickerWidth()-2, m.modePickerHeight())
 		picker.Title = fmt.Sprintf("Mode for %s", output.Name)
 		picker.SetShowHelp(false)
 		picker.SetShowPagination(false)
@@ -202,7 +225,7 @@ func (m Model) activateInspectorField() (tea.Model, tea.Cmd) {
 		input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
 		input.TextStyle = m.styles.value
 		input.PlaceholderStyle = m.styles.subtle
-		input.Cursor.Style = m.styles.focused
+		input.Cursor.Style = lipgloss.NewStyle()
 		input.SetValue(strconv.FormatFloat(output.Scale, 'f', 2, 64))
 		cmd := input.Focus()
 		m.input = &numericInputState{
@@ -222,7 +245,7 @@ func (m Model) activateInspectorField() (tea.Model, tea.Cmd) {
 		input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
 		input.TextStyle = m.styles.value
 		input.PlaceholderStyle = m.styles.subtle
-		input.Cursor.Style = m.styles.focused
+		input.Cursor.Style = lipgloss.NewStyle()
 
 		kind := numericInputPositionX
 		title := fmt.Sprintf("Set Position X for %s", output.Name)
@@ -274,10 +297,16 @@ func (m Model) renderNumericInput() string {
 		return ""
 	}
 
+	inputBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(m.styles.palette.paneActiveBorder)).
+		Padding(0, 1).
+		Render(m.input.Input.View())
 	body := []string{
 		m.styles.subtle.Render(m.input.Hint),
 		"",
-		fmt.Sprintf("%s %s", m.styles.label.Render("Value"), m.styles.focused.Render(m.input.Input.View())),
+		m.styles.label.Render("Value"),
+		inputBox,
 	}
 	if m.input.Input.Err != nil {
 		body = append(body, "", m.styles.statusError.Render(m.input.Input.Err.Error()))
@@ -292,7 +321,7 @@ func (m *Model) openSaveDialog() (tea.Model, tea.Cmd) {
 	input.Width = m.saveDialogInputWidth()
 	input.TextStyle = m.styles.value
 	input.PlaceholderStyle = m.styles.subtle
-	input.Cursor.Style = m.styles.focused
+	input.Cursor.Style = lipgloss.NewStyle()
 	input.SetValue(defaultProfileName())
 	cmd := input.Focus()
 
@@ -301,17 +330,18 @@ func (m *Model) openSaveDialog() (tea.Model, tea.Cmd) {
 		items = append(items, profileListItem{name: prof.Name, updated: prof.UpdatedAt, outputs: len(prof.Outputs)})
 	}
 
-	delegate := list.NewDefaultDelegate()
-	delegate.Styles.NormalTitle = m.styles.value
-	delegate.Styles.NormalDesc = m.styles.subtle
-	delegate.Styles.SelectedTitle = m.styles.focused.Copy().UnsetPadding()
-	delegate.Styles.SelectedDesc = m.styles.selectedDesc
-	delegate.Styles.DimmedTitle = m.styles.subtle
-	delegate.Styles.DimmedDesc = m.styles.subtle
-	delegate.Styles.FilterMatch = m.styles.badgeAccent
+	inner := list.NewDefaultDelegate()
+	inner.Styles.NormalTitle = m.styles.value
+	inner.Styles.NormalDesc = m.styles.subtle
+	inner.Styles.SelectedTitle = m.styles.focused.Copy().UnsetPadding()
+	inner.Styles.SelectedDesc = m.styles.selectedDesc
+	inner.Styles.DimmedTitle = m.styles.subtle
+	inner.Styles.DimmedDesc = m.styles.subtle
+	inner.Styles.FilterMatch = m.styles.badgeAccent
+	delegate := arrowDelegate{inner}
 
 	listHeight := clampInt(defaultHeight(m.height)-18, 3, 10)
-	profileList := list.New(nil, delegate, m.saveDialogListWidth(), listHeight)
+	profileList := list.New(nil, delegate, m.saveDialogListWidth()-2, listHeight)
 	profileList.Title = "Existing Profiles"
 	profileList.SetShowHelp(false)
 	profileList.SetShowPagination(false)

@@ -366,6 +366,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateMouse(msg)
 	}
 
+	// Forward unhandled messages (e.g. cursor blinks) to the active text input.
+	switch m.mode {
+	case modeSave:
+		if m.saveDialog != nil {
+			var cmd tea.Cmd
+			m.saveDialog.Input, cmd = m.saveDialog.Input.Update(msg)
+			return m, cmd
+		}
+	case modeNumericInput:
+		if m.input != nil {
+			var cmd tea.Cmd
+			m.input.Input, cmd = m.input.Input.Update(msg)
+			return m, cmd
+		}
+	}
+
 	return m, nil
 }
 
@@ -955,8 +971,14 @@ func (m Model) renderSavePrompt() string {
 	if m.saveDialog == nil {
 		return m.renderModalFrame("Save Profile", nil)
 	}
+	inputBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(m.styles.palette.paneActiveBorder)).
+		Padding(0, 1).
+		Render(m.saveDialog.Input.View())
 	body := []string{
-		fmt.Sprintf("%s %s", m.styles.label.Render("Name"), m.styles.focused.Render(m.saveDialog.Input.View())),
+		m.styles.label.Render("Name"),
+		inputBox,
 		"",
 		m.saveDialog.List.View(),
 		"",
