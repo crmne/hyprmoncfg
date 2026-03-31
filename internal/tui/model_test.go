@@ -719,6 +719,62 @@ func TestApplySelectedSnapAlignsBottomEdge(t *testing.T) {
 	}
 }
 
+func TestRenderWorkspaceViewShowsPreviewWhenDisabled(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		tab:    tabWorkspaces,
+		editOutputs: []editableOutput{
+			{Key: "mon-a", Name: "DP-1", Enabled: true, Scale: 1},
+			{Key: "mon-b", Name: "HDMI-A-1", Enabled: true, Scale: 1},
+		},
+		workspaceEdit: workspaceEditor{
+			Enabled:       false,
+			Strategy:      profile.WorkspaceStrategySequential,
+			MaxWorkspaces: 6,
+			GroupSize:     3,
+			MonitorOrder:  []string{"mon-a", "mon-b"},
+		},
+	}
+
+	view := m.renderWorkspaceView(16)
+	for _, want := range []string{
+		"(workspace rules disabled; preview only)",
+		"DP-1: 1, 2, 3",
+		"HDMI-A-1: 4, 5, 6",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected workspace view to include %q, got:\n%s", want, view)
+		}
+	}
+}
+
+func TestWorkspaceEditorFromSettingsFallsBackToManualRuleOrder(t *testing.T) {
+	editor := workspaceEditorFromSettings(profile.WorkspaceSettings{
+		Enabled:       true,
+		Strategy:      profile.WorkspaceStrategySequential,
+		MaxWorkspaces: 6,
+		GroupSize:     3,
+		Rules: []profile.WorkspaceRule{
+			{Workspace: "1", OutputName: "DP-1"},
+			{Workspace: "2", OutputName: "DP-1"},
+			{Workspace: "3", OutputName: "DP-1"},
+			{Workspace: "4", OutputName: "eDP-1"},
+			{Workspace: "5", OutputName: "eDP-1"},
+			{Workspace: "6", OutputName: "eDP-1"},
+		},
+	}, []editableOutput{
+		{Key: "dp-key", Name: "DP-1", Enabled: true, Scale: 1},
+		{Key: "edp-key", Name: "eDP-1", Enabled: true, Scale: 1},
+	})
+
+	if len(editor.MonitorOrder) != 2 {
+		t.Fatalf("expected monitor order from manual rules, got %v", editor.MonitorOrder)
+	}
+	if editor.MonitorOrder[0] != "dp-key" || editor.MonitorOrder[1] != "edp-key" {
+		t.Fatalf("expected DP-1 then eDP-1, got %v", editor.MonitorOrder)
+	}
+}
+
 func hasSnapMark(marks []snapMark, outputIndex int, edge snapEdge) bool {
 	for _, mark := range marks {
 		if mark.OutputIndex == outputIndex && mark.Edge == edge {

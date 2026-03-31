@@ -55,6 +55,11 @@ func (c *Client) Monitors(ctx context.Context) ([]Monitor, error) {
 	if err := json.Unmarshal(out, &monitors); err != nil {
 		return nil, fmt.Errorf("failed to decode hyprctl monitors JSON: %w", err)
 	}
+	for i := range monitors {
+		if monitors[i].MirrorOf == "none" {
+			monitors[i].MirrorOf = ""
+		}
+	}
 	return monitors, nil
 }
 

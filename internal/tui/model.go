@@ -920,13 +920,22 @@ func (m Model) renderWorkspaceView(height int) string {
 		settings = append(settings, "Switch strategy to sequential or interleave to regenerate them.")
 	}
 
-	preview := profile.WorkspacePreview(m.workspaceEdit.settings(), m.currentProfileOutputs(), m.monitors)
+	previewSettings := m.workspaceEdit.settings()
+	previewDisabled := !previewSettings.Enabled
+	if previewDisabled {
+		previewSettings.Enabled = true
+	}
+	preview := profile.WorkspacePreview(previewSettings, m.currentProfileOutputs(), m.monitors)
 	previewLines := []string{
 		m.styles.header.Render("Workspace Preview"),
 		"",
 	}
+	if previewDisabled {
+		previewLines = append(previewLines, "(workspace rules disabled; preview only)")
+		previewLines = append(previewLines, "")
+	}
 	if len(preview) == 0 {
-		previewLines = append(previewLines, "(workspace rules disabled)")
+		previewLines = append(previewLines, "(no workspace rules configured)")
 	} else {
 		for _, line := range m.workspacePreviewLines(preview, m.workspaceEdit.MonitorOrder) {
 			previewLines = append(previewLines, line)
@@ -1791,6 +1800,9 @@ func workspaceEditorFromSettings(settings profile.WorkspaceSettings, outputs []e
 
 	order := append([]string(nil), settings.MonitorOrder...)
 	if len(order) == 0 {
+		order = workspaceOrderFromEditorRules(settings.Rules, outputs)
+	}
+	if len(order) == 0 {
 		for _, output := range outputs {
 			if output.MirrorOf == "" {
 				order = append(order, output.Key)
@@ -1840,6 +1852,38 @@ func workspaceEditorFromSettings(settings profile.WorkspaceSettings, outputs []e
 		MonitorOrder:  normalized,
 		Rules:         append([]profile.WorkspaceRule(nil), settings.Rules...),
 	}
+}
+
+func workspaceOrderFromEditorRules(rules []profile.WorkspaceRule, outputs []editableOutput) []string {
+	if len(rules) == 0 || len(outputs) == 0 {
+		return nil
+	}
+
+	byName := make(map[string]string, len(outputs))
+	byKey := make(map[string]editableOutput, len(outputs))
+	for _, output := range outputs {
+		byName[output.Name] = output.Key
+		byKey[output.Key] = output
+	}
+
+	order := make([]string, 0, len(rules))
+	seen := make(map[string]bool, len(rules))
+	for _, rule := range rules {
+		key := strings.TrimSpace(rule.OutputKey)
+		if _, ok := byKey[key]; !ok {
+			if mapped, ok := byName[strings.TrimSpace(rule.OutputName)]; ok {
+				key = mapped
+			}
+		}
+		if key == "" || seen[key] {
+			continue
+		}
+		if output, ok := byKey[key]; ok && output.MirrorOf == "" {
+			order = append(order, key)
+			seen[key] = true
+		}
+	}
+	return order
 }
 
 func (w workspaceEditor) settings() profile.WorkspaceSettings {
@@ -2311,7 +2355,6 @@ func transformLabel(v int) string {
 		return fmt.Sprintf("%d", v)
 	}
 }
-
 
 func blankStrategy(strategy profile.WorkspaceStrategy) profile.WorkspaceStrategy {
 	if strategy == "" {

@@ -59,6 +59,13 @@ func WorkspaceSettingsFromHypr(monitors []hypr.Monitor, rules []hypr.WorkspaceRu
 		return workspaceSortKey(settings.Rules[i].Workspace) < workspaceSortKey(settings.Rules[j].Workspace)
 	})
 
+	if inferred, ok := inferGeneratedWorkspaceSettings(settings.Rules); ok {
+		inferred.Enabled = settings.Enabled
+		inferred.Rules = settings.Rules
+		inferred.MonitorOrder = append([]string(nil), settings.MonitorOrder...)
+		return inferred
+	}
+
 	return settings
 }
 
@@ -165,6 +172,114 @@ func generatedWorkspaceRules(p Profile, monitors []hypr.Monitor, interleave bool
 	return rules
 }
 
+func inferGeneratedWorkspaceSettings(rules []WorkspaceRule) (WorkspaceSettings, bool) {
+	if len(rules) == 0 {
+		return WorkspaceSettings{}, false
+	}
+
+	outputs := make([]OutputConfig, 0, len(rules))
+	order := make([]string, 0, len(rules))
+	seenOutputs := make(map[string]bool, len(rules))
+
+	for idx, rule := range rules {
+		workspaceID, err := strconv.Atoi(rule.Workspace)
+		if err != nil || workspaceID != idx+1 {
+			return WorkspaceSettings{}, false
+		}
+
+		key := rule.OutputKey
+		if key == "" {
+			key = rule.OutputName
+		}
+		if key == "" {
+			return WorkspaceSettings{}, false
+		}
+
+		if !seenOutputs[key] {
+			order = append(order, key)
+			outputs = append(outputs, OutputConfig{
+				Key:     key,
+				Name:    firstNonEmpty(rule.OutputName, key),
+				Enabled: true,
+				Scale:   1,
+			})
+			seenOutputs[key] = true
+		}
+	}
+
+	interleaveSettings := WorkspaceSettings{
+		Enabled:       true,
+		Strategy:      WorkspaceStrategyInterleave,
+		MaxWorkspaces: len(rules),
+		GroupSize:     1,
+		MonitorOrder:  append([]string(nil), order...),
+	}
+	if rulesMatchGeneratedRules(rules, outputs, interleaveSettings, true) {
+		return interleaveSettings, true
+	}
+
+	for groupSize := 1; groupSize <= len(rules); groupSize++ {
+		sequentialSettings := WorkspaceSettings{
+			Enabled:       true,
+			Strategy:      WorkspaceStrategySequential,
+			MaxWorkspaces: len(rules),
+			GroupSize:     groupSize,
+			MonitorOrder:  append([]string(nil), order...),
+		}
+		if rulesMatchGeneratedRules(rules, outputs, sequentialSettings, false) {
+			return sequentialSettings, true
+		}
+	}
+
+	return WorkspaceSettings{}, false
+}
+
+func rulesMatchGeneratedRules(rules []WorkspaceRule, outputs []OutputConfig, settings WorkspaceSettings, interleave bool) bool {
+	profileView := Profile{
+		Outputs: outputs,
+		Workspaces: WorkspaceSettings{
+			Enabled:       true,
+			Strategy:      settings.Strategy,
+			MaxWorkspaces: settings.MaxWorkspaces,
+			GroupSize:     settings.GroupSize,
+			MonitorOrder:  append([]string(nil), settings.MonitorOrder...),
+		},
+	}
+	generated := generatedWorkspaceRules(profileView, nil, interleave)
+	if len(generated) != len(rules) {
+		return false
+	}
+
+	for idx := range rules {
+		if rules[idx].Workspace != generated[idx].Workspace {
+			return false
+		}
+		if !workspaceRuleTargetsEqual(rules[idx], generated[idx]) {
+			return false
+		}
+		if rules[idx].Default != generated[idx].Default || rules[idx].Persistent != generated[idx].Persistent {
+			return false
+		}
+	}
+
+	return true
+}
+
+func workspaceRuleTargetsEqual(a, b WorkspaceRule) bool {
+	aKey := firstNonEmpty(a.OutputKey, a.OutputName)
+	bKey := firstNonEmpty(b.OutputKey, b.OutputName)
+	return aKey != "" && aKey == bKey
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func orderedOutputKeys(p Profile, monitors []hypr.Monitor) []string {
 	byKey := make(map[string]OutputConfig, len(p.Outputs))
 	for _, output := range p.Outputs {
@@ -175,6 +290,13 @@ func orderedOutputKeys(p Profile, monitors []hypr.Monitor) []string {
 
 	keys := make([]string, 0, len(byKey))
 	for _, key := range p.Workspaces.MonitorOrder {
+		if _, ok := byKey[key]; ok {
+			keys = append(keys, key)
+			delete(byKey, key)
+		}
+	}
+
+	for _, key := range workspaceOrderFromRules(p.Workspaces.Rules, p.Outputs) {
 		if _, ok := byKey[key]; ok {
 			keys = append(keys, key)
 			delete(byKey, key)
@@ -196,6 +318,38 @@ func orderedOutputKeys(p Profile, monitors []hypr.Monitor) []string {
 	sort.Strings(extras)
 	keys = append(keys, extras...)
 	return keys
+}
+
+func workspaceOrderFromRules(rules []WorkspaceRule, outputs []OutputConfig) []string {
+	if len(rules) == 0 || len(outputs) == 0 {
+		return nil
+	}
+
+	byName := make(map[string]string, len(outputs))
+	byKey := make(map[string]OutputConfig, len(outputs))
+	for _, output := range outputs {
+		byName[output.Name] = output.Key
+		byKey[output.Key] = output
+	}
+
+	order := make([]string, 0, len(rules))
+	seen := make(map[string]bool, len(rules))
+	for _, rule := range rules {
+		key := strings.TrimSpace(rule.OutputKey)
+		if _, ok := byKey[key]; !ok {
+			if mapped, ok := byName[strings.TrimSpace(rule.OutputName)]; ok {
+				key = mapped
+			}
+		}
+		if key == "" || seen[key] {
+			continue
+		}
+		if output, ok := byKey[key]; ok && output.Enabled && output.MirrorOf == "" {
+			order = append(order, key)
+			seen[key] = true
+		}
+	}
+	return order
 }
 
 func matchMonitorRule(selector string, monitors []hypr.Monitor) (string, string) {

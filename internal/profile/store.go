@@ -115,6 +115,11 @@ func (s *Store) loadFromPath(path string) (Profile, error) {
 	if err := json.Unmarshal(buf, &p); err != nil {
 		return Profile{}, err
 	}
+	for i := range p.Outputs {
+		if p.Outputs[i].MirrorOf == "none" {
+			p.Outputs[i].MirrorOf = ""
+		}
+	}
 	if err := p.Validate(); err != nil {
 		return Profile{}, err
 	}
