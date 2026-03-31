@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	homeURL        = "https://hyprmoncfg.dev/"
+	daemonURL      = "https://hyprmoncfg.dev/daemon/"
 	repoURL        = "https://github.com/crmne/hyprmoncfg"
 	releasesURL    = repoURL + "/releases"
 	sponsorURL     = "https://github.com/sponsors/crmne"
@@ -36,11 +38,11 @@ type footerLayout struct {
 func (m Model) footerHelpText() string {
 	switch m.tab {
 	case tabLayout:
-		return "mouse drag monitors | arrows move 100px | Shift+arrows move 10px | Ctrl+arrows move 1px | Enter opens pickers | [ ] cycle | Tab switches panes | a apply | s save | r reset"
+		return "`drag/arrows` move | `[ ]` cycle monitors | `Enter` edit | `Tab` pane | `a` apply | `s` save | `r` reset"
 	case tabProfiles:
-		return "mouse click selects profiles | Enter loads into the draft editor | a apply selected | d delete | s save current draft"
+		return "`Enter` load | `a` apply | `d` delete | `s` save"
 	case tabWorkspaces:
-		return "click to focus fields and monitor order | left/right adjust | [ ] order select | u/n reorder | a apply | s save"
+		return "`↑↓` select | `←→` adjust or reorder | `a` apply | `s` save"
 	default:
 		return ""
 	}
@@ -83,27 +85,78 @@ func (m Model) footerInfoItems(width int) []footerItem {
 	return nil
 }
 
+func (m Model) daemonStatusLabel() string {
+	if m.daemonOK {
+		return "Daemon running"
+	}
+	return "Daemon not running"
+}
+
+func (m Model) unsavedLabel() string {
+	if m.dirty && !m.draftSaved {
+		return "Unsaved Changes"
+	}
+	if m.dirty && m.draftSaved {
+		return "Saved Draft"
+	}
+	return "Current setup"
+}
+
+func (m Model) footerStatusLine() string {
+	parts := []string{m.unsavedLabel(), m.daemonStatusLabel()}
+	if m.status != "" {
+		parts = append(parts, m.status)
+	}
+	return strings.Join(parts, "  ")
+}
+
 func (m Model) footerLayout() footerLayout {
 	width := max(20, m.footerContentWidth())
 	help := m.footerHelpText()
 	items := m.footerInfoItems(width)
 	info := joinFooterItems(items)
-	if info == "" {
-		return footerLayout{text: fitString(help, width)}
+
+	// Build right side: help | links — strip backtick markers from actual text
+	helpClean := strings.ReplaceAll(help, "`", "")
+	right := helpClean
+	if info != "" {
+		right = helpClean + "  " + info
+	}
+	rightWidth := lipgloss.Width(right)
+
+	// Build left side: status badge + daemon
+	left := m.footerStatusLine()
+	maxLeft := max(0, width-rightWidth-2)
+	if lipgloss.Width(left) > maxLeft {
+		left = fitString(left, maxLeft)
 	}
 
-	infoWidth := lipgloss.Width(info)
-	helpWidth := max(0, width-infoWidth-2)
-	left := fitString(help, helpWidth)
-	gap := max(2, width-lipgloss.Width(left)-infoWidth)
-	infoStart := lipgloss.Width(left) + gap
+	leftWidth := lipgloss.Width(left)
+	gap := max(2, width-leftWidth-rightWidth)
 
 	layout := footerLayout{
-		text:  left + strings.Repeat(" ", gap) + info,
-		links: make([]footerLinkRegion, 0, len(items)),
+		text:  left + strings.Repeat(" ", gap) + right,
+		links: make([]footerLinkRegion, 0, len(items)+1),
 	}
 
-	cursor := infoStart
+	// Daemon status link — find its position within the left side
+	daemonLabel := m.daemonStatusLabel()
+	if idx := strings.Index(left, daemonLabel); idx >= 0 {
+		// Account for ANSI escape codes: find the visual position
+		beforeDaemon := left[:idx]
+		daemonStart := lipgloss.Width(beforeDaemon)
+		layout.links = append(layout.links, footerLinkRegion{
+			label: daemonLabel,
+			url:   daemonURL,
+			start: daemonStart,
+			end:   daemonStart + lipgloss.Width(daemonLabel),
+		})
+	}
+
+	cursor := leftWidth + gap + lipgloss.Width(help)
+	if info != "" {
+		cursor += 2
+	}
 	for idx, item := range items {
 		labelWidth := lipgloss.Width(item.label)
 		if strings.TrimSpace(item.url) != "" {
@@ -180,6 +233,14 @@ func footerVersionLabel() string {
 	}
 }
 
+func replaceLastOccurrence(s, old, new string) string {
+	idx := strings.LastIndex(s, old)
+	if idx < 0 {
+		return s
+	}
+	return s[:idx] + new + s[idx+len(old):]
+}
+
 func osc8Link(url, label string) string {
 	const osc8 = "\x1b]8;;"
 	const st = "\x1b\\"
@@ -192,9 +253,60 @@ func (m Model) decorateFooterBar(view, footer string) string {
 	}
 
 	styled := m.styles.help.Render(footer)
-	styled = strings.ReplaceAll(styled, "Ask", osc8Link(communityURL, m.styles.footerLinkWarm.Render("Ask")))
-	styled = strings.ReplaceAll(styled, "Donate", osc8Link(sponsorURL, m.styles.footerLinkAccent.Render("Donate")))
+
+	// Highlight keyboard shortcuts using backtick markers from the raw help text.
+	// Replace "key context" (e.g. "a apply") to avoid matching single chars in status text.
+	keyStyle := withFG(lipgloss.NewStyle().Bold(true), "2")
+	help := m.footerHelpText()
+	for {
+		start := strings.Index(help, "`")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(help[start+1:], "`")
+		if end < 0 {
+			break
+		}
+		end += start + 1
+		key := help[start+1 : end]
+		rest := help[end+1:]
+		ctxEnd := strings.Index(rest, "|")
+		if ctxEnd < 0 {
+			ctxEnd = len(rest)
+		}
+		ctx := rest[:ctxEnd]
+		styled = strings.Replace(styled, key+ctx, keyStyle.Render(key)+ctx, 1)
+		help = rest
+	}
+
+	// Status badge
+	unsaved := m.unsavedLabel()
+	styled = strings.Replace(styled, unsaved, m.unsavedBadge(), 1)
+
+	// Error/OK status message
+	if m.status != "" {
+		if m.statusErr {
+			styled = strings.Replace(styled, m.status, m.styles.statusError.Render(m.status), 1)
+		} else {
+			styled = strings.Replace(styled, m.status, m.styles.statusOK.Render(m.status), 1)
+		}
+	}
+
+	// Version — replace before inserting URLs that might contain "dev"
 	version := footerVersionLabel()
-	styled = strings.ReplaceAll(styled, version, osc8Link(releasesURL, m.styles.footerVersion.Render(version)))
+	styled = replaceLastOccurrence(styled, version, osc8Link(releasesURL, m.styles.footerVersion.Render(version)))
+
+	// Links
+	styled = strings.ReplaceAll(styled, "Donate", osc8Link(sponsorURL, m.styles.footerLinkAccent.Render("Donate")))
+	styled = strings.ReplaceAll(styled, "Ask", osc8Link(communityURL, m.styles.footerLinkWarm.Render("Ask")))
+
+	// Daemon status — replace last to avoid URL conflicts
+	daemonLabel := m.daemonStatusLabel()
+	daemonStyle := m.styles.statusOK.Underline(true)
+	if !m.daemonOK {
+		daemonStyle = m.styles.statusError.Underline(true)
+	}
+	styled = strings.Replace(styled, daemonLabel, osc8Link(daemonURL, daemonStyle.Render(daemonLabel)), 1)
+
 	return strings.Replace(view, footer, styled, 1)
 }

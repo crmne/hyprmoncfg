@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -206,6 +207,7 @@ type Model struct {
 	statusErr  bool
 	dirty      bool
 	draftSaved bool
+	daemonOK   bool
 
 	width  int
 	height int
@@ -261,6 +263,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		m.daemonOK = isDaemonRunning()
 		m.monitors = msg.monitors
 		m.profiles = msg.profiles
 		m.workspaceRules = msg.workspaceRules
@@ -270,7 +273,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadLiveState()
 		}
 		m.syncSelections()
-		m.setStatusOK(fmt.Sprintf("Loaded %d monitors and %d profiles", len(m.monitors), len(m.profiles)))
+		m.status = ""
 		return m, nil
 
 	case saveMsg:
@@ -331,20 +334,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openURLMsg:
 		if msg.err != nil {
 			m.setStatusErr(fmt.Sprintf("Failed to open %s link: %v", msg.label, msg.err))
-			return m, nil
 		}
-		m.setStatusOK(fmt.Sprintf("Opened %s in browser", msg.label))
 		return m, nil
 
 	case tickMsg:
+		m.daemonOK = isDaemonRunning()
 		if m.mode == modeConfirm && m.pending != nil {
 			if time.Now().After(m.pending.deadline) {
 				snapshot := m.pending.snapshot
 				return m, m.revertCmd(snapshot, "timeout")
 			}
-			return m, tickCmd()
 		}
-		return m, nil
+		return m, tickCmd()
 
 	case tea.KeyMsg:
 		switch m.mode {
@@ -501,6 +502,9 @@ func (m Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd = m.showSnapHint(m.previewSelectedSnap(24))
 		case " ":
 			m.toggleSelectedOutput()
+		case "enter":
+			m.layoutFocus = layoutFocusInspector
+			return m, nil
 		default:
 			return m, nil
 		}
@@ -554,27 +558,39 @@ func (m Model) updateProfileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateWorkspaceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	totalItems := len(workspaceFields) + len(m.workspaceEdit.MonitorOrder)
+	inOrder := m.workspaceEdit.SelectedField >= len(workspaceFields)
+
 	switch msg.String() {
 	case "up":
-		m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField-1, len(workspaceFields))
+		m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField-1, totalItems)
 	case "down":
-		m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField+1, len(workspaceFields))
+		m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField+1, totalItems)
 	case "left", "h", "-", "_":
-		m.adjustWorkspaceField(-1)
+		if inOrder {
+			m.moveWorkspaceOrder(-1)
+		} else {
+			m.adjustWorkspaceField(-1)
+		}
 	case "right", "l", "+", "=":
-		m.adjustWorkspaceField(1)
+		if inOrder {
+			m.moveWorkspaceOrder(1)
+		} else {
+			m.adjustWorkspaceField(1)
+		}
 	case " ", "enter":
-		m.adjustWorkspaceField(1)
-	case "[":
-		m.workspaceEdit.SelectedOrder = clampIndex(m.workspaceEdit.SelectedOrder-1, len(m.workspaceEdit.MonitorOrder))
-	case "]":
-		m.workspaceEdit.SelectedOrder = clampIndex(m.workspaceEdit.SelectedOrder+1, len(m.workspaceEdit.MonitorOrder))
-	case "u":
-		m.moveWorkspaceOrder(-1)
-	case "n":
-		m.moveWorkspaceOrder(1)
+		if inOrder {
+			m.moveWorkspaceOrder(1)
+		} else {
+			m.adjustWorkspaceField(1)
+		}
 	default:
 		return m, nil
+	}
+
+	// Keep SelectedOrder in sync for monitor order operations
+	if m.workspaceEdit.SelectedField >= len(workspaceFields) {
+		m.workspaceEdit.SelectedOrder = m.workspaceEdit.SelectedField - len(workspaceFields)
 	}
 
 	m.markDirty()
@@ -625,9 +641,8 @@ func (m Model) renderMain() string {
 	title := m.renderTitleBar()
 	tabs := m.renderTabs()
 
-	status := m.renderStatus()
 	footerText := m.renderFooterBar()
-	bodyHeight := m.mainBodyHeight(title, tabs, status, footerText)
+	bodyHeight := m.mainBodyHeight(title, tabs, "", footerText)
 
 	var body string
 	switch m.tab {
@@ -644,8 +659,6 @@ func (m Model) renderMain() string {
 		title,
 		tabs,
 		body,
-		"",
-		status,
 		footerText,
 	}, "\n")
 	app := m.styles.app
@@ -664,16 +677,11 @@ func (m Model) renderTabs() string {
 		if int(m.tab) == idx {
 			style = m.styles.tabActive
 		}
-		parts = append(parts, style.Render(fmt.Sprintf("%d %s", idx+1, label)))
+		numStyle := withFG(lipgloss.NewStyle().Bold(true), "2")
+		tabText := fmt.Sprintf("%s %s", numStyle.Render(fmt.Sprintf("%d", idx+1)), label)
+		parts = append(parts, style.Render(tabText))
 	}
-	row := lipgloss.JoinHorizontal(lipgloss.Bottom, parts...)
-	if gap := m.terminalWidth() - lipgloss.Width(row) - 2; gap > 0 {
-		rule := withFG(lipgloss.NewStyle(), m.styles.palette.tabBorder).Render(strings.Repeat("─", gap))
-		lines := strings.Split(row, "\n")
-		lines[len(lines)-1] += rule
-		row = strings.Join(lines, "\n")
-	}
-	return row
+	return lipgloss.JoinHorizontal(lipgloss.Bottom, parts...)
 }
 
 func (m Model) renderLayoutView(height int) string {
@@ -681,13 +689,13 @@ func (m Model) renderLayoutView(height int) string {
 		canvasHeight, inspectorHeight := m.compactLayoutHeights(height)
 		width := m.terminalWidth() - m.styles.app.GetHorizontalFrameSize()
 		canvas := m.renderCanvasPane(width, canvasHeight)
-		inspector := m.renderInspectorPane(width, inspectorHeight)
+		inspector := m.renderInspectorPane(width, inspectorHeight, true)
 		return lipgloss.JoinVertical(lipgloss.Left, canvas, inspector)
 	}
 
 	canvasWidth, inspectorWidth := m.layoutPaneWidths()
 	canvas := m.renderCanvasPane(canvasWidth, height)
-	inspector := m.renderInspectorPane(inspectorWidth, height)
+	inspector := m.renderInspectorPane(inspectorWidth, height, false)
 	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, "  ", inspector)
 }
 
@@ -699,15 +707,11 @@ func (m Model) renderCanvasPane(width int, height int) string {
 	innerWidth := max(1, width-panel.GetHorizontalFrameSize())
 	innerHeight := max(1, height-panel.GetVerticalFrameSize())
 
-	showHint := innerHeight >= 8 && innerWidth >= 44
 	showLegend := innerHeight >= 6 && innerWidth >= 34
 
 	nonCanvasLines := 1
-	if showHint {
-		nonCanvasLines += 2
-	}
 	if showLegend {
-		nonCanvasLines += 2
+		nonCanvasLines += 4
 	}
 
 	disabled := make([]string, 0)
@@ -720,26 +724,17 @@ func (m Model) renderCanvasPane(width int, height int) string {
 		nonCanvasLines++
 	}
 
-	canvasHeight := clampInt(innerHeight-nonCanvasLines, 1, 26)
+	canvasHeight := max(1, innerHeight-nonCanvasLines)
 	lines := []string{m.styles.header.Render("Monitor Layout")}
-	if showHint {
-		hint := "Drag to reposition monitors. Change Mode to resize them."
-		if innerWidth >= 64 {
-			hint = "Drag cards to reposition monitors. Change Mode to change their size."
-		}
-		lines = append(lines, m.styles.subtle.Render(hint), "")
-	}
 	lines = append(lines, m.renderCanvas(max(1, innerWidth-2), canvasHeight))
 
 	legend := lipgloss.JoinHorizontal(
-		lipgloss.Left,
+		lipgloss.Center,
 		m.styles.label.Render("Legend"),
-		" ",
+		"  ",
 		renderCanvasLegendItem("Selected", m.canvasCardStyle(editableOutput{Enabled: true}, true)),
-		" ",
+		"  ",
 		renderCanvasLegendItem("Enabled", m.canvasCardStyle(editableOutput{Enabled: true}, false)),
-		" ",
-		renderCanvasLegendItem("Disabled", m.canvasCardStyle(editableOutput{Enabled: false}, false)),
 	)
 	if showLegend {
 		lines = append(lines, "", legend)
@@ -801,7 +796,7 @@ func (m Model) renderCanvas(width, height int) string {
 	return renderCanvasCells(grid)
 }
 
-func (m Model) renderInspectorPane(width int, height int) string {
+func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 	panel := m.styles.inactivePane
 	if m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
 		panel = m.styles.activePane
@@ -816,37 +811,24 @@ func (m Model) renderInspectorPane(width int, height int) string {
 	}
 
 	output := m.editOutputs[m.selectedOutput]
-	badgeLine := lipgloss.JoinHorizontal(lipgloss.Left, m.styles.badgeAccent.Render(output.Name), " ", m.monitorStateBadge(output))
-	if innerHeight <= 4 {
-		lines = append(lines, badgeLine)
-		if innerHeight >= 3 {
-			lines = append(lines, m.inspectorCompactFieldLine("Mode", 1, output))
-		}
-		return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
-	}
 
-	compact := innerWidth < 54 || innerHeight < 14
-	lines = append(lines, badgeLine)
-	if !compact {
-		lines = append(lines, m.styles.subtle.Render("Enter opens the active editor. Mouse click selects fields."))
-		if desc := strings.TrimSpace(output.Description); desc != "" {
-			lines = append(lines, m.styles.subtle.Render(desc))
-		}
-	}
-
-	fieldLines := m.inspectorFieldLines(output, innerWidth, compact)
-	lines = append(lines, fieldLines...)
-
-	detailLines := m.inspectorDetailLines(output)
-	if !compact {
-		lines = append(lines, "", m.styles.header.Render("Monitor Details"))
-		lines = append(lines, detailLines...)
+	if compact {
+		// Compact info: one-line summary
+		info := fmt.Sprintf("%s  %s  %s", output.Name, output.displayModelLabel(), output.DisplayMode())
+		lines = append(lines, m.styles.subtle.Render(fitString(info, innerWidth)))
 	} else {
-		extra := innerHeight - len(lines)
-		if extra > 0 {
-			lines = append(lines, detailLines[:min(len(detailLines), extra)]...)
-		}
+		lines = append(lines, "")
+		// Info section
+		lines = append(lines, m.styles.header.Render("Info"))
+		detailLines := m.inspectorDetailLines(output)
+		lines = append(lines, detailLines...)
 	}
+
+	// Preferences section
+	lines = append(lines, "")
+	lines = append(lines, m.styles.header.Render("Preferences"))
+	fieldLines := m.inspectorFieldLines(output, innerWidth, false)
+	lines = append(lines, fieldLines...)
 
 	return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 }
@@ -881,14 +863,23 @@ func (m Model) renderProfilesView(height int) string {
 			if output.Enabled {
 				state = "on"
 			}
-			detailLines = append(detailLines, fmt.Sprintf("  %s %s %s pos:%dx%d scale:%.2f", output.Name, state, output.NormalizedMode(), output.X, output.Y, output.Scale))
+			label := strings.TrimSpace(output.Make + " " + output.Model)
+			if label == "" {
+				label = output.Name
+			}
+			line := fmt.Sprintf("  %s %s %s pos:%dx%d scale:%.2f", label, state, output.NormalizedMode(), output.X, output.Y, output.Scale)
+			if output.MirrorOf != "" {
+				mirrorLabel := outputDisplayLabel(output.MirrorOf, selected.Outputs)
+				line += fmt.Sprintf(" mirrors:%s", mirrorLabel)
+			}
+			detailLines = append(detailLines, line)
 		}
 
 		preview := profile.WorkspacePreview(selected.Workspaces, selected.Outputs, m.monitors)
 		if len(preview) > 0 {
 			detailLines = append(detailLines, "")
 			detailLines = append(detailLines, "Workspace plan:")
-			for _, line := range m.workspacePreviewLines(preview, selected.Workspaces.MonitorOrder) {
+			for _, line := range workspacePreviewLines(preview, selected.Workspaces.MonitorOrder, selected.Outputs) {
 				detailLines = append(detailLines, "  "+line)
 			}
 		}
@@ -896,6 +887,18 @@ func (m Model) renderProfilesView(height int) string {
 
 	leftStyle := m.styles.activePane
 	rightStyle := m.styles.inactivePane
+
+	if m.terminalWidth() < 96 {
+		// Compact: stack vertically, list gets enough for profiles + header, details gets the rest
+		width := m.terminalWidth() - m.styles.app.GetHorizontalFrameSize()
+		innerW := max(1, width-leftStyle.GetHorizontalFrameSize())
+		listH := clampInt(len(m.profiles)+3, 4, height/3)
+		detailH := max(3, height-listH)
+		left := leftStyle.Width(innerW).Render(fitBlock(strings.Join(listLines, "\n"), innerW, max(1, listH-leftStyle.GetVerticalFrameSize())))
+		right := rightStyle.Width(innerW).Render(fitBlock(strings.Join(detailLines, "\n"), innerW, max(1, detailH-rightStyle.GetVerticalFrameSize())))
+		return lipgloss.JoinVertical(lipgloss.Left, left, right)
+	}
+
 	left := leftStyle.Width(max(1, listWidth-leftStyle.GetHorizontalFrameSize())).
 		Render(fitBlock(strings.Join(listLines, "\n"), max(1, listWidth-leftStyle.GetHorizontalFrameSize()), max(1, height-leftStyle.GetVerticalFrameSize())))
 	right := rightStyle.Width(max(1, detailWidth-rightStyle.GetHorizontalFrameSize())).
@@ -922,17 +925,19 @@ func (m Model) renderWorkspaceView(height int) string {
 	}
 
 	settings = append(settings, "")
-	settings = append(settings, "Monitor order:")
+	settings = append(settings, "Monitor order  ←/→ reorders")
 	if len(m.workspaceEdit.MonitorOrder) == 0 {
 		settings = append(settings, "  (none)")
 	} else {
 		for idx, key := range m.workspaceEdit.MonitorOrder {
 			label := m.outputLabelForKey(key)
 			prefix := "  "
-			if idx == m.workspaceEdit.SelectedOrder {
-				prefix = "[*]"
+			orderField := len(workspaceFields) + idx
+			if orderField == m.workspaceEdit.SelectedField {
+				prefix = "> "
+				label = m.styles.focused.Render(label)
 			}
-			settings = append(settings, fmt.Sprintf("%s %d. %s", prefix, idx+1, label))
+			settings = append(settings, fmt.Sprintf("%s%d. %s", prefix, idx+1, label))
 		}
 	}
 
@@ -959,13 +964,25 @@ func (m Model) renderWorkspaceView(height int) string {
 	if len(preview) == 0 {
 		previewLines = append(previewLines, "(no workspace rules configured)")
 	} else {
-		for _, line := range m.workspacePreviewLines(preview, m.workspaceEdit.MonitorOrder) {
+		for _, line := range workspacePreviewLines(preview, m.workspaceEdit.MonitorOrder, m.currentProfileOutputs()) {
 			previewLines = append(previewLines, line)
 		}
 	}
 
 	leftStyle := m.styles.activePane
 	rightStyle := m.styles.inactivePane
+
+	if m.terminalWidth() < 96 {
+		// Compact: stack vertically, settings get enough room, preview gets the rest
+		width := m.terminalWidth() - m.styles.app.GetHorizontalFrameSize()
+		innerW := max(1, width-leftStyle.GetHorizontalFrameSize())
+		settingsH := clampInt(len(settings)+2, 6, (height*2)/3)
+		previewH := max(3, height-settingsH)
+		left := leftStyle.Width(innerW).Render(fitBlock(strings.Join(settings, "\n"), innerW, max(1, settingsH-leftStyle.GetVerticalFrameSize())))
+		right := rightStyle.Width(innerW).Render(fitBlock(strings.Join(previewLines, "\n"), innerW, max(1, previewH-rightStyle.GetVerticalFrameSize())))
+		return lipgloss.JoinVertical(lipgloss.Left, left, right)
+	}
+
 	left := leftStyle.Width(max(1, leftWidth-leftStyle.GetHorizontalFrameSize())).
 		Render(fitBlock(strings.Join(settings, "\n"), max(1, leftWidth-leftStyle.GetHorizontalFrameSize()), max(1, height-leftStyle.GetVerticalFrameSize())))
 	right := rightStyle.Width(max(1, rightWidth-rightStyle.GetHorizontalFrameSize())).
@@ -1044,7 +1061,7 @@ func (m Model) renderErrorStatus() string {
 }
 
 func (m Model) mainBodyHeight(title string, tabs string, status string, help string) int {
-	reserved := lipgloss.Height(title) + lipgloss.Height(tabs) + lipgloss.Height(status) + lipgloss.Height(help) + 2
+	reserved := lipgloss.Height(title) + lipgloss.Height(tabs) + lipgloss.Height(help)
 	return max(3, m.terminalHeight()-reserved)
 }
 
@@ -1059,7 +1076,7 @@ func (m Model) compactLayoutHeights(total int) (int, int) {
 		return canvas, max(1, total-canvas)
 	}
 
-	inspector := clampInt((total*7)/12, 4, 12)
+	inspector := max(4, (total*7)/12)
 	canvas := total - inspector
 	if canvas < 4 {
 		canvas = 4
@@ -1095,13 +1112,11 @@ func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compac
 		}
 
 		value := m.styles.value.Render(m.layoutFieldValue(output, idx))
-		prefix := "  "
 		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
-			prefix = "> "
 			value = m.styles.focused.Render(value)
 		}
 		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
-		lines = append(lines, fmt.Sprintf("%s%s %s", prefix, label, value))
+		lines = append(lines, fmt.Sprintf("%s %s", label, value))
 	}
 
 	return lines
@@ -1173,19 +1188,16 @@ func (m Model) inspectorCompactFieldToken(label string, field int, output editab
 
 func (m Model) inspectorDetailLines(output editableOutput) []string {
 	lines := []string{
-		fmt.Sprintf("%s %s", m.styles.label.Render("Workspace "), m.styles.value.Render(blankFallback(output.ActiveWorkspace, "(none)"))),
 		fmt.Sprintf("%s %s", m.styles.label.Render("Connector "), m.styles.value.Render(output.Name)),
-		fmt.Sprintf("%s %s", m.styles.label.Render("Layout px "), m.styles.value.Render(output.layoutSizeLabel())),
 		fmt.Sprintf("%s %s", m.styles.label.Render("Model     "), m.styles.value.Render(output.displayModelLabel())),
 		fmt.Sprintf("%s %s", m.styles.label.Render("Serial    "), m.styles.value.Render(blankFallback(strings.TrimSpace(output.Serial), "(none)"))),
+		fmt.Sprintf("%s %s", m.styles.label.Render("Layout px "), m.styles.value.Render(output.layoutSizeLabel())),
+		fmt.Sprintf("%s %s", m.styles.label.Render("Workspace "), m.styles.value.Render(blankFallback(output.ActiveWorkspace, "(none)"))),
 		fmt.Sprintf("%s %s", m.styles.label.Render("DPMS      "), m.styles.value.Render(boolText(output.DPMSStatus))),
-		fmt.Sprintf("%s %s", m.styles.label.Render("Focused   "), m.styles.value.Render(boolText(output.Focused))),
 	}
 	if output.PhysicalWidth > 0 && output.PhysicalHeight > 0 {
 		lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Panel mm  "), m.styles.value.Render(fmt.Sprintf("%d x %d mm", output.PhysicalWidth, output.PhysicalHeight))))
 	}
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Draft     "), m.unsavedBadge()))
-	lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Hardware  "), m.styles.subtle.Render(output.Key)))
 	return lines
 }
 
@@ -1529,6 +1541,7 @@ func (m *Model) moveWorkspaceOrder(delta int) {
 	}
 	m.workspaceEdit.MonitorOrder[idx], m.workspaceEdit.MonitorOrder[next] = m.workspaceEdit.MonitorOrder[next], m.workspaceEdit.MonitorOrder[idx]
 	m.workspaceEdit.SelectedOrder = next
+	m.workspaceEdit.SelectedField = len(workspaceFields) + next
 }
 
 func (m Model) currentProfile(name string) profile.Profile {
@@ -1676,40 +1689,60 @@ func (m Model) workspaceFieldValue(field int) string {
 	}
 }
 
-func (m Model) workspacePreviewLines(preview map[string][]string, order []string) []string {
+func workspacePreviewLines(preview map[string][]string, order []string, outputs []profile.OutputConfig) []string {
 	lines := make([]string, 0, len(preview))
 	seen := make(map[string]bool, len(preview))
 
 	for _, key := range order {
-		label := m.outputLabelForKey(key)
-		if workspaces, ok := preview[label]; ok {
-			lines = append(lines, fmt.Sprintf("%s: %s", label, strings.Join(workspaces, ", ")))
-			seen[label] = true
+		displayLabel := outputDisplayLabel(key, outputs)
+		connectorName := outputConnector(key, outputs)
+		if workspaces, ok := preview[connectorName]; ok {
+			lines = append(lines, fmt.Sprintf("%s: %s", displayLabel, strings.Join(workspaces, ", ")))
+			seen[connectorName] = true
 		}
 	}
 
-	for label, workspaces := range preview {
-		if seen[label] {
+	for connectorName, workspaces := range preview {
+		if seen[connectorName] {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("%s: %s", label, strings.Join(workspaces, ", ")))
+		displayLabel := connectorName
+		for _, o := range outputs {
+			if o.Name == connectorName {
+				if label := strings.TrimSpace(o.Make + " " + o.Model); label != "" {
+					displayLabel = label
+				}
+				break
+			}
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", displayLabel, strings.Join(workspaces, ", ")))
 	}
 	return lines
 }
 
-func (m Model) outputLabelForKey(key string) string {
-	for _, output := range m.editOutputs {
-		if output.Key == key {
-			label := output.Name
-			for _, other := range m.editOutputs {
-				if other.MirrorOf == key {
-					label += " + " + other.Name
-				}
+func outputDisplayLabel(key string, outputs []profile.OutputConfig) string {
+	for _, o := range outputs {
+		if o.Key == key {
+			if label := strings.TrimSpace(o.Make + " " + o.Model); label != "" {
+				return label
 			}
-			return label
+			return o.Name
 		}
 	}
 	return key
+}
+
+func outputConnector(key string, outputs []profile.OutputConfig) string {
+	for _, o := range outputs {
+		if o.Key == key {
+			return o.Name
+		}
+	}
+	return key
+}
+
+func (m Model) outputLabelForKey(key string) string {
+	return outputDisplayLabel(key, m.currentProfileOutputs())
 }
 
 func (m Model) findLiveMonitor(key, name string) (hypr.Monitor, bool) {
@@ -1729,6 +1762,10 @@ func (m *Model) setStatusErr(msg string) {
 func (m *Model) setStatusOK(msg string) {
 	m.status = msg
 	m.statusErr = false
+}
+
+func isDaemonRunning() bool {
+	return exec.Command("pgrep", "-x", "hyprmoncfgd").Run() == nil
 }
 
 func (m *Model) markDirty() {
@@ -2103,19 +2140,18 @@ func (m Model) canvasCardStyle(output editableOutput, selected bool) canvasCardC
 }
 
 func renderCanvasLegendItem(label string, colors canvasCardColors) string {
-	border := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(colors.border)).
-		Bold(true).
-		Render("▍")
-	badgeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(colors.fg)).
-		Padding(0, 1).
-		Bold(true)
-	if colors.bg != "" {
-		badgeStyle = badgeStyle.Background(lipgloss.Color(colors.bg))
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(0, 1)
+	style = withFG(style, colors.fg)
+	style = withBG(style, colors.bg)
+	if colors.border != "" {
+		style = style.BorderForeground(lipgloss.Color(colors.border))
 	}
-	badge := badgeStyle.Render(label)
-	return border + badge
+	if colors.bg != "" {
+		style = style.BorderBackground(lipgloss.Color(colors.bg))
+	}
+	return style.Render(label)
 }
 
 func paintMonitorCard(grid [][]canvasCell, rect canvasRect, output editableOutput, selected bool, colors canvasCardColors) {

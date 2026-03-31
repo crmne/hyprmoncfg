@@ -111,23 +111,20 @@ type canvasGeometry struct {
 
 func (m Model) renderTitleBar() string {
 	width := m.terminalWidth()
-	title := m.styles.title.Render("hyprmoncfg")
-	badge := m.unsavedBadge()
+	titleText := m.styles.title.Underline(true).Render("hyprmoncfg")
+	title := osc8Link(homeURL, titleText)
 
-	if width < 40 {
-		return title
-	}
 	if width < 68 {
-		return lipgloss.JoinHorizontal(lipgloss.Left, title, " ", badge)
+		return title
 	}
 
 	subtitleText := "Hyprland monitor layout and workspace planner"
 	if width < 104 {
 		subtitleText = "Hyprland monitor planner"
 	}
-	subtitleBudget := max(12, width-lipgloss.Width(title)-lipgloss.Width(badge)-6)
+	subtitleBudget := max(12, width-lipgloss.Width(title)-4)
 	subtitle := m.styles.subtitle.Render(fitString(subtitleText, subtitleBudget))
-	return lipgloss.JoinHorizontal(lipgloss.Left, title, " ", subtitle, "  ", badge)
+	return lipgloss.JoinHorizontal(lipgloss.Left, title, " ", subtitle)
 }
 
 func (m Model) renderModalFrame(title string, body []string) string {
@@ -611,6 +608,13 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Y == 0 {
+		titleWidth := lipgloss.Width(m.styles.title.Render("hyprmoncfg"))
+		if msg.X >= 1 && msg.X < 1+titleWidth {
+			return m, m.openURLCmd("hyprmoncfg", homeURL)
+		}
+	}
+
 	if tab, ok := m.tabAt(msg.X, msg.Y); ok && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 		m.tab = tab
 		return m, nil
@@ -665,7 +669,7 @@ func (m Model) updateModePickerMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	bodyY := m.bodyOriginY()
 	canvasWidth, inspectorWidth := m.layoutPaneWidths()
-	layout := m.canvasLayout(canvasWidth-4, clampInt(m.terminalHeight()-12, 8, 26))
+	layout := m.canvasLayout(canvasWidth-4, m.canvasMouseHeight())
 
 	if m.inCanvas(msg.X, msg.Y, bodyY, canvasWidth, layout) {
 		m.layoutFocus = layoutFocusCanvas
@@ -700,9 +704,7 @@ func (m Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.inspectorField = field
 			switch msg.Button {
 			case tea.MouseButtonLeft:
-				if field == 0 || field == 1 || field == 2 {
-					return m.activateInspectorField()
-				}
+				return m.activateInspectorField()
 			case tea.MouseButtonWheelUp:
 				m.adjustInspectorField(1)
 				m.markDirty()
@@ -742,6 +744,9 @@ func (m Model) updateWorkspaceMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if fieldRow >= 0 && fieldRow < len(workspaceFields) && msg.Action == tea.MouseActionPress {
 		m.workspaceEdit.SelectedField = fieldRow
 		switch msg.Button {
+		case tea.MouseButtonLeft:
+			m.adjustWorkspaceField(1)
+			m.markDirty()
 		case tea.MouseButtonWheelUp:
 			m.adjustWorkspaceField(1)
 			m.markDirty()
@@ -752,11 +757,14 @@ func (m Model) updateWorkspaceMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// "Monitor order" header + items start after fields + 2 lines (blank + header)
 	orderStart := bodyY + 3 + len(workspaceFields) + 2
-	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Y >= orderStart {
-		row := msg.Y - orderStart - 1
+	if msg.Action == tea.MouseActionPress && msg.Y >= orderStart {
+		row := msg.Y - orderStart
 		if row >= 0 && row < len(m.workspaceEdit.MonitorOrder) {
+			m.workspaceEdit.SelectedField = len(workspaceFields) + row
 			m.workspaceEdit.SelectedOrder = row
+			m.markDirty()
 		}
 	}
 	return m, nil
@@ -764,6 +772,31 @@ func (m Model) updateWorkspaceMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) bodyOriginY() int {
 	return lipgloss.Height(m.renderTitleBar()) + lipgloss.Height(m.renderTabs()) + 1
+}
+
+func (m Model) canvasMouseHeight() int {
+	canvasWidth, _ := m.layoutPaneWidths()
+	panel := m.styles.inactivePane
+	bodyHeight := max(3, m.terminalHeight()-m.bodyOriginY()-3)
+	innerHeight := max(1, bodyHeight-panel.GetVerticalFrameSize())
+	innerWidth := max(1, canvasWidth-panel.GetHorizontalFrameSize())
+
+	nonCanvasLines := 1
+	if innerHeight >= 8 && innerWidth >= 44 {
+		nonCanvasLines += 2
+	}
+	if innerHeight >= 6 && innerWidth >= 34 {
+		nonCanvasLines += 4
+	}
+	if innerHeight >= 10 {
+		for _, output := range m.editOutputs {
+			if !output.Enabled {
+				nonCanvasLines++
+				break
+			}
+		}
+	}
+	return max(1, innerHeight-nonCanvasLines)
 }
 
 func (m Model) tabAt(x, y int) (mainTab, bool) {
@@ -797,7 +830,7 @@ func (m Model) inCanvas(x, y, bodyY, canvasWidth int, layout canvasGeometry) boo
 
 func (m Model) canvasLocalPoint(x, y, bodyY int) (int, int) {
 	canvasX := 2
-	canvasY := bodyY + 3
+	canvasY := bodyY + 2
 	return x - canvasX, y - canvasY
 }
 
@@ -805,10 +838,10 @@ func (m Model) inspectorFieldAt(y, bodyY int) (int, bool) {
 	if len(m.editOutputs) == 0 {
 		return 0, false
 	}
-	row := bodyY + 6
-	if strings.TrimSpace(m.editOutputs[m.selectedOutput].Description) != "" {
-		row++
-	}
+	output := m.editOutputs[m.selectedOutput]
+	detailCount := len(m.inspectorDetailLines(output))
+	// pane border(1) + header(1) + blank(1) + "Info"(1) + details(N) + blank(1) + "Preferences"(1) = N+6
+	row := bodyY + detailCount + 6
 	for idx := range layoutFields {
 		if y == row+idx {
 			return idx, true
@@ -819,8 +852,8 @@ func (m Model) inspectorFieldAt(y, bodyY int) (int, bool) {
 
 func (m Model) canvasLayout(width, height int) canvasGeometry {
 	layout := canvasGeometry{
-		width:  clampInt(width-2, 20, 120),
-		height: clampInt(height, 3, 30),
+		width:  max(20, width-2),
+		height: max(3, height),
 		cellW:  2.2,
 	}
 

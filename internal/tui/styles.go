@@ -20,7 +20,7 @@ var (
 	}
 	inactiveTabBorder = lipgloss.Border{
 		Top:         " ",
-		Bottom:      "─",
+		Bottom:      " ",
 		Left:        " ",
 		Right:       " ",
 		TopLeft:     " ",
@@ -225,7 +225,7 @@ func newPalette() palette {
 		cardDisabledBg:     "",
 		cardDisabledFg:     supportText,
 		cardDisabledMuted:  supportText,
-		cardSelectedBorder: "2",
+		cardSelectedBorder: "3",
 		cardSelectedBg:     defaultFG,
 		cardSelectedFg:     defaultBG,
 		cardSelectedMuted:  defaultBG,
