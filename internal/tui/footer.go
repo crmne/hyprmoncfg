@@ -210,8 +210,7 @@ func (m Model) footerLinkAt(x, y int) (footerLinkRegion, bool) {
 
 func (m Model) footerContentWidth() int {
 	app := m.styles.app
-	outerWidth := max(1, m.terminalWidth()-app.GetHorizontalFrameSize())
-	return max(1, outerWidth-app.GetHorizontalFrameSize())
+	return max(1, m.terminalWidth()-app.GetHorizontalFrameSize())
 }
 
 func (m Model) renderFooterInfo(width int) string {
@@ -247,15 +246,27 @@ func osc8Link(url, label string) string {
 	return osc8 + url + st + label + osc8 + st
 }
 
-func (m Model) decorateFooterBar(view, footer string) string {
+func (m Model) decorateFooterBar(footer string) string {
 	if strings.TrimSpace(footer) == "" {
-		return view
+		return footer
 	}
 
 	styled := m.styles.help.Render(footer)
 
+	// Status badge
+	unsaved := m.unsavedLabel()
+	styled = strings.Replace(styled, unsaved, m.unsavedBadge(), 1)
+
+	// Error/OK status message
+	if m.status != "" {
+		if m.statusErr {
+			styled = strings.Replace(styled, m.status, m.styles.statusError.Render(m.status), 1)
+		} else {
+			styled = strings.Replace(styled, m.status, m.styles.statusOK.Render(m.status), 1)
+		}
+	}
+
 	// Highlight keyboard shortcuts using backtick markers from the raw help text.
-	// Replace "key context" (e.g. "a apply") to avoid matching single chars in status text.
 	keyStyle := withFG(lipgloss.NewStyle().Bold(true), "2")
 	help := m.footerHelpText()
 	for {
@@ -279,19 +290,6 @@ func (m Model) decorateFooterBar(view, footer string) string {
 		help = rest
 	}
 
-	// Status badge
-	unsaved := m.unsavedLabel()
-	styled = strings.Replace(styled, unsaved, m.unsavedBadge(), 1)
-
-	// Error/OK status message
-	if m.status != "" {
-		if m.statusErr {
-			styled = strings.Replace(styled, m.status, m.styles.statusError.Render(m.status), 1)
-		} else {
-			styled = strings.Replace(styled, m.status, m.styles.statusOK.Render(m.status), 1)
-		}
-	}
-
 	// Version — replace before inserting URLs that might contain "dev"
 	version := footerVersionLabel()
 	styled = replaceLastOccurrence(styled, version, osc8Link(releasesURL, m.styles.footerVersion.Render(version)))
@@ -308,5 +306,5 @@ func (m Model) decorateFooterBar(view, footer string) string {
 	}
 	styled = strings.Replace(styled, daemonLabel, osc8Link(daemonURL, daemonStyle.Render(daemonLabel)), 1)
 
-	return strings.Replace(view, footer, styled, 1)
+	return styled
 }

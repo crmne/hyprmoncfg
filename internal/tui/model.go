@@ -655,18 +655,18 @@ func (m Model) renderMain() string {
 	}
 	body = lipgloss.NewStyle().Height(bodyHeight).MaxHeight(bodyHeight).Render(body)
 
+	styledFooter := m.decorateFooterBar(footerText)
 	content := strings.Join([]string{
 		title,
 		tabs,
 		body,
-		footerText,
+		styledFooter,
 	}, "\n")
 	app := m.styles.app
-	rendered := app.Width(max(1, m.terminalWidth()-app.GetHorizontalFrameSize())).
+	return app.Width(max(1, m.terminalWidth()-app.GetHorizontalFrameSize())).
 		Height(max(1, m.terminalHeight()-app.GetVerticalFrameSize())).
 		MaxHeight(max(1, m.terminalHeight()-app.GetVerticalFrameSize())).
 		Render(content)
-	return m.decorateFooterBar(rendered, footerText)
 }
 
 func (m Model) renderTabs() string {
