@@ -161,14 +161,15 @@ type snapAnalysis struct {
 }
 
 type workspaceEditor struct {
-	Enabled       bool
-	Strategy      profile.WorkspaceStrategy
-	MaxWorkspaces int
-	GroupSize     int
-	MonitorOrder  []string
-	Rules         []profile.WorkspaceRule
-	SelectedField int
-	SelectedOrder int
+	Enabled                 bool
+	Strategy                profile.WorkspaceStrategy
+	MaxWorkspaces           int
+	GroupSize               int
+	LastSequentialGroupSize int
+	MonitorOrder            []string
+	Rules                   []profile.WorkspaceRule
+	SelectedField           int
+	SelectedOrder           int
 }
 
 type Model struct {
@@ -213,6 +214,8 @@ type Model struct {
 	height int
 }
 
+const defaultWorkspaceGroupSize = 3
+
 func NewModel(client *hypr.Client, store *profile.Store, monitorsConfPath string, hyprlandConfigPath string) Model {
 	return Model{
 		client: client,
@@ -229,9 +232,10 @@ func NewModel(client *hypr.Client, store *profile.Store, monitorsConfPath string
 		layoutFocus: layoutFocusCanvas,
 		status:      "Loading Hyprland state...",
 		workspaceEdit: workspaceEditor{
-			Strategy:      profile.WorkspaceStrategySequential,
-			MaxWorkspaces: 9,
-			GroupSize:     3,
+			Strategy:                profile.WorkspaceStrategySequential,
+			MaxWorkspaces:           9,
+			GroupSize:               defaultWorkspaceGroupSize,
+			LastSequentialGroupSize: defaultWorkspaceGroupSize,
 		},
 	}
 }
@@ -1525,11 +1529,22 @@ func (m *Model) adjustWorkspaceField(delta int) {
 				break
 			}
 		}
-		m.workspaceEdit.Strategy = strategies[wrapIndex(current+delta, len(strategies))]
+		if m.workspaceEdit.Strategy == profile.WorkspaceStrategySequential && m.workspaceEdit.GroupSize > 0 {
+			m.workspaceEdit.LastSequentialGroupSize = m.workspaceEdit.GroupSize
+		}
+		next := strategies[wrapIndex(current+delta, len(strategies))]
+		if next == profile.WorkspaceStrategySequential && m.workspaceEdit.Strategy != profile.WorkspaceStrategySequential {
+			if m.workspaceEdit.LastSequentialGroupSize <= 0 {
+				m.workspaceEdit.LastSequentialGroupSize = defaultWorkspaceGroupSize
+			}
+			m.workspaceEdit.GroupSize = m.workspaceEdit.LastSequentialGroupSize
+		}
+		m.workspaceEdit.Strategy = next
 	case 2:
 		m.workspaceEdit.MaxWorkspaces = clampInt(m.workspaceEdit.MaxWorkspaces+delta, 1, 30)
 	case 3:
 		m.workspaceEdit.GroupSize = clampInt(m.workspaceEdit.GroupSize+delta, 1, 10)
+		m.workspaceEdit.LastSequentialGroupSize = m.workspaceEdit.GroupSize
 	}
 }
 
@@ -1906,16 +1921,21 @@ func workspaceEditorFromSettings(settings profile.WorkspaceSettings, outputs []e
 	}
 	groupSize := settings.GroupSize
 	if groupSize <= 0 {
-		groupSize = 3
+		groupSize = defaultWorkspaceGroupSize
+	}
+	lastSequentialGroupSize := groupSize
+	if strategy != profile.WorkspaceStrategySequential && lastSequentialGroupSize <= 1 {
+		lastSequentialGroupSize = defaultWorkspaceGroupSize
 	}
 
 	return workspaceEditor{
-		Enabled:       settings.Enabled,
-		Strategy:      strategy,
-		MaxWorkspaces: maxWorkspaces,
-		GroupSize:     groupSize,
-		MonitorOrder:  normalized,
-		Rules:         append([]profile.WorkspaceRule(nil), settings.Rules...),
+		Enabled:                 settings.Enabled,
+		Strategy:                strategy,
+		MaxWorkspaces:           maxWorkspaces,
+		GroupSize:               groupSize,
+		LastSequentialGroupSize: lastSequentialGroupSize,
+		MonitorOrder:            normalized,
+		Rules:                   append([]profile.WorkspaceRule(nil), settings.Rules...),
 	}
 }
 

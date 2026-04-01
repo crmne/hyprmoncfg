@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"fmt"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -999,6 +999,85 @@ func TestRenderWorkspaceViewShowsPreviewWhenDisabled(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected workspace view to include %q, got:\n%s", want, view)
 		}
+	}
+}
+
+func TestAdjustWorkspaceFieldRestoresSequentialPreviewAfterInterleave(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		tab:    tabWorkspaces,
+		editOutputs: []editableOutput{
+			{Key: "mon-a", Name: "DP-1", Enabled: true, Scale: 1},
+			{Key: "mon-b", Name: "HDMI-A-1", Enabled: true, Scale: 1},
+		},
+		workspaceEdit: workspaceEditor{
+			Enabled:                 true,
+			Strategy:                profile.WorkspaceStrategyInterleave,
+			MaxWorkspaces:           6,
+			GroupSize:               1,
+			LastSequentialGroupSize: defaultWorkspaceGroupSize,
+			MonitorOrder:            []string{"mon-a", "mon-b"},
+			SelectedField:           1,
+		},
+	}
+
+	m.adjustWorkspaceField(-1)
+	if m.workspaceEdit.Strategy != profile.WorkspaceStrategySequential {
+		t.Fatalf("expected sequential strategy after moving left from interleave, got %q", m.workspaceEdit.Strategy)
+	}
+	if m.workspaceEdit.GroupSize != defaultWorkspaceGroupSize {
+		t.Fatalf("expected sequential to restore default group size %d, got %d", defaultWorkspaceGroupSize, m.workspaceEdit.GroupSize)
+	}
+
+	view := m.renderWorkspaceView(16)
+	for _, want := range []string{"DP-1: 1, 2, 3", "HDMI-A-1: 4, 5, 6"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected sequential preview to include %q after strategy switch, got:\n%s", want, view)
+		}
+	}
+}
+
+func TestAdjustWorkspaceFieldPreservesCustomSequentialGroupSize(t *testing.T) {
+	m := Model{
+		workspaceEdit: workspaceEditor{
+			Strategy:                profile.WorkspaceStrategySequential,
+			GroupSize:               2,
+			LastSequentialGroupSize: 2,
+			SelectedField:           1,
+		},
+	}
+
+	m.adjustWorkspaceField(1)
+	if m.workspaceEdit.Strategy != profile.WorkspaceStrategyInterleave {
+		t.Fatalf("expected interleave strategy after moving right from sequential, got %q", m.workspaceEdit.Strategy)
+	}
+
+	m.adjustWorkspaceField(-1)
+	if m.workspaceEdit.Strategy != profile.WorkspaceStrategySequential {
+		t.Fatalf("expected sequential strategy after moving left from interleave, got %q", m.workspaceEdit.Strategy)
+	}
+	if m.workspaceEdit.GroupSize != 2 {
+		t.Fatalf("expected custom sequential group size to be preserved, got %d", m.workspaceEdit.GroupSize)
+	}
+}
+
+func TestWorkspaceEditorFromInterleaveSettingsSeedsSequentialGroupSize(t *testing.T) {
+	editor := workspaceEditorFromSettings(profile.WorkspaceSettings{
+		Enabled:       true,
+		Strategy:      profile.WorkspaceStrategyInterleave,
+		MaxWorkspaces: 6,
+		GroupSize:     1,
+		MonitorOrder:  []string{"mon-a", "mon-b"},
+	}, []editableOutput{
+		{Key: "mon-a", Name: "DP-1", Enabled: true, Scale: 1},
+		{Key: "mon-b", Name: "HDMI-A-1", Enabled: true, Scale: 1},
+	})
+
+	if editor.GroupSize != 1 {
+		t.Fatalf("expected interleave settings to keep stored group size 1, got %d", editor.GroupSize)
+	}
+	if editor.LastSequentialGroupSize != defaultWorkspaceGroupSize {
+		t.Fatalf("expected interleave settings to seed sequential group size %d, got %d", defaultWorkspaceGroupSize, editor.LastSequentialGroupSize)
 	}
 }
 
