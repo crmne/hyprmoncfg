@@ -52,8 +52,8 @@ Down
 Sleep 0.5s
 Enter
 Sleep 1s
-Backspace 4
-Type "1.5"
+Backspace 2
+Type "5"
 Sleep 0.5s
 Enter
 Sleep 1s
@@ -75,7 +75,9 @@ Backspace 11
 Type "My Setup"
 Sleep 0.5s
 Enter
-Sleep 0.5s
+Sleep 1s
+Type "y"
+Sleep 2s
 Type "y"
 Sleep 1.5s
 
