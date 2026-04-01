@@ -204,11 +204,12 @@ type Model struct {
 	snap          *snapHintState
 	snapSeq       int
 
-	status     string
-	statusErr  bool
-	dirty      bool
-	draftSaved bool
-	daemonOK   bool
+	status           string
+	statusErr        bool
+	dirty            bool
+	draftSaved       bool
+	draftProfileName string
+	daemonOK         bool
 
 	width  int
 	height int
@@ -286,10 +287,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeMain
 			return m, nil
 		}
-		m.mode = modeMain
+		action := saveActionOnly
+		if m.saveDialog != nil {
+			action = m.saveDialog.Action
+		}
 		m.saveDialog = nil
 		m.saveOverwrite = ""
+		m.draftProfileName = msg.name
 		m.draftSaved = true
+		m.mode = modeMain
+		if action == saveActionCancel {
+			m.setStatusOK("Save cancelled")
+			return m, nil
+		}
+		if action == saveActionApply {
+			return m, tea.Batch(
+				m.refreshCmd(),
+				m.applyCmd(m.currentProfile(msg.name)),
+			)
+		}
 		m.setStatusOK(fmt.Sprintf("Saved profile %q", msg.name))
 		return m, m.refreshCmd()
 
@@ -303,6 +319,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.setStatusErr(msg.err.Error())
 			return m, nil
+		}
+		if strings.EqualFold(strings.TrimSpace(msg.name), strings.TrimSpace(m.draftProfileName)) {
+			m.draftProfileName = ""
 		}
 		m.setStatusOK(fmt.Sprintf("Deleted profile %q", msg.name))
 		m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
@@ -332,6 +351,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.markClean()
+		m.draftProfileName = ""
 		m.setStatusOK("Configuration reverted: " + msg.reason)
 		return m, m.refreshCmd()
 
@@ -404,6 +424,7 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tab = tabWorkspaces
 		return m, nil
 	case "r":
+		m.draftProfileName = ""
 		m.markClean()
 		return m, m.refreshCmd()
 	case "s":
@@ -611,6 +632,9 @@ func (m Model) updateConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "y", "enter":
+		if target := strings.TrimSpace(m.pending.target); target != "" && target != "draft" {
+			m.draftProfileName = target
+		}
 		m.mode = modeMain
 		m.pending = nil
 		m.markClean()
@@ -1009,18 +1033,26 @@ func (m Model) renderSavePrompt() string {
 		"",
 		m.saveDialog.List.View(),
 		"",
+		m.styles.label.Render("Action"),
+		m.renderSaveActionButtons(),
+		"",
 	}
 	if status := m.renderErrorStatus(); status != "" {
 		body = append(body, status, "")
 	}
-	body = append(body, m.styles.help.MaxWidth(max(20, m.modalMaxWidth()-6)).Render("Type to filter names. Up/Down selects an existing profile. Enter saves. Esc cancels."))
+	body = append(body, m.styles.help.MaxWidth(max(20, m.modalMaxWidth()-6)).Render("Type to filter names. Up/Down selects an existing profile. Tab switches action. Enter confirms. Esc cancels."))
 	return m.renderModalFrame("Save Profile", body)
 }
 
 func (m Model) renderSaveConfirm() string {
+	consequence := "The existing profile will be replaced with the current draft."
+	if m.saveDialog != nil && m.saveDialog.Action == saveActionApply {
+		consequence = "The existing profile will be replaced and then applied to the live layout."
+	}
+
 	body := []string{
 		m.styles.warning.Render(fmt.Sprintf("Overwrite profile %q?", m.saveOverwrite)),
-		m.styles.subtle.Render("The existing profile will be replaced with the current draft."),
+		m.styles.subtle.Render(consequence),
 		"",
 		m.styles.help.Render("Enter or y overwrites. Esc or n cancels."),
 	}
@@ -1252,6 +1284,11 @@ func (m *Model) loadLiveState() {
 
 	settings := profile.WorkspaceSettingsFromHypr(m.monitors, m.workspaceRules)
 	m.workspaceEdit = workspaceEditorFromSettings(settings, m.editOutputs)
+	if matched, ok := profile.ExactStateMatch(m.profiles, m.monitors, m.workspaceRules); ok {
+		m.draftProfileName = matched.Name
+	} else {
+		m.draftProfileName = ""
+	}
 	if idx := focusedOutputIndex(m.editOutputs); idx >= 0 {
 		m.selectedOutput = idx
 	} else if selectedKey != "" {
@@ -1280,6 +1317,7 @@ func (m *Model) loadProfile(p profile.Profile) {
 	m.drag = nil
 	m.dirty = true
 	m.draftSaved = true
+	m.draftProfileName = p.Name
 	m.setStatusOK(fmt.Sprintf("Loaded profile %q into editor", p.Name))
 }
 

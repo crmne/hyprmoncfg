@@ -88,6 +88,94 @@ func BestMatch(profiles []Profile, monitors []hypr.Monitor) (Profile, int, bool)
 	return candidates[0].profile, candidates[0].score, true
 }
 
+func ExactStateMatch(profiles []Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) (Profile, bool) {
+	if len(profiles) == 0 || len(monitors) == 0 {
+		return Profile{}, false
+	}
+
+	current := FromState("", monitors, rules)
+	var match Profile
+	matches := 0
+	for _, candidate := range profiles {
+		if !profilesShareEffectiveState(candidate, current, monitors) {
+			continue
+		}
+		match = candidate
+		matches++
+		if matches > 1 {
+			return Profile{}, false
+		}
+	}
+
+	if matches == 1 {
+		return match, true
+	}
+	return Profile{}, false
+}
+
+func profilesShareEffectiveState(a, b Profile, monitors []hypr.Monitor) bool {
+	if !outputsShareEffectiveState(a.Outputs, b.Outputs) {
+		return false
+	}
+
+	aRules := ResolveWorkspaceRules(a, monitors)
+	bRules := ResolveWorkspaceRules(b, monitors)
+	if len(aRules) != len(bRules) {
+		return false
+	}
+	for idx := range aRules {
+		if aRules[idx].Workspace != bRules[idx].Workspace {
+			return false
+		}
+		if !workspaceRuleTargetsEqual(aRules[idx], bRules[idx]) {
+			return false
+		}
+		if aRules[idx].Default != bRules[idx].Default || aRules[idx].Persistent != bRules[idx].Persistent {
+			return false
+		}
+	}
+	return true
+}
+
+func outputsShareEffectiveState(a, b []OutputConfig) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	byKey := make(map[string]OutputConfig, len(a))
+	for _, output := range a {
+		byKey[output.Key] = output
+	}
+
+	for _, output := range b {
+		left, ok := byKey[output.Key]
+		if !ok {
+			return false
+		}
+		if !outputConfigsShareEffectiveState(left, output) {
+			return false
+		}
+	}
+	return true
+}
+
+func outputConfigsShareEffectiveState(a, b OutputConfig) bool {
+	if a.Key != b.Key || a.Enabled != b.Enabled {
+		return false
+	}
+	if !a.Enabled {
+		return true
+	}
+
+	return a.NormalizedMode() == b.NormalizedMode() &&
+		a.X == b.X &&
+		a.Y == b.Y &&
+		clampStateScale(a.Scale) == clampStateScale(b.Scale) &&
+		a.Transform == b.Transform &&
+		a.VRR == b.VRR &&
+		firstNonEmpty(a.MirrorOf, "") == firstNonEmpty(b.MirrorOf, "")
+}
+
 func MonitorSetHash(monitors []hypr.Monitor) string {
 	if len(monitors) == 0 {
 		return "none"

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/crmne/hyprmoncfg/internal/buildinfo"
+	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
@@ -587,6 +588,59 @@ func TestOpenSaveDialogShowsExistingProfiles(t *testing.T) {
 	}
 }
 
+func TestOpenSaveDialogPrefillsCurrentDraftProfileName(t *testing.T) {
+	m := Model{
+		styles:           newStyles(),
+		height:           30,
+		draftProfileName: "Desk Dock",
+		profiles:         []profile.Profile{{Name: "Laptop Home"}, {Name: "Desk Dock"}},
+	}
+
+	updatedModel, _ := m.openSaveDialog()
+	got := updatedModel.(*Model)
+	if got.saveDialog == nil {
+		t.Fatal("expected save dialog to be initialized")
+	}
+	if got.saveDialog.Input.Value() != "Desk Dock" {
+		t.Fatalf("expected save dialog to prefill current draft profile name, got %q", got.saveDialog.Input.Value())
+	}
+	if len(got.saveDialog.List.Items()) != 2 {
+		t.Fatalf("expected prefilled save dialog to keep the full profile list visible, got %d items", len(got.saveDialog.List.Items()))
+	}
+	if got.saveDialog.Action != saveActionApply {
+		t.Fatalf("expected save dialog to default to Save & Apply, got %v", got.saveDialog.Action)
+	}
+}
+
+func TestLoadLiveStateInfersDraftProfileNameFromExactCurrentProfile(t *testing.T) {
+	monitors := []hypr.Monitor{{
+		Name:        "DP-1",
+		Make:        "Dell",
+		Model:       "U2720Q",
+		Serial:      "A1",
+		Width:       2560,
+		Height:      1440,
+		RefreshRate: 144,
+		X:           0,
+		Y:           0,
+		Scale:       1,
+		Focused:     true,
+		DPMSStatus:  true,
+	}}
+
+	m := Model{
+		styles:   newStyles(),
+		monitors: monitors,
+		profiles: []profile.Profile{profile.FromState("Desk Dock", monitors, nil)},
+	}
+
+	m.loadLiveState()
+
+	if m.draftProfileName != "Desk Dock" {
+		t.Fatalf("expected live state to infer current profile name, got %q", m.draftProfileName)
+	}
+}
+
 func TestSaveDialogMouseSelectsVisibleProfile(t *testing.T) {
 	m := Model{
 		styles:   newStyles(),
@@ -658,6 +712,64 @@ func TestSaveMarksDraftAsSavedWithoutDiscardingEditorState(t *testing.T) {
 	}
 	if !strings.Contains(got.unsavedBadge(), "Saved Draft") {
 		t.Fatalf("expected badge to show saved draft, got %q", got.unsavedBadge())
+	}
+}
+
+func TestSaveDialogTabCyclesExplicitActions(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		height: 30,
+	}
+
+	updatedModel, _ := m.openSaveDialog()
+	got := updatedModel.(*Model)
+
+	nextModel, _ := got.updateSaveKeys(tea.KeyMsg{Type: tea.KeyTab})
+	next := nextModel.(Model)
+	if next.saveDialog == nil {
+		t.Fatal("expected save dialog to remain open")
+	}
+	if next.saveDialog.Action != saveActionCancel {
+		t.Fatalf("expected Tab to cycle Save & Apply to Cancel, got %v", next.saveDialog.Action)
+	}
+
+	backModel, _ := next.updateSaveKeys(tea.KeyMsg{Type: tea.KeyShiftTab})
+	back := backModel.(Model)
+	if back.saveDialog == nil {
+		t.Fatal("expected save dialog to remain open after Shift+Tab")
+	}
+	if back.saveDialog.Action != saveActionApply {
+		t.Fatalf("expected Shift+Tab to cycle back to Save & Apply, got %v", back.saveDialog.Action)
+	}
+}
+
+func TestSaveMsgWithApplyActionSkipsSecondPrompt(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		mode:   modeSave,
+		dirty:  true,
+		saveDialog: &saveDialogState{
+			Action: saveActionApply,
+		},
+	}
+
+	updatedModel, cmd := m.Update(saveMsg{name: "Desk Home"})
+	got := updatedModel.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected save with Save & Apply selected to return follow-up commands")
+	}
+	if got.mode != modeMain {
+		t.Fatalf("expected save with Save & Apply selected to return to main mode, got %v", got.mode)
+	}
+	if got.saveDialog != nil {
+		t.Fatalf("expected save with Save & Apply selected to clear dialog state, got %+v", got.saveDialog)
+	}
+	if !got.dirty || !got.draftSaved {
+		t.Fatal("expected save with Save & Apply selected to keep the saved draft intact")
+	}
+	if got.draftProfileName != "Desk Home" {
+		t.Fatalf("expected save with Save & Apply selected to remember profile name, got %q", got.draftProfileName)
 	}
 }
 

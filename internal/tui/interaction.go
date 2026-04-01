@@ -85,7 +85,16 @@ type saveDialogState struct {
 	List   list.Model
 	All    []profileListItem
 	Filter string
+	Action saveAction
 }
+
+type saveAction int
+
+const (
+	saveActionOnly saveAction = iota
+	saveActionApply
+	saveActionCancel
+)
 
 type canvasDragState struct {
 	OutputIndex int
@@ -358,7 +367,11 @@ func (m *Model) openSaveDialog() (tea.Model, tea.Cmd) {
 	input.TextStyle = m.styles.value
 	input.PlaceholderStyle = m.styles.subtle
 	input.Cursor.Style = lipgloss.NewStyle()
-	input.SetValue(defaultProfileName())
+	name := defaultProfileName()
+	if suggested := strings.TrimSpace(m.draftProfileName); suggested != "" {
+		name = suggested
+	}
+	input.SetValue(name)
 	cmd := input.Focus()
 
 	items := make([]profileListItem, 0, len(m.profiles))
@@ -395,11 +408,58 @@ func (m *Model) openSaveDialog() (tea.Model, tea.Cmd) {
 		List:   profileList,
 		All:    items,
 		Filter: "",
+		Action: saveActionApply,
 	}
 	m.mode = modeSave
 	m.saveOverwrite = ""
 	m.rebuildSaveList(false)
 	return m, cmd
+}
+
+func (m *Model) cycleSaveAction(delta int) {
+	if m.saveDialog == nil {
+		return
+	}
+	actions := []saveAction{saveActionOnly, saveActionApply, saveActionCancel}
+	current := 0
+	for idx, action := range actions {
+		if action == m.saveDialog.Action {
+			current = idx
+			break
+		}
+	}
+	m.saveDialog.Action = actions[wrapIndex(current+delta, len(actions))]
+}
+
+func (m Model) selectedSaveAction() saveAction {
+	if m.saveDialog == nil {
+		return saveActionOnly
+	}
+	return m.saveDialog.Action
+}
+
+func (m Model) saveActionLabel(action saveAction) string {
+	switch action {
+	case saveActionApply:
+		return "Save & Apply"
+	case saveActionCancel:
+		return "Cancel"
+	default:
+		return "Save"
+	}
+}
+
+func (m Model) renderSaveActionButtons() string {
+	actions := []saveAction{saveActionOnly, saveActionApply, saveActionCancel}
+	parts := make([]string, 0, len(actions))
+	for _, action := range actions {
+		style := m.styles.field
+		if action == m.selectedSaveAction() {
+			style = m.styles.focused
+		}
+		parts = append(parts, style.Render(m.saveActionLabel(action)))
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Left, parts...)
 }
 
 func (m *Model) rebuildSaveList(resetSelection bool) {
@@ -460,7 +520,19 @@ func (m Model) updateSaveKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.saveDialog = nil
 		m.saveOverwrite = ""
 		return m, nil
+	case "tab":
+		m.cycleSaveAction(1)
+		return m, nil
+	case "shift+tab":
+		m.cycleSaveAction(-1)
+		return m, nil
 	case "enter":
+		if m.selectedSaveAction() == saveActionCancel {
+			m.mode = modeMain
+			m.saveDialog = nil
+			m.saveOverwrite = ""
+			return m, nil
+		}
 		name := strings.TrimSpace(m.saveDialog.Input.Value())
 		if name == "" {
 			m.setStatusErr("Profile name cannot be empty")

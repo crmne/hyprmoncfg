@@ -105,3 +105,74 @@ func TestMonitorStateHashIsStableAndTracksState(t *testing.T) {
 		t.Fatalf("expected disabled state change to affect monitor state hash")
 	}
 }
+
+func TestExactStateMatchFindsUniqueExactProfile(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{
+			Name:        "DP-1",
+			Make:        "Dell",
+			Model:       "U2720Q",
+			Serial:      "A1",
+			Width:       2560,
+			Height:      1440,
+			RefreshRate: 144,
+			X:           0,
+			Y:           0,
+			Scale:       1,
+		},
+		{
+			Name:        "eDP-1",
+			Make:        "BOE",
+			Model:       "Panel",
+			Serial:      "C3",
+			Width:       1920,
+			Height:      1200,
+			RefreshRate: 60,
+			X:           2560,
+			Y:           0,
+			Scale:       1.25,
+		},
+	}
+	rules := []hypr.WorkspaceRule{
+		{WorkspaceString: "1", Monitor: "DP-1", Default: true, Persistent: true},
+		{WorkspaceString: "2", Monitor: "eDP-1", Default: true, Persistent: true},
+	}
+
+	exact := FromState("desk", monitors, rules)
+	changed := exact
+	changed.Name = "desk-shifted"
+	changed.Outputs = append([]OutputConfig(nil), exact.Outputs...)
+	changed.Outputs[0].X = 50
+
+	got, ok := ExactStateMatch([]Profile{changed, exact}, monitors, rules)
+	if !ok {
+		t.Fatal("expected exact state match")
+	}
+	if got.Name != "desk" {
+		t.Fatalf("expected desk exact state match, got %q", got.Name)
+	}
+}
+
+func TestExactStateMatchRejectsAmbiguousDuplicateProfiles(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{
+			Name:        "DP-1",
+			Make:        "Dell",
+			Model:       "U2720Q",
+			Serial:      "A1",
+			Width:       2560,
+			Height:      1440,
+			RefreshRate: 144,
+			X:           0,
+			Y:           0,
+			Scale:       1,
+		},
+	}
+
+	left := FromState("desk-a", monitors, nil)
+	right := FromState("desk-b", monitors, nil)
+
+	if _, ok := ExactStateMatch([]Profile{left, right}, monitors, nil); ok {
+		t.Fatal("expected ambiguous exact profile matches to be rejected")
+	}
+}
