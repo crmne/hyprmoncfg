@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/crmne/hyprmoncfg/internal/profile"
+	"github.com/crmne/hyprmoncfg/internal/apply"
 )
 
 type pickerItem string
@@ -692,6 +693,8 @@ func (m Model) commitNumericInput() (tea.Model, tea.Cmd) {
 		m.setStatusOK(fmt.Sprintf("Position Y set to %d for %s", value, m.editOutputs[m.input.OutputIndex].Name))
 	}
 
+	m.revalidate()
+
 	m.input = nil
 	m.mode = modeMain
 	return m, nil
@@ -789,7 +792,7 @@ func (m Model) updateModePickerMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	canvasRect, _ := m.layoutCanvasRect()
 	inspectorRect, compact := m.layoutInspectorRect()
 	layout := m.canvasLayout(canvasRect.w-m.styles.inactivePane.GetHorizontalFrameSize(), m.canvasMouseHeight())
@@ -814,6 +817,9 @@ func (m Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.moveSelectedOutput(worldDX, worldDY)
 				m.drag.LastX = msg.X
 				m.drag.LastY = msg.Y
+
+				m.revalidate()
+
 				m.markDirty()
 			}
 		}
@@ -1332,4 +1338,23 @@ func splitPaneWidths(total int, leftPercent int, minPane int) (int, int) {
 		}
 	}
 	return max(1, left), max(1, right)
+}
+
+func (m *Model) revalidate() {
+	configs := make([]profile.OutputConfig, len(m.editOutputs))
+	for i, out := range m.editOutputs {
+		configs[i] = profile.OutputConfig{
+			Name:      out.Name,
+			Enabled:   out.Enabled,
+			X:         out.X,
+			Y:         out.Y,
+			Width:     out.Width,
+			Height:    out.Height,
+			Scale:     out.Scale,
+			Transform: out.Transform,
+			MirrorOf:  out.MirrorOf,
+		}
+	}
+	// Call the logic we found in apply.go
+	m.layoutErr = apply.ValidateLayout(configs)
 }

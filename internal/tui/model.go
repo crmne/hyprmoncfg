@@ -213,6 +213,8 @@ type Model struct {
 
 	width  int
 	height int
+
+	layoutErr		error
 }
 
 const defaultWorkspaceGroupSize = 3
@@ -2193,6 +2195,10 @@ func (m Model) canvasCardStyle(output editableOutput, selected bool) canvasCardC
 			fg:     p.cardSelectedFg,
 			muted:  p.cardSelectedMuted,
 		}
+	}
+	if m.layoutErr != nil && output.Enabled && output.MirrorOf == "" {
+		colors.border = "#FF0000"
+		colors.fg = "#FF0000"
 	}
 	return colors
 }

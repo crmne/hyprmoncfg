@@ -105,7 +105,9 @@ func (m Model) unsavedLabel() string {
 
 func (m Model) footerStatusLine() string {
 	parts := []string{m.unsavedLabel()}
-	if m.status != "" {
+	if m.layoutErr != nil {
+		parts = append(parts, m.layoutErr.Error())
+	} else if m.status != "" {
 		parts = append(parts, m.status)
 	}
 	return strings.Join(parts, "  ")
@@ -254,6 +256,12 @@ func (m Model) decorateFooterBar(footer string) string {
 	// Status badge
 	unsaved := m.unsavedLabel()
 	styled = strings.Replace(styled, unsaved, m.unsavedBadge(), 1)
+	
+	// Style the layout overlap error
+	if m.layoutErr != nil {
+		errStr := m.layoutErr.Error()
+		styled = strings.Replace(styled, errStr, m.styles.statusError.Render(errStr), 1)
+	}
 
 	// Error/OK status message
 	if m.status != "" {
