@@ -71,10 +71,11 @@ Type "s"
 Sleep 0.8s
 
 # Type a name
-Backspace 24
+Backspace 11
 Type "My Setup"
 Sleep 0.5s
 Enter
+Sleep 0.5s
 Type "y"
 Sleep 1.5s
 
