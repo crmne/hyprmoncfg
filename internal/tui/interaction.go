@@ -1355,6 +1355,6 @@ func (m *Model) revalidate() {
 			MirrorOf:  out.MirrorOf,
 		}
 	}
-	// Call the logic we found in apply.go
+	// Call the logic from apply.go
 	m.layoutErr = apply.ValidateLayout(configs)
 }
