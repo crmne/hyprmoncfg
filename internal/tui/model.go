@@ -214,7 +214,7 @@ type Model struct {
 	width  int
 	height int
 
-	layoutErr		error
+	layoutErr error
 }
 
 const defaultWorkspaceGroupSize = 3
@@ -477,67 +477,19 @@ func (m *Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.layoutFocus == layoutFocusCanvas {
-		var cmd tea.Cmd
+		if dx, dy, ok := layoutMoveDelta(msg.String()); ok {
+			return m, m.nudgeSelectedOutput(dx, dy, 24)
+		}
 		switch msg.String() {
-		case "left":
-			m.moveSelectedOutput(-100, 0)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "right":
-			m.moveSelectedOutput(100, 0)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "up":
-			m.moveSelectedOutput(0, -100)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "down":
-			m.moveSelectedOutput(0, 100)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "shift+left":
-			m.moveSelectedOutput(-10, 0)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "shift+right":
-			m.moveSelectedOutput(10, 0)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "shift+up":
-			m.moveSelectedOutput(0, -10)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "shift+down":
-			m.moveSelectedOutput(0, 10)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "ctrl+left":
-			m.moveSelectedOutput(-1, 0)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "ctrl+right":
-			m.moveSelectedOutput(1, 0)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "ctrl+up":
-			m.moveSelectedOutput(0, -1)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "ctrl+down":
-			m.moveSelectedOutput(0, 1)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "H":
-			m.moveSelectedOutput(-500, 0)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "L":
-			m.moveSelectedOutput(500, 0)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "K":
-			m.moveSelectedOutput(0, -500)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
-		case "J":
-			m.moveSelectedOutput(0, 500)
-			cmd = m.showSnapHint(m.previewSelectedSnap(24))
 		case " ":
 			m.toggleSelectedOutput()
+			return m, nil
 		case "enter":
 			m.layoutFocus = layoutFocusInspector
 			return m, nil
 		default:
 			return m, nil
 		}
-		m.markDirty()
-		m.revalidate()
-		return m, cmd
 	}
 
 	switch msg.String() {
@@ -550,17 +502,11 @@ func (m *Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right", "l", "+", "=":
 		m.adjustInspectorField(1)
 	case " ", "enter":
-		m, cmd := m.activateInspectorField()
-		if mod, ok := m.(*Model); ok {
-			mod.revalidate()
-		}
-		return m, cmd
+		return m, m.activateInspectorField()
 	default:
 		return m, nil
 	}
 
-	m.markDirty()
-	m.revalidate()
 	return m, nil
 }
 
@@ -1382,6 +1328,7 @@ func (m *Model) moveSelectedOutput(dx, dy int) {
 	}
 	m.editOutputs[m.selectedOutput].X += dx
 	m.editOutputs[m.selectedOutput].Y += dy
+	m.layoutChanged()
 }
 
 func (m *Model) toggleSelectedOutput() {
@@ -1389,6 +1336,7 @@ func (m *Model) toggleSelectedOutput() {
 		return
 	}
 	m.editOutputs[m.selectedOutput].Enabled = !m.editOutputs[m.selectedOutput].Enabled
+	m.layoutChanged()
 }
 
 func (m Model) analyzeSelectedSnap(threshold int) snapAnalysis {
@@ -1560,7 +1508,7 @@ func (m *Model) adjustInspectorField(delta int) {
 		}
 		output.MirrorOf = targets[wrapIndex(current+delta, len(targets))]
 	}
-	m.revalidate()
+	m.layoutChanged()
 }
 
 func (m *Model) adjustWorkspaceField(delta int) {
@@ -1622,6 +1570,20 @@ func (m Model) currentProfileOutputs() []profile.OutputConfig {
 		outputs = append(outputs, output.profileOutput())
 	}
 	return outputs
+}
+
+func (m *Model) revalidate() {
+	m.layoutErr = apply.ValidateLayout(m.currentProfileOutputs())
+}
+
+func (m *Model) layoutChanged() {
+	m.markDirty()
+	m.revalidate()
+}
+
+func (m *Model) nudgeSelectedOutput(dx, dy int, snapThreshold int) tea.Cmd {
+	m.moveSelectedOutput(dx, dy)
+	return m.showSnapHint(m.previewSelectedSnap(snapThreshold))
 }
 
 func (m Model) refreshCmd() tea.Cmd {
@@ -2537,6 +2499,45 @@ func clampIndex(idx, length int) int {
 		return 0
 	}
 	return idx
+}
+
+func layoutMoveDelta(key string) (dx, dy int, ok bool) {
+	switch key {
+	case "left":
+		return -100, 0, true
+	case "right":
+		return 100, 0, true
+	case "up":
+		return 0, -100, true
+	case "down":
+		return 0, 100, true
+	case "shift+left":
+		return -10, 0, true
+	case "shift+right":
+		return 10, 0, true
+	case "shift+up":
+		return 0, -10, true
+	case "shift+down":
+		return 0, 10, true
+	case "ctrl+left":
+		return -1, 0, true
+	case "ctrl+right":
+		return 1, 0, true
+	case "ctrl+up":
+		return 0, -1, true
+	case "ctrl+down":
+		return 0, 1, true
+	case "H":
+		return -500, 0, true
+	case "L":
+		return 500, 0, true
+	case "K":
+		return 0, -500, true
+	case "J":
+		return 0, 500, true
+	default:
+		return 0, 0, false
+	}
 }
 
 func clampFloat(value, minValue, maxValue float64) float64 {

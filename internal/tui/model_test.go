@@ -362,10 +362,10 @@ func TestLayoutMouseOpensScaleEditorAtVisibleField(t *testing.T) {
 	updated, cmd := m.updateMouse(mousePressAt(x, y))
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
-			updated, _ = updated.(Model).Update(msg)
+			updated = runModelUpdate(t, updated, msg)
 		}
 	}
-	got := updated.(Model)
+	got := mustModel(t, updated)
 	if got.mode != modeNumericInput || got.input == nil || got.input.Kind != numericInputScale {
 		t.Fatalf("expected visible click on Scale to open numeric scale editor, got mode=%v input=%+v", got.mode, got.input)
 	}
@@ -396,10 +396,10 @@ func TestLayoutMouseOpensScaleEditorAtVisibleFieldInCompactLayout(t *testing.T) 
 	updated, cmd := m.updateMouse(mousePressAt(x, y))
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
-			updated, _ = updated.(Model).Update(msg)
+			updated = runModelUpdate(t, updated, msg)
 		}
 	}
-	got := updated.(Model)
+	got := mustModel(t, updated)
 	if got.mode != modeNumericInput || got.input == nil || got.input.Kind != numericInputScale {
 		t.Fatalf("expected compact visible click on Scale to open numeric scale editor, got mode=%v input=%+v", got.mode, got.input)
 	}
@@ -442,38 +442,33 @@ func TestActivateInspectorFieldOpensEditors(t *testing.T) {
 		}},
 	}
 
-	modeModel, _ := base.activateInspectorField()
-	gotMode := modeModel.(Model)
-	if gotMode.mode != modeMain {
-		t.Fatalf("enabled row should toggle inline, got mode %v", gotMode.mode)
+	base.activateInspectorField()
+	if base.mode != modeMain {
+		t.Fatalf("enabled row should toggle inline, got mode %v", base.mode)
 	}
 
 	base.inspectorField = 1
-	modeModel, _ = base.activateInspectorField()
-	gotMode = modeModel.(Model)
-	if gotMode.mode != modeModePicker || gotMode.picker == nil {
-		t.Fatalf("expected mode picker to open, got mode %v picker %+v", gotMode.mode, gotMode.picker)
+	base.activateInspectorField()
+	if base.mode != modeModePicker || base.picker == nil {
+		t.Fatalf("expected mode picker to open, got mode %v picker %+v", base.mode, base.picker)
 	}
 
 	base.inspectorField = 2
-	scaleModel, _ := base.activateInspectorField()
-	gotScale := scaleModel.(Model)
-	if gotScale.mode != modeNumericInput || gotScale.input == nil {
-		t.Fatalf("expected numeric input to open, got mode %v input %+v", gotScale.mode, gotScale.input)
+	base.activateInspectorField()
+	if base.mode != modeNumericInput || base.input == nil {
+		t.Fatalf("expected numeric input to open, got mode %v input %+v", base.mode, base.input)
 	}
 
 	base.inspectorField = 5
-	posXModel, _ := base.activateInspectorField()
-	gotPosX := posXModel.(Model)
-	if gotPosX.mode != modeNumericInput || gotPosX.input == nil || gotPosX.input.Kind != numericInputPositionX {
-		t.Fatalf("expected position X input to open, got mode %v input %+v", gotPosX.mode, gotPosX.input)
+	base.activateInspectorField()
+	if base.mode != modeNumericInput || base.input == nil || base.input.Kind != numericInputPositionX {
+		t.Fatalf("expected position X input to open, got mode %v input %+v", base.mode, base.input)
 	}
 
 	base.inspectorField = 6
-	posYModel, _ := base.activateInspectorField()
-	gotPosY := posYModel.(Model)
-	if gotPosY.mode != modeNumericInput || gotPosY.input == nil || gotPosY.input.Kind != numericInputPositionY {
-		t.Fatalf("expected position Y input to open, got mode %v input %+v", gotPosY.mode, gotPosY.input)
+	base.activateInspectorField()
+	if base.mode != modeNumericInput || base.input == nil || base.input.Kind != numericInputPositionY {
+		t.Fatalf("expected position Y input to open, got mode %v input %+v", base.mode, base.input)
 	}
 }
 
@@ -498,17 +493,17 @@ func TestModePickerMouseSelectsVisibleMode(t *testing.T) {
 		}},
 	}
 
-	modeModel, _ := base.activateInspectorField()
-	m := modeModel.(Model)
-	if m.mode != modeModePicker || m.picker == nil {
-		t.Fatalf("expected mode picker to be active, got mode=%v picker=%+v", m.mode, m.picker)
+	base.activateInspectorField()
+	if base.mode != modeModePicker || base.picker == nil {
+		t.Fatalf("expected mode picker to be active, got mode=%v picker=%+v", base.mode, base.picker)
 	}
+	m := base
 
 	x, y := findVisiblePosition(t, m.View(), "2560x1440@143.97Hz")
 	updated, cmd := m.updateMouse(mousePressAt(x, y))
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
-			updated, _ = updated.(Model).Update(msg)
+			updated = runModelUpdate(t, updated, msg)
 		}
 	}
 	got := updated.(*Model)
@@ -1257,6 +1252,36 @@ func mousePressAt(x, y int) tea.MouseMsg {
 		Button: tea.MouseButtonLeft,
 		X:      x,
 		Y:      y,
+	}
+}
+
+func runModelUpdate(t *testing.T, model tea.Model, msg tea.Msg) tea.Model {
+	t.Helper()
+
+	switch m := model.(type) {
+	case Model:
+		updated, _ := m.Update(msg)
+		return updated
+	case *Model:
+		updated, _ := m.Update(msg)
+		return updated
+	default:
+		t.Fatalf("unexpected model type %T", model)
+		return nil
+	}
+}
+
+func mustModel(t *testing.T, model tea.Model) Model {
+	t.Helper()
+
+	switch m := model.(type) {
+	case Model:
+		return m
+	case *Model:
+		return *m
+	default:
+		t.Fatalf("unexpected model type %T", model)
+		return Model{}
 	}
 }
 

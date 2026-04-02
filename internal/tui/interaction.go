@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/crmne/hyprmoncfg/internal/profile"
-	"github.com/crmne/hyprmoncfg/internal/apply"
 )
 
 type pickerItem string
@@ -220,16 +219,16 @@ func (m Model) unsavedBadge() string {
 	return m.styles.badgeMuted.Render("Current setup")
 }
 
-func (m Model) activateInspectorField() (tea.Model, tea.Cmd) {
+func (m *Model) activateInspectorField() tea.Cmd {
 	if len(m.editOutputs) == 0 {
-		return m, nil
+		return nil
 	}
 
 	switch m.inspectorField {
 	case 1:
 		output := m.editOutputs[m.selectedOutput]
 		if len(output.Modes) == 0 {
-			return m, nil
+			return nil
 		}
 		items := make([]list.Item, 0, len(output.Modes))
 		for _, mode := range output.Modes {
@@ -261,38 +260,18 @@ func (m Model) activateInspectorField() (tea.Model, tea.Cmd) {
 			List:        picker,
 		}
 		m.mode = modeModePicker
-		return m, nil
+		return nil
 	case 2:
 		output := m.editOutputs[m.selectedOutput]
-		input := textinput.New()
-		input.Prompt = ""
-		input.Placeholder = "1.00"
-		input.CharLimit = 8
-		input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
-		input.TextStyle = m.styles.value
-		input.PlaceholderStyle = m.styles.subtle
-		input.Cursor.Style = lipgloss.NewStyle()
-		input.SetValue(strconv.FormatFloat(output.Scale, 'f', 2, 64))
-		cmd := input.Focus()
-		m.input = &numericInputState{
-			Kind:        numericInputScale,
-			OutputIndex: m.selectedOutput,
-			Title:       fmt.Sprintf("Set Scale for %s", output.Name),
-			Hint:        "Type a scale like 1, 1.25, or 1.67. Enter applies. Esc cancels.",
-			Input:       input,
-		}
-		m.mode = modeNumericInput
-		return m, cmd
+		return m.openNumericInput(
+			numericInputScale,
+			m.selectedOutput,
+			fmt.Sprintf("Set Scale for %s", output.Name),
+			"Type a scale like 1, 1.25, or 1.67. Enter applies. Esc cancels.",
+			strconv.FormatFloat(output.Scale, 'f', 2, 64),
+		)
 	case 5, 6:
 		output := m.editOutputs[m.selectedOutput]
-		input := textinput.New()
-		input.Prompt = ""
-		input.CharLimit = 8
-		input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
-		input.TextStyle = m.styles.value
-		input.PlaceholderStyle = m.styles.subtle
-		input.Cursor.Style = lipgloss.NewStyle()
-
 		kind := numericInputPositionX
 		title := fmt.Sprintf("Set Position X for %s", output.Name)
 		hint := "Type the exact X position in logical pixels. Enter applies. Esc cancels."
@@ -303,23 +282,35 @@ func (m Model) activateInspectorField() (tea.Model, tea.Cmd) {
 			hint = "Type the exact Y position in logical pixels. Enter applies. Esc cancels."
 			value = strconv.Itoa(output.Y)
 		}
-
-		input.SetValue(value)
-		cmd := input.Focus()
-		m.input = &numericInputState{
-			Kind:        kind,
-			OutputIndex: m.selectedOutput,
-			Title:       title,
-			Hint:        hint,
-			Input:       input,
-		}
-		m.mode = modeNumericInput
-		return m, cmd
+		return m.openNumericInput(kind, m.selectedOutput, title, hint, value)
 	default:
 		m.adjustInspectorField(1)
-		m.markDirty()
-		return m, nil
+		return nil
 	}
+}
+
+func (m *Model) openNumericInput(kind numericInputKind, outputIndex int, title string, hint string, value string) tea.Cmd {
+	input := textinput.New()
+	input.Prompt = ""
+	input.CharLimit = 8
+	input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
+	input.TextStyle = m.styles.value
+	input.PlaceholderStyle = m.styles.subtle
+	input.Cursor.Style = lipgloss.NewStyle()
+	if kind == numericInputScale {
+		input.Placeholder = "1.00"
+	}
+	input.SetValue(value)
+	cmd := input.Focus()
+	m.input = &numericInputState{
+		Kind:        kind,
+		OutputIndex: outputIndex,
+		Title:       title,
+		Hint:        hint,
+		Input:       input,
+	}
+	m.mode = modeNumericInput
+	return cmd
 }
 
 func (m Model) renderModePicker() string {
@@ -581,7 +572,7 @@ func (m Model) updateSaveConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) updateModePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateModePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.picker == nil {
 		m.mode = modeMain
 		return m, nil
@@ -593,7 +584,7 @@ func (m Model) updateModePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeMain
 		return m, nil
 	case "enter":
-		return m.commitModePicker()
+		return m, m.commitModePicker()
 	}
 
 	var cmd tea.Cmd
@@ -601,21 +592,21 @@ func (m Model) updateModePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) commitModePicker() (tea.Model, tea.Cmd) {
+func (m *Model) commitModePicker() tea.Cmd {
 	if m.picker == nil {
 		m.mode = modeMain
-		return m, nil
+		return nil
 	}
 	if m.picker.OutputIndex < 0 || m.picker.OutputIndex >= len(m.editOutputs) {
 		m.picker = nil
 		m.mode = modeMain
-		return m, nil
+		return nil
 	}
 	selected, ok := m.picker.List.SelectedItem().(pickerItem)
 	if !ok {
 		m.picker = nil
 		m.mode = modeMain
-		return m, nil
+		return nil
 	}
 
 	output := &m.editOutputs[m.picker.OutputIndex]
@@ -624,17 +615,14 @@ func (m *Model) commitModePicker() (tea.Model, tea.Cmd) {
 		output.ModeIndex = 0
 	}
 	output.applyMode(output.Modes[output.ModeIndex])
-	m.markDirty()
+	m.layoutChanged()
 	m.setStatusOK(fmt.Sprintf("Selected %s for %s", output.DisplayMode(), output.Name))
-
-	m.revalidate()
-
 	m.picker = nil
 	m.mode = modeMain
-	return m, nil
+	return nil
 }
 
-func (m Model) updateNumericInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateNumericInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.input == nil {
 		m.mode = modeMain
 		return m, nil
@@ -646,7 +634,7 @@ func (m Model) updateNumericInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeMain
 		return m, nil
 	case "enter":
-		return m.commitNumericInput()
+		return m, m.commitNumericInput()
 	}
 
 	var cmd tea.Cmd
@@ -654,53 +642,51 @@ func (m Model) updateNumericInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) commitNumericInput() (tea.Model, tea.Cmd) {
+func (m *Model) commitNumericInput() tea.Cmd {
 	if m.input == nil {
 		m.mode = modeMain
-		return m, nil
+		return nil
 	}
 	if m.input.OutputIndex < 0 || m.input.OutputIndex >= len(m.editOutputs) {
 		m.input = nil
 		m.mode = modeMain
-		return m, nil
+		return nil
 	}
 
+	output := &m.editOutputs[m.input.OutputIndex]
+	var status string
 	switch m.input.Kind {
 	case numericInputScale:
 		value, err := strconv.ParseFloat(strings.TrimSpace(m.input.Input.Value()), 64)
 		if err != nil {
 			m.input.Input.Err = fmt.Errorf("scale must be a number")
-			return m, nil
+			return nil
 		}
 		value = clampFloat(value, 0.25, 4.0)
-		m.editOutputs[m.input.OutputIndex].Scale = value
-		m.markDirty()
-		m.setStatusOK(fmt.Sprintf("Scale set to %.2f for %s", value, m.editOutputs[m.input.OutputIndex].Name))
+		output.Scale = value
+		status = fmt.Sprintf("Scale set to %.2f for %s", value, output.Name)
 	case numericInputPositionX:
 		value, err := strconv.Atoi(strings.TrimSpace(m.input.Input.Value()))
 		if err != nil {
 			m.input.Input.Err = fmt.Errorf("position must be an integer")
-			return m, nil
+			return nil
 		}
-		m.editOutputs[m.input.OutputIndex].X = value
-		m.markDirty()
-		m.setStatusOK(fmt.Sprintf("Position X set to %d for %s", value, m.editOutputs[m.input.OutputIndex].Name))
+		output.X = value
+		status = fmt.Sprintf("Position X set to %d for %s", value, output.Name)
 	case numericInputPositionY:
 		value, err := strconv.Atoi(strings.TrimSpace(m.input.Input.Value()))
 		if err != nil {
 			m.input.Input.Err = fmt.Errorf("position must be an integer")
-			return m, nil
+			return nil
 		}
-		m.editOutputs[m.input.OutputIndex].Y = value
-		m.markDirty()
-		m.setStatusOK(fmt.Sprintf("Position Y set to %d for %s", value, m.editOutputs[m.input.OutputIndex].Name))
+		output.Y = value
+		status = fmt.Sprintf("Position Y set to %d for %s", value, output.Name)
 	}
-
-	m.revalidate()
-
+	m.layoutChanged()
+	m.setStatusOK(status)
 	m.input = nil
 	m.mode = modeMain
-	return m, nil
+	return nil
 }
 
 func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -717,10 +703,7 @@ func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.drag != nil {
 			m.selectedOutput = m.drag.OutputIndex
 			cmd := m.showSnapHint(m.applySelectedSnap(36))
-
-			m.revalidate()
-
-			m.markDirty()
+			m.layoutChanged()
 			m.drag = nil
 			return m, cmd
 		}
@@ -781,7 +764,7 @@ func (m Model) updateSaveMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateModePickerMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateModePickerMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.picker == nil {
 		return m, nil
 	}
@@ -792,7 +775,7 @@ func (m Model) updateModePickerMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	if index, ok := m.modePickerItemIndexAt(msg.X, msg.Y); ok {
 		m.picker.List.Select(index)
-		return m.commitModePicker()
+		return m, m.commitModePicker()
 	}
 
 	return m, nil
@@ -823,10 +806,6 @@ func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.moveSelectedOutput(worldDX, worldDY)
 				m.drag.LastX = msg.X
 				m.drag.LastY = msg.Y
-
-				m.revalidate()
-
-				m.markDirty()
 			}
 		}
 		return m, nil
@@ -838,13 +817,11 @@ func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.inspectorField = field
 			switch msg.Button {
 			case tea.MouseButtonLeft:
-				return m.activateInspectorField()
+				return m, m.activateInspectorField()
 			case tea.MouseButtonWheelUp:
 				m.adjustInspectorField(1)
-				m.markDirty()
 			case tea.MouseButtonWheelDown:
 				m.adjustInspectorField(-1)
-				m.markDirty()
 			}
 		}
 	}
@@ -1344,23 +1321,4 @@ func splitPaneWidths(total int, leftPercent int, minPane int) (int, int) {
 		}
 	}
 	return max(1, left), max(1, right)
-}
-
-func (m *Model) revalidate() {
-	configs := make([]profile.OutputConfig, len(m.editOutputs))
-	for i, out := range m.editOutputs {
-		configs[i] = profile.OutputConfig{
-			Name:      out.Name,
-			Enabled:   out.Enabled,
-			X:         out.X,
-			Y:         out.Y,
-			Width:     out.Width,
-			Height:    out.Height,
-			Scale:     out.Scale,
-			Transform: out.Transform,
-			MirrorOf:  out.MirrorOf,
-		}
-	}
-	// Call the logic from apply.go
-	m.layoutErr = apply.ValidateLayout(configs)
 }
