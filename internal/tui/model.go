@@ -2637,17 +2637,21 @@ func (m Model) isOutputOverlapping(o editableOutput) bool {
 	if !o.Enabled || o.MirrorOf != "" {
 		return false
 	}
+	w1, h1 := o.logicalSize()
+	x1_1, y1_1 := o.X, o.Y
+	x2_1, y2_1 := o.X+w1, o.Y+h1
+
 	for _, other := range m.editOutputs {
-		// Don't check against itself or disabled/mirrored monitors
 		if other.Name == o.Name || !other.Enabled || other.MirrorOf != "" {
 			continue
 		}
-		// AABB Intersection Check:
-		// Checks if the rectangle of monitor 'o' overlaps with 'other'
-		if o.X < other.X+other.Width &&
-			o.X+o.Width > other.X &&
-			o.Y < other.Y+other.Height &&
-			o.Y+o.Height > other.Y {
+
+		w2, h2 := other.logicalSize()
+		x1_2, y1_2 := other.X, other.Y
+		x2_2, y2_2 := other.X+w2, other.Y+h2
+
+		if x1_1 < x2_2 && x2_1 > x1_2 &&
+			y1_1 < y2_2 && y2_1 > y1_2 {
 			return true
 		}
 	}
