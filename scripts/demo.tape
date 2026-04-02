@@ -22,6 +22,10 @@ Left 2
 Sleep 0.5s
 Right 2
 Sleep 0.5s
+Right 3
+Sleep 1s
+Left 3
+Sleep 0.5s
 
 # Switch to the other monitor
 Type "]"
