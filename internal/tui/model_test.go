@@ -542,6 +542,73 @@ func TestCanvasLayoutPreservesWideMonitorAspect(t *testing.T) {
 	}
 }
 
+func TestCanvasLayoutSkipsMirroredOutputs(t *testing.T) {
+	m := Model{
+		editOutputs: []editableOutput{
+			{
+				Key:      "main",
+				Name:     "DP-1",
+				Enabled:  true,
+				Width:    3840,
+				Height:   2160,
+				Scale:    1,
+				X:        0,
+				Y:        0,
+				MirrorOf: "",
+			},
+			{
+				Key:      "mirror",
+				Name:     "HDMI-A-1",
+				Enabled:  true,
+				Width:    1920,
+				Height:   1080,
+				Scale:    1,
+				X:        0,
+				Y:        0,
+				MirrorOf: "main",
+			},
+		},
+	}
+
+	layout := m.canvasLayout(90, 24)
+	if !layout.ok || len(layout.rects) != 1 {
+		t.Fatalf("expected mirrored output to be omitted from canvas rects, got %+v", layout)
+	}
+	if got := m.editOutputs[layout.rects[0].index].Name; got != "DP-1" {
+		t.Fatalf("expected only independent monitor rect, got %q", got)
+	}
+}
+
+func TestRenderCanvasPaneShowsMirrorSummary(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		editOutputs: []editableOutput{
+			{
+				Key:     "main",
+				Name:    "DP-1",
+				Enabled: true,
+				Width:   3840,
+				Height:  2160,
+				Scale:   1,
+			},
+			{
+				Key:      "mirror",
+				Name:     "HDMI-A-1",
+				Enabled:  true,
+				Width:    1920,
+				Height:   1080,
+				Scale:    1,
+				MirrorOf: "main",
+			},
+		},
+	}
+
+	view := ansi.Strip(m.renderCanvasPane(80, 12))
+	if !strings.Contains(view, "Mirrors: HDMI-A-1 -> DP-1") {
+		t.Fatalf("expected mirror summary in canvas pane, got:\n%s", view)
+	}
+}
+
 func TestCardLinesShowMakeModelAndPosition(t *testing.T) {
 	output := editableOutput{
 		Name:   "DP-1",

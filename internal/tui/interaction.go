@@ -1079,6 +1079,12 @@ func (m Model) canvasMouseHeight() int {
 				break
 			}
 		}
+		for _, output := range m.editOutputs {
+			if output.Enabled && output.MirrorOf != "" {
+				nonCanvasLines++
+				break
+			}
+		}
 	}
 	return max(1, innerHeight-nonCanvasLines)
 }
@@ -1152,7 +1158,7 @@ func (m Model) canvasLayout(width, height int) canvasGeometry {
 
 	enabled := make([]editableOutput, 0, len(m.editOutputs))
 	for _, output := range m.editOutputs {
-		if output.Enabled {
+		if output.Enabled && output.MirrorOf == "" {
 			enabled = append(enabled, output)
 		}
 	}
@@ -1186,7 +1192,7 @@ func (m Model) canvasLayout(width, height int) canvasGeometry {
 	layout.ok = true
 
 	for idx, output := range m.editOutputs {
-		if !output.Enabled {
+		if !output.Enabled || output.MirrorOf != "" {
 			continue
 		}
 		w, h := output.logicalSize()

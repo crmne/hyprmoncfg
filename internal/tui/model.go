@@ -702,7 +702,11 @@ func (m Model) renderCanvasPane(width int, height int) string {
 			disabled = append(disabled, output.Name)
 		}
 	}
+	mirrors := m.mirrorSummaryLabels()
 	if len(disabled) > 0 && innerHeight >= 10 {
+		nonCanvasLines++
+	}
+	if len(mirrors) > 0 && innerHeight >= 10 {
 		nonCanvasLines++
 	}
 
@@ -724,6 +728,9 @@ func (m Model) renderCanvasPane(width int, height int) string {
 	if len(disabled) > 0 && innerHeight >= 10 {
 		lines = append(lines, m.styles.subtle.Render("Disabled: "+strings.Join(disabled, ", ")))
 	}
+	if len(mirrors) > 0 && innerHeight >= 10 {
+		lines = append(lines, m.styles.subtle.Render("Mirrors: "+strings.Join(mirrors, ", ")))
+	}
 	return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 }
 
@@ -742,6 +749,9 @@ func (m Model) renderCanvas(width, height int) string {
 
 	layout := m.canvasLayout(width, height)
 	if !layout.ok {
+		if m.hasMirroredOutputs() {
+			return "(mirrors shown below)"
+		}
 		return "(all monitors disabled)"
 	}
 
@@ -1320,6 +1330,35 @@ func (m Model) profileExists(name string) bool {
 		}
 	}
 	return false
+}
+
+func (m Model) hasMirroredOutputs() bool {
+	for _, output := range m.editOutputs {
+		if output.Enabled && output.MirrorOf != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) mirrorSummaryLabels() []string {
+	labels := make([]string, 0)
+	for _, output := range m.editOutputs {
+		if !output.Enabled || output.MirrorOf == "" {
+			continue
+		}
+		labels = append(labels, fmt.Sprintf("%s -> %s", output.Name, m.outputNameForKey(output.MirrorOf)))
+	}
+	return labels
+}
+
+func (m Model) outputNameForKey(key string) string {
+	for _, output := range m.editOutputs {
+		if output.Key == key {
+			return output.Name
+		}
+	}
+	return key
 }
 
 func (m *Model) moveSelectedOutput(dx, dy int) {
