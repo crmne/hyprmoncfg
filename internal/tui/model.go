@@ -455,7 +455,7 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if len(m.editOutputs) == 0 {
 		return m, nil
 	}
@@ -536,6 +536,7 @@ func (m Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.markDirty()
+		m.revalidate()
 		return m, cmd
 	}
 
@@ -549,12 +550,17 @@ func (m Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right", "l", "+", "=":
 		m.adjustInspectorField(1)
 	case " ", "enter":
-		return m.activateInspectorField()
+		m, cmd := m.activateInspectorField()
+		if mod, ok := m.(*Model); ok {
+			mod.revalidate()
+		}
+		return m, cmd
 	default:
 		return m, nil
 	}
 
 	m.markDirty()
+	m.revalidate()
 	return m, nil
 }
 
@@ -1302,6 +1308,8 @@ func (m *Model) loadLiveState() {
 	m.input = nil
 	m.drag = nil
 	m.markClean()
+
+	m.revalidate()
 }
 
 func (m *Model) loadProfile(p profile.Profile) {
@@ -1321,6 +1329,8 @@ func (m *Model) loadProfile(p profile.Profile) {
 	m.draftSaved = true
 	m.draftProfileName = p.Name
 	m.setStatusOK(fmt.Sprintf("Loaded profile %q into editor", p.Name))
+
+	m.revalidate()
 }
 
 // recoverMirroredIdentity restores Make/Model/Serial/Key for monitors whose
@@ -1550,6 +1560,7 @@ func (m *Model) adjustInspectorField(delta int) {
 		}
 		output.MirrorOf = targets[wrapIndex(current+delta, len(targets))]
 	}
+	m.revalidate()
 }
 
 func (m *Model) adjustWorkspaceField(delta int) {
@@ -2196,7 +2207,7 @@ func (m Model) canvasCardStyle(output editableOutput, selected bool) canvasCardC
 			muted:  p.cardSelectedMuted,
 		}
 	}
-	if m.layoutErr != nil && output.Enabled && output.MirrorOf == "" {
+	if m.layoutErr != nil && m.isOutputOverlapping(output) {
 		colors.border = "#FF0000"
 		colors.fg = "#FF0000"
 	}
@@ -2620,4 +2631,25 @@ func boolToVRR(v bool) int {
 		return 1
 	}
 	return 0
+}
+
+func (m Model) isOutputOverlapping(o editableOutput) bool {
+	if !o.Enabled || o.MirrorOf != "" {
+		return false
+	}
+	for _, other := range m.editOutputs {
+		// Don't check against itself or disabled/mirrored monitors
+		if other.Name == o.Name || !other.Enabled || other.MirrorOf != "" {
+			continue
+		}
+		// AABB Intersection Check:
+		// Checks if the rectangle of monitor 'o' overlaps with 'other'
+		if o.X < other.X+other.Width &&
+			o.X+o.Width > other.X &&
+			o.Y < other.Y+other.Height &&
+			o.Y+o.Height > other.Y {
+			return true
+		}
+	}
+	return false
 }

@@ -511,7 +511,7 @@ func TestModePickerMouseSelectsVisibleMode(t *testing.T) {
 			updated, _ = updated.(Model).Update(msg)
 		}
 	}
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != modeMain {
 		t.Fatalf("expected mode picker click to close dialog, got mode %v", got.mode)
 	}
@@ -1274,4 +1274,47 @@ func testProfile(name string, outputCount int) profile.Profile {
 		})
 	}
 	return profile.New(name, outputs)
+}
+
+func TestIsOutputOverlapping(t *testing.T) {
+	m := Model{
+		editOutputs: []editableOutput{
+			{
+				Name:    "DP-1",
+				Enabled: true,
+				X:       0,
+				Y:       0,
+				Width:   1920,
+				Height:  1080,
+			},
+			{
+				Name:    "DP-2",
+				Enabled: true,
+				X:       500,
+				Y:       0,
+				Width:   1920,
+				Height:  1080,
+			},
+			{
+				Name:    "DP-3",
+				Enabled: true,
+				X:       4000,
+				Y:       0,
+				Width:   1920,
+				Height:  1080,
+			},
+		},
+	}
+
+	if !m.isOutputOverlapping(m.editOutputs[0]) {
+		t.Errorf("Expected DP-1 to be marked as overlapping (collides with DP-2)")
+	}
+
+	if !m.isOutputOverlapping(m.editOutputs[1]) {
+		t.Errorf("Expected DP-2 to be marked as overlapping (collides with DP-1)")
+	}
+
+	if m.isOutputOverlapping(m.editOutputs[2]) {
+		t.Errorf("Expected DP-3 to NOT be marked as overlapping")
+	}
 }

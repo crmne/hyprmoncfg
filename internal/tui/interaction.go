@@ -601,7 +601,7 @@ func (m Model) updateModePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) commitModePicker() (tea.Model, tea.Cmd) {
+func (m *Model) commitModePicker() (tea.Model, tea.Cmd) {
 	if m.picker == nil {
 		m.mode = modeMain
 		return m, nil
@@ -626,6 +626,9 @@ func (m Model) commitModePicker() (tea.Model, tea.Cmd) {
 	output.applyMode(output.Modes[output.ModeIndex])
 	m.markDirty()
 	m.setStatusOK(fmt.Sprintf("Selected %s for %s", output.DisplayMode(), output.Name))
+
+	m.revalidate()
+
 	m.picker = nil
 	m.mode = modeMain
 	return m, nil
@@ -700,7 +703,7 @@ func (m Model) commitNumericInput() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeSave:
 		return m.updateSaveMouse(msg)
@@ -714,6 +717,9 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.drag != nil {
 			m.selectedOutput = m.drag.OutputIndex
 			cmd := m.showSnapHint(m.applySelectedSnap(36))
+
+			m.revalidate()
+
 			m.markDirty()
 			m.drag = nil
 			return m, cmd
