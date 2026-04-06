@@ -459,13 +459,13 @@ func TestActivateInspectorFieldOpensEditors(t *testing.T) {
 		t.Fatalf("expected numeric input to open, got mode %v input %+v", base.mode, base.input)
 	}
 
-	base.inspectorField = 5
+	base.inspectorField = 7
 	base.activateInspectorField()
 	if base.mode != modeNumericInput || base.input == nil || base.input.Kind != numericInputPositionX {
 		t.Fatalf("expected position X input to open, got mode %v input %+v", base.mode, base.input)
 	}
 
-	base.inspectorField = 6
+	base.inspectorField = 8
 	base.activateInspectorField()
 	if base.mode != modeNumericInput || base.input == nil || base.input.Kind != numericInputPositionY {
 		t.Fatalf("expected position Y input to open, got mode %v input %+v", base.mode, base.input)

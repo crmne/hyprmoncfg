@@ -10,23 +10,31 @@ import (
 )
 
 type OutputConfig struct {
-	Key       string  `json:"key"`
-	MatchKey  string  `json:"match_key,omitempty"`
-	Name      string  `json:"name"`
-	Make      string  `json:"make,omitempty"`
-	Model     string  `json:"model,omitempty"`
-	Serial    string  `json:"serial,omitempty"`
-	Enabled   bool    `json:"enabled"`
-	Mode      string  `json:"mode,omitempty"`
-	Width     int     `json:"width"`
-	Height    int     `json:"height"`
-	Refresh   float64 `json:"refresh"`
-	X         int     `json:"x"`
-	Y         int     `json:"y"`
-	Scale     float64 `json:"scale"`
-	VRR       int     `json:"vrr,omitempty"`
-	Transform int     `json:"transform"`
-	MirrorOf  string  `json:"mirror_of,omitempty"`
+	Key             string  `json:"key"`
+	MatchKey        string  `json:"match_key,omitempty"`
+	Name            string  `json:"name"`
+	Make            string  `json:"make,omitempty"`
+	Model           string  `json:"model,omitempty"`
+	Serial          string  `json:"serial,omitempty"`
+	Enabled         bool    `json:"enabled"`
+	Mode            string  `json:"mode,omitempty"`
+	Width           int     `json:"width"`
+	Height          int     `json:"height"`
+	Refresh         float64 `json:"refresh"`
+	X               int     `json:"x"`
+	Y               int     `json:"y"`
+	Scale           float64 `json:"scale"`
+	VRR             int     `json:"vrr,omitempty"`
+	Transform       int     `json:"transform"`
+	MirrorOf        string  `json:"mirror_of,omitempty"`
+	Bitdepth        int     `json:"bitdepth,omitempty"`
+	CM              string  `json:"cm,omitempty"`
+	SDRBrightness   float64 `json:"sdr_brightness,omitempty"`
+	SDRSaturation   float64 `json:"sdr_saturation,omitempty"`
+	SDRMinLuminance float64 `json:"sdr_min_luminance"`
+	SDRMaxLuminance int     `json:"sdr_max_luminance,omitempty"`
+	MinLuminance    int     `json:"min_luminance"`
+	MaxLuminance    int     `json:"max_luminance,omitempty"`
 }
 
 type WorkspaceStrategy string
@@ -93,23 +101,29 @@ func FromState(name string, monitors []hypr.Monitor, rules []hypr.WorkspaceRule)
 			mirrorOf = nameToKey[m.MirrorOf]
 		}
 		outputs = append(outputs, OutputConfig{
-			Key:       hypr.MonitorOutputKey(m, matchCounts),
-			MatchKey:  m.HardwareKey(),
-			Name:      m.Name,
-			Make:      m.Make,
-			Model:     m.Model,
-			Serial:    m.Serial,
-			Enabled:   !m.Disabled,
-			Mode:      m.ModeString(),
-			Width:     m.Width,
-			Height:    m.Height,
-			Refresh:   m.RefreshRate,
-			X:         m.X,
-			Y:         m.Y,
-			Scale:     m.Scale,
-			VRR:       boolToVRR(m.VRR),
-			Transform: m.Transform,
-			MirrorOf:  mirrorOf,
+			Key:             hypr.MonitorOutputKey(m, matchCounts),
+			MatchKey:        m.HardwareKey(),
+			Name:            m.Name,
+			Make:            m.Make,
+			Model:           m.Model,
+			Serial:          m.Serial,
+			Enabled:         !m.Disabled,
+			Mode:            m.ModeString(),
+			Width:           m.Width,
+			Height:          m.Height,
+			Refresh:         m.RefreshRate,
+			X:               m.X,
+			Y:               m.Y,
+			Scale:           m.Scale,
+			VRR:             int(m.VRR),
+			Transform:       m.Transform,
+			MirrorOf:        mirrorOf,
+			Bitdepth:        m.Bitdepth(),
+			CM:              m.ColorManagementPreset,
+			SDRBrightness:   m.SDRBrightness,
+			SDRSaturation:   m.SDRSaturation,
+			SDRMinLuminance: m.SDRMinLuminance,
+			SDRMaxLuminance: m.SDRMaxLuminance,
 		})
 	}
 	p := New(name, outputs)
@@ -148,6 +162,9 @@ func (p Profile) Validate() error {
 		}
 		if out.VRR < 0 || out.VRR > 2 {
 			return fmt.Errorf("output %d has invalid VRR mode", i)
+		}
+		if out.Bitdepth != 0 && out.Bitdepth != 8 && out.Bitdepth != 10 && out.Bitdepth != 16 {
+			return fmt.Errorf("output %d has invalid bitdepth %d", i, out.Bitdepth)
 		}
 	}
 	if err := p.Workspaces.Validate(); err != nil {
@@ -201,9 +218,3 @@ func (p *Profile) Normalize() {
 	p.SortOutputs()
 }
 
-func boolToVRR(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
-}

@@ -1,11 +1,34 @@
 package hypr
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
 )
+
+// VRRMode handles hyprctl reporting VRR as either a bool or an int.
+// bool: false=0, true=1. int: 0=off, 1=on, 2=fullscreen-only.
+type VRRMode int
+
+func (v *VRRMode) UnmarshalJSON(data []byte) error {
+	var i int
+	if err := json.Unmarshal(data, &i); err == nil {
+		*v = VRRMode(i)
+		return nil
+	}
+	var b bool
+	if err := json.Unmarshal(data, &b); err == nil {
+		if b {
+			*v = 1
+		} else {
+			*v = 0
+		}
+		return nil
+	}
+	return fmt.Errorf("VRR: expected bool or int, got %s", data)
+}
 
 type Workspace struct {
 	ID   int    `json:"id"`
@@ -29,28 +52,45 @@ type WorkspaceRule struct {
 }
 
 type Monitor struct {
-	ID              int       `json:"id"`
-	Name            string    `json:"name"`
-	Description     string    `json:"description"`
-	Make            string    `json:"make"`
-	Model           string    `json:"model"`
-	Serial          string    `json:"serial"`
-	Width           int       `json:"width"`
-	Height          int       `json:"height"`
-	PhysicalWidth   int       `json:"physicalWidth"`
-	PhysicalHeight  int       `json:"physicalHeight"`
-	RefreshRate     float64   `json:"refreshRate"`
-	X               int       `json:"x"`
-	Y               int       `json:"y"`
-	Scale           float64   `json:"scale"`
-	Transform       int       `json:"transform"`
-	Focused         bool      `json:"focused"`
-	DPMSStatus      bool      `json:"dpmsStatus"`
-	VRR             bool      `json:"vrr"`
-	Disabled        bool      `json:"disabled"`
-	MirrorOf        string    `json:"mirrorOf"`
-	AvailableModes  []string  `json:"availableModes"`
-	ActiveWorkspace Workspace `json:"activeWorkspace"`
+	ID                    int       `json:"id"`
+	Name                  string    `json:"name"`
+	Description           string    `json:"description"`
+	Make                  string    `json:"make"`
+	Model                 string    `json:"model"`
+	Serial                string    `json:"serial"`
+	Width                 int       `json:"width"`
+	Height                int       `json:"height"`
+	PhysicalWidth         int       `json:"physicalWidth"`
+	PhysicalHeight        int       `json:"physicalHeight"`
+	RefreshRate           float64   `json:"refreshRate"`
+	X                     int       `json:"x"`
+	Y                     int       `json:"y"`
+	Scale                 float64   `json:"scale"`
+	Transform             int       `json:"transform"`
+	Focused               bool      `json:"focused"`
+	DPMSStatus            bool      `json:"dpmsStatus"`
+	VRR                   VRRMode   `json:"vrr"`
+	Disabled              bool      `json:"disabled"`
+	MirrorOf              string    `json:"mirrorOf"`
+	CurrentFormat         string    `json:"currentFormat"`
+	ColorManagementPreset string    `json:"colorManagementPreset"`
+	SDRBrightness         float64   `json:"sdrBrightness"`
+	SDRSaturation         float64   `json:"sdrSaturation"`
+	SDRMinLuminance       float64   `json:"sdrMinLuminance"`
+	SDRMaxLuminance       int       `json:"sdrMaxLuminance"`
+	AvailableModes        []string  `json:"availableModes"`
+	ActiveWorkspace       Workspace `json:"activeWorkspace"`
+}
+
+func (m Monitor) Bitdepth() int {
+	switch m.CurrentFormat {
+	case "XBGR2101010", "XRGB2101010", "ABGR2101010", "ARGB2101010":
+		return 10
+	case "XBGR16161616F", "XRGB16161616F", "ABGR16161616F", "ARGB16161616F":
+		return 16
+	default:
+		return 8
+	}
 }
 
 func (m Monitor) IsInternal() bool {

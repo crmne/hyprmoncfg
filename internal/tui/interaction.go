@@ -270,13 +270,13 @@ func (m *Model) activateInspectorField() tea.Cmd {
 			"Type a scale like 1, 1.25, or 1.67. Enter applies. Esc cancels.",
 			strconv.FormatFloat(output.Scale, 'f', 2, 64),
 		)
-	case 5, 6:
+	case 7, 8:
 		output := m.editOutputs[m.selectedOutput]
 		kind := numericInputPositionX
 		title := fmt.Sprintf("Set Position X for %s", output.Name)
 		hint := "Type the exact X position in logical pixels. Enter applies. Esc cancels."
 		value := strconv.Itoa(output.X)
-		if m.inspectorField == 6 {
+		if m.inspectorField == 8 {
 			kind = numericInputPositionY
 			title = fmt.Sprintf("Set Position Y for %s", output.Name)
 			hint = "Type the exact Y position in logical pixels. Enter applies. Esc cancels."

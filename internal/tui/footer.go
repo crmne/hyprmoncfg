@@ -39,7 +39,7 @@ type footerLayout struct {
 func (m Model) footerHelpText() string {
 	switch m.tab {
 	case tabLayout:
-		return "`drag/arrows` move | `[ ]` cycle monitors | `Enter` edit | `Tab` pane | `a` apply | `s` save | `r` reset"
+		return "`drag/arrows` move | `[ ]` cycle | `Enter` edit | `Tab` pane | `x` adv | `a` apply | `s` save | `r` reset"
 	case tabProfiles:
 		return "`Enter` load | `a` apply | `d` delete | `s` save"
 	case tabWorkspaces:
@@ -256,7 +256,7 @@ func (m Model) decorateFooterBar(footer string) string {
 	// Status badge
 	unsaved := m.unsavedLabel()
 	styled = strings.Replace(styled, unsaved, m.unsavedBadge(), 1)
-	
+
 	// Style the layout overlap error
 	if m.layoutErr != nil {
 		errStr := m.layoutErr.Error()

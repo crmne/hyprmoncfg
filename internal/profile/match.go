@@ -204,7 +204,7 @@ func MonitorStateHash(monitors []hypr.Monitor) string {
 
 func monitorStateSignature(m hypr.Monitor) string {
 	return fmt.Sprintf(
-		"%s|%s|disabled=%t|%dx%d@%.2f|%dx%d|scale=%s|transform=%d|vrr=%t",
+		"%s|%s|disabled=%t|%dx%d@%.2f|%dx%d|scale=%s|transform=%d|vrr=%d",
 		m.HardwareKey(),
 		strings.ToLower(strings.TrimSpace(m.Name)),
 		m.Disabled,

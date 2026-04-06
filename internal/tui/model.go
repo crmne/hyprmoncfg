@@ -115,6 +115,14 @@ type editableOutput struct {
 	DPMSStatus      bool
 	MirrorOf        string
 	ActiveWorkspace string
+	Bitdepth        int
+	CM              string
+	SDRBrightness   float64
+	SDRSaturation   float64
+	SDRMinLuminance float64
+	SDRMaxLuminance int
+	MinLuminance    int
+	MaxLuminance    int
 }
 
 type canvasCell struct {
@@ -205,6 +213,7 @@ type Model struct {
 	snap          *snapHintState
 	snapSeq       int
 
+	showAdvanced     bool
 	status           string
 	statusErr        bool
 	dirty            bool
@@ -495,13 +504,18 @@ func (m *Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "up", "k":
-		m.inspectorField = clampIndex(m.inspectorField-1, len(layoutFields))
+		m.inspectorField = clampIndex(m.inspectorField-1, m.visibleFieldCount())
 	case "down", "j":
-		m.inspectorField = clampIndex(m.inspectorField+1, len(layoutFields))
+		m.inspectorField = clampIndex(m.inspectorField+1, m.visibleFieldCount())
 	case "left", "h", "-", "_":
 		m.adjustInspectorField(-1)
 	case "right", "l", "+", "=":
 		m.adjustInspectorField(1)
+	case "x":
+		m.showAdvanced = !m.showAdvanced
+		if !m.showAdvanced && m.inspectorField >= baseFieldCount {
+			m.inspectorField = baseFieldCount - 1
+		}
 	case " ", "enter":
 		return m, m.activateInspectorField()
 	default:
@@ -1094,6 +1108,13 @@ func (m Model) compactLayoutHeights(total int) (int, int) {
 	return max(2, canvas), max(1, inspector)
 }
 
+func (m Model) visibleFieldCount() int {
+	if m.showAdvanced {
+		return len(layoutFields)
+	}
+	return baseFieldCount
+}
+
 func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compact bool) []string {
 	if compact {
 		return m.compactInspectorFieldLines(output, innerWidth)
@@ -1105,8 +1126,14 @@ func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compac
 		labelWidth = 8
 	}
 
-	lines := make([]string, 0, len(layoutFields))
-	for idx := range layoutFields {
+	fieldCount := m.visibleFieldCount()
+	lines := make([]string, 0, fieldCount+1)
+	for idx := 0; idx < fieldCount; idx++ {
+		if idx == baseFieldCount {
+			lines = append(lines, "")
+			lines = append(lines, m.styles.header.Render("▼ Advanced")+" "+m.styles.subtle.Render("(x)"))
+		}
+
 		labelText := layoutFields[idx]
 		if shortLabels {
 			labelText = layoutFieldShortLabel(idx)
@@ -1120,6 +1147,11 @@ func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compac
 		lines = append(lines, fmt.Sprintf("%s %s", label, value))
 	}
 
+	if !m.showAdvanced {
+		toggle := m.styles.subtle.Render("▶ Advanced (x)")
+		lines = append(lines, "", toggle)
+	}
+
 	return lines
 }
 
@@ -1131,14 +1163,14 @@ func (m Model) compactInspectorFieldLines(output editableOutput, innerWidth int)
 			joinInspectorTokens(
 				m.inspectorCompactFieldToken("On", 0, output),
 				m.inspectorCompactFieldToken("Scale", 2, output),
-				m.inspectorCompactFieldToken("VRR", 3, output),
+				m.inspectorCompactFieldToken("VRR", 5, output),
 			),
 			joinInspectorTokens(
-				m.inspectorCompactFieldToken("Rot", 4, output),
-				m.inspectorCompactFieldToken("X", 5, output),
-				m.inspectorCompactFieldToken("Y", 6, output),
+				m.inspectorCompactFieldToken("Rot", 6, output),
+				m.inspectorCompactFieldToken("X", 7, output),
+				m.inspectorCompactFieldToken("Y", 8, output),
 			),
-			m.inspectorCompactFieldLine("Mirror", 7, output),
+			m.inspectorCompactFieldLine("Mirror", 9, output),
 		}
 	case innerWidth >= 36:
 		return []string{
@@ -1148,14 +1180,14 @@ func (m Model) compactInspectorFieldLines(output editableOutput, innerWidth int)
 				m.inspectorCompactFieldToken("Scale", 2, output),
 			),
 			joinInspectorTokens(
-				m.inspectorCompactFieldToken("VRR", 3, output),
-				m.inspectorCompactFieldToken("Rot", 4, output),
+				m.inspectorCompactFieldToken("VRR", 5, output),
+				m.inspectorCompactFieldToken("Rot", 6, output),
 			),
 			joinInspectorTokens(
-				m.inspectorCompactFieldToken("X", 5, output),
-				m.inspectorCompactFieldToken("Y", 6, output),
+				m.inspectorCompactFieldToken("X", 7, output),
+				m.inspectorCompactFieldToken("Y", 8, output),
 			),
-			m.inspectorCompactFieldLine("Mirror", 7, output),
+			m.inspectorCompactFieldLine("Mirror", 9, output),
 		}
 	default:
 		return []string{
@@ -1163,14 +1195,14 @@ func (m Model) compactInspectorFieldLines(output editableOutput, innerWidth int)
 			m.inspectorCompactFieldLine("On", 0, output),
 			m.inspectorCompactFieldLine("Scale", 2, output),
 			joinInspectorTokens(
-				m.inspectorCompactFieldToken("VRR", 3, output),
-				m.inspectorCompactFieldToken("Rot", 4, output),
+				m.inspectorCompactFieldToken("VRR", 5, output),
+				m.inspectorCompactFieldToken("Rot", 6, output),
 			),
 			joinInspectorTokens(
-				m.inspectorCompactFieldToken("X", 5, output),
-				m.inspectorCompactFieldToken("Y", 6, output),
+				m.inspectorCompactFieldToken("X", 7, output),
+				m.inspectorCompactFieldToken("Y", 8, output),
 			),
-			m.inspectorCompactFieldLine("Mirror", 7, output),
+			m.inspectorCompactFieldLine("Mirror", 9, output),
 		}
 	}
 }
@@ -1255,13 +1287,37 @@ func (m *Model) loadLiveState() {
 	} else {
 		m.draftProfileName = ""
 	}
+
+	// Preserve fields that hyprctl cannot report: VRR mode (only a bool),
+	// and config-only EDID overrides (min/max luminance).
+	for i := range m.editOutputs {
+		for _, prev := range prevOutputs {
+			if prev.Key == m.editOutputs[i].Key {
+				m.editOutputs[i].VRR = prev.VRR
+				m.editOutputs[i].MinLuminance = prev.MinLuminance
+				m.editOutputs[i].MaxLuminance = prev.MaxLuminance
+				break
+			}
+		}
+	}
+	if len(prevOutputs) == 0 {
+		if best, _, ok := profile.BestMatch(m.profiles, m.monitors); ok {
+			for i := range m.editOutputs {
+				if saved, ok := best.OutputByKey(m.editOutputs[i].Key); ok {
+					m.editOutputs[i].VRR = saved.VRR
+					m.editOutputs[i].MinLuminance = saved.MinLuminance
+					m.editOutputs[i].MaxLuminance = saved.MaxLuminance
+				}
+			}
+		}
+	}
 	if idx := focusedOutputIndex(m.editOutputs); idx >= 0 {
 		m.selectedOutput = idx
 	} else if selectedKey != "" {
 		m.selectedOutput = outputIndexByKey(m.editOutputs, selectedKey)
 	}
 	m.selectedOutput = clampIndex(m.selectedOutput, len(m.editOutputs))
-	m.inspectorField = clampIndex(m.inspectorField, len(layoutFields))
+	m.inspectorField = clampIndex(m.inspectorField, m.visibleFieldCount())
 	m.picker = nil
 	m.input = nil
 	m.drag = nil
@@ -1319,7 +1375,7 @@ func (m *Model) recoverMirroredIdentity() {
 func (m *Model) syncSelections() {
 	m.selectedOutput = clampIndex(m.selectedOutput, len(m.editOutputs))
 	m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
-	m.inspectorField = clampIndex(m.inspectorField, len(layoutFields))
+	m.inspectorField = clampIndex(m.inspectorField, m.visibleFieldCount())
 	m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField, len(workspaceFields))
 	m.workspaceEdit.SelectedOrder = clampIndex(m.workspaceEdit.SelectedOrder, len(m.workspaceEdit.MonitorOrder))
 }
@@ -1526,14 +1582,34 @@ func (m *Model) adjustInspectorField(delta int) {
 	case 2:
 		output.Scale = clampFloat(output.Scale+float64(delta)*0.05, 0.25, 4.0)
 	case 3:
-		output.VRR = wrapValue(output.VRR+delta, 0, 2)
+		depths := []int{8, 10, 16}
+		current := 0
+		for i, d := range depths {
+			if d == output.Bitdepth {
+				current = i
+				break
+			}
+		}
+		output.Bitdepth = depths[wrapIndex(current+delta, len(depths))]
 	case 4:
-		output.Transform = wrapValue(output.Transform+delta, 0, 7)
+		presets := []string{"srgb", "wide", "hdr", "hdredid"}
+		current := 0
+		for i, p := range presets {
+			if p == output.CM {
+				current = i
+				break
+			}
+		}
+		output.CM = presets[wrapIndex(current+delta, len(presets))]
 	case 5:
-		output.X += delta * 10
+		output.VRR = wrapValue(output.VRR+delta, 0, 2)
 	case 6:
-		output.Y += delta * 10
+		output.Transform = wrapValue(output.Transform+delta, 0, 7)
 	case 7:
+		output.X += delta * 10
+	case 8:
+		output.Y += delta * 10
+	case 9:
 		targets := []string{""}
 		for i, other := range m.editOutputs {
 			if i != m.selectedOutput {
@@ -1548,6 +1624,18 @@ func (m *Model) adjustInspectorField(delta int) {
 			}
 		}
 		output.MirrorOf = targets[wrapIndex(current+delta, len(targets))]
+	case 10:
+		output.SDRBrightness = clampFloat(output.SDRBrightness+float64(delta)*0.05, 0, 3.0)
+	case 11:
+		output.SDRSaturation = clampFloat(output.SDRSaturation+float64(delta)*0.05, 0, 3.0)
+	case 12:
+		output.SDRMinLuminance = clampFloat(output.SDRMinLuminance+float64(delta)*0.005, 0, 1.0)
+	case 13:
+		output.SDRMaxLuminance = clampInt(output.SDRMaxLuminance+delta*10, 0, 1000)
+	case 14:
+		output.MinLuminance = clampInt(output.MinLuminance+delta*1, 0, 1000)
+	case 15:
+		output.MaxLuminance = clampInt(output.MaxLuminance+delta*10, 0, 2000)
 	}
 	m.layoutChanged()
 }
@@ -1722,14 +1810,21 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 	case 2:
 		return fmt.Sprintf("%.2f", output.Scale)
 	case 3:
-		return vrrLabel(output.VRR)
+		return fmt.Sprintf("%d", output.Bitdepth)
 	case 4:
-		return transformLabel(output.Transform)
+		if output.CM == "" {
+			return "srgb"
+		}
+		return output.CM
 	case 5:
-		return fmt.Sprintf("%d", output.X)
+		return vrrLabel(output.VRR)
 	case 6:
-		return fmt.Sprintf("%d", output.Y)
+		return transformLabel(output.Transform)
 	case 7:
+		return fmt.Sprintf("%d", output.X)
+	case 8:
+		return fmt.Sprintf("%d", output.Y)
+	case 9:
 		if output.MirrorOf == "" {
 			return "None"
 		}
@@ -1739,6 +1834,18 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 			}
 		}
 		return output.MirrorOf
+	case 10:
+		return fmt.Sprintf("%.2f", output.SDRBrightness)
+	case 11:
+		return fmt.Sprintf("%.2f", output.SDRSaturation)
+	case 12:
+		return fmt.Sprintf("%.3f", output.SDRMinLuminance)
+	case 13:
+		return fmt.Sprintf("%d", output.SDRMaxLuminance)
+	case 14:
+		return fmt.Sprintf("%d", output.MinLuminance)
+	case 15:
+		return fmt.Sprintf("%d", output.MaxLuminance)
 	default:
 		return ""
 	}
@@ -1861,12 +1968,18 @@ func editableOutputFromMonitor(m hypr.Monitor, matchCounts map[string]int) edita
 		X:               m.X,
 		Y:               m.Y,
 		Scale:           clampFloat(m.Scale, 0.25, 4.0),
-		VRR:             boolToVRR(m.VRR),
+		VRR:             int(m.VRR),
 		Transform:       m.Transform,
 		Focused:         m.Focused,
 		DPMSStatus:      m.DPMSStatus,
 		MirrorOf:        m.MirrorOf,
 		ActiveWorkspace: m.ActiveWorkspace.Name,
+		Bitdepth:        m.Bitdepth(),
+		CM:              m.ColorManagementPreset,
+		SDRBrightness:   m.SDRBrightness,
+		SDRSaturation:   m.SDRSaturation,
+		SDRMinLuminance: m.SDRMinLuminance,
+		SDRMaxLuminance: m.SDRMaxLuminance,
 	}
 
 	output.Modes = normalizeModes(m.AvailableModes, m.ModeString())
@@ -1882,22 +1995,30 @@ func editableOutputFromMonitor(m hypr.Monitor, matchCounts map[string]int) edita
 
 func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, hasLive bool) editableOutput {
 	output := editableOutput{
-		Key:       saved.Key,
-		MatchKey:  saved.MatchIdentity(),
-		Name:      saved.Name,
-		Make:      saved.Make,
-		Model:     saved.Model,
-		Serial:    saved.Serial,
-		Enabled:   saved.Enabled,
-		Width:     saved.Width,
-		Height:    saved.Height,
-		Refresh:   saved.Refresh,
-		X:         saved.X,
-		Y:         saved.Y,
-		Scale:     clampFloat(saved.Scale, 0.25, 4.0),
-		VRR:       saved.VRR,
-		Transform: saved.Transform,
-		MirrorOf:  saved.MirrorOf,
+		Key:             saved.Key,
+		MatchKey:        saved.MatchIdentity(),
+		Name:            saved.Name,
+		Make:            saved.Make,
+		Model:           saved.Model,
+		Serial:          saved.Serial,
+		Enabled:         saved.Enabled,
+		Width:           saved.Width,
+		Height:          saved.Height,
+		Refresh:         saved.Refresh,
+		X:               saved.X,
+		Y:               saved.Y,
+		Scale:           clampFloat(saved.Scale, 0.25, 4.0),
+		VRR:             saved.VRR,
+		Transform:       saved.Transform,
+		MirrorOf:        saved.MirrorOf,
+		Bitdepth:        saved.Bitdepth,
+		CM:              saved.CM,
+		SDRBrightness:   saved.SDRBrightness,
+		SDRSaturation:   saved.SDRSaturation,
+		SDRMinLuminance: saved.SDRMinLuminance,
+		SDRMaxLuminance: saved.SDRMaxLuminance,
+		MinLuminance:    saved.MinLuminance,
+		MaxLuminance:    saved.MaxLuminance,
 	}
 
 	mode := saved.NormalizedMode()
@@ -2053,23 +2174,31 @@ func (o editableOutput) DisplayMode() string {
 
 func (o editableOutput) profileOutput() profile.OutputConfig {
 	return profile.OutputConfig{
-		Key:       o.Key,
-		MatchKey:  o.MatchKey,
-		Name:      o.Name,
-		Make:      o.Make,
-		Model:     o.Model,
-		Serial:    o.Serial,
-		Enabled:   o.Enabled,
-		Mode:      o.DisplayMode(),
-		Width:     o.Width,
-		Height:    o.Height,
-		Refresh:   o.Refresh,
-		X:         o.X,
-		Y:         o.Y,
-		Scale:     o.Scale,
-		VRR:       o.VRR,
-		Transform: o.Transform,
-		MirrorOf:  o.MirrorOf,
+		Key:             o.Key,
+		MatchKey:        o.MatchKey,
+		Name:            o.Name,
+		Make:            o.Make,
+		Model:           o.Model,
+		Serial:          o.Serial,
+		Enabled:         o.Enabled,
+		Mode:            o.DisplayMode(),
+		Width:           o.Width,
+		Height:          o.Height,
+		Refresh:         o.Refresh,
+		X:               o.X,
+		Y:               o.Y,
+		Scale:           o.Scale,
+		VRR:             o.VRR,
+		Transform:       o.Transform,
+		MirrorOf:        o.MirrorOf,
+		Bitdepth:        o.Bitdepth,
+		CM:              o.CM,
+		SDRBrightness:   o.SDRBrightness,
+		SDRSaturation:   o.SDRSaturation,
+		SDRMinLuminance: o.SDRMinLuminance,
+		SDRMaxLuminance: o.SDRMaxLuminance,
+		MinLuminance:    o.MinLuminance,
+		MaxLuminance:    o.MaxLuminance,
 	}
 }
 
@@ -2636,24 +2765,35 @@ var layoutFields = []string{
 	"Enabled",
 	"Mode",
 	"Scale",
+	"Bit Depth",
+	"Color Mgmt",
 	"VRR",
 	"Transform",
 	"Position X",
 	"Position Y",
 	"Mirror",
+	// Advanced fields (index baseFieldCount+)
+	"SDR Bright",
+	"SDR Satur",
+	"SDR Min Lum",
+	"SDR Max Lum",
+	"Min Lumin",
+	"Max Lumin",
 }
+
+const baseFieldCount = 10
 
 func layoutFieldShortLabel(field int) string {
 	switch field {
 	case 0:
 		return "On"
-	case 4:
-		return "Rot"
-	case 5:
-		return "X"
 	case 6:
-		return "Y"
+		return "Rot"
 	case 7:
+		return "X"
+	case 8:
+		return "Y"
+	case 9:
 		return "Mirror"
 	default:
 		return layoutFields[field]
@@ -2665,13 +2805,6 @@ var workspaceFields = []string{
 	"Strategy",
 	"Max workspaces",
 	"Group size",
-}
-
-func boolToVRR(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
 }
 
 func (m Model) isOutputOverlapping(o editableOutput) bool {
