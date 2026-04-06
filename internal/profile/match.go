@@ -174,6 +174,14 @@ func outputConfigsShareEffectiveState(a, b OutputConfig) bool {
 		clampStateScale(a.Scale) == clampStateScale(b.Scale) &&
 		a.Transform == b.Transform &&
 		a.VRR == b.VRR &&
+		a.Bitdepth == b.Bitdepth &&
+		a.CM == b.CM &&
+		a.SDRBrightness == b.SDRBrightness &&
+		a.SDRSaturation == b.SDRSaturation &&
+		a.SDRMinLuminance == b.SDRMinLuminance &&
+		a.SDRMaxLuminance == b.SDRMaxLuminance &&
+		a.MinLuminance == b.MinLuminance &&
+		a.MaxLuminance == b.MaxLuminance &&
 		firstNonEmpty(a.MirrorOf, "") == firstNonEmpty(b.MirrorOf, "")
 }
 
@@ -204,7 +212,7 @@ func MonitorStateHash(monitors []hypr.Monitor) string {
 
 func monitorStateSignature(m hypr.Monitor) string {
 	return fmt.Sprintf(
-		"%s|%s|disabled=%t|%dx%d@%.2f|%dx%d|scale=%s|transform=%d|vrr=%d",
+		"%s|%s|disabled=%t|%dx%d@%.2f|%dx%d|scale=%s|transform=%d|vrr=%d|fmt=%s|cm=%s|sdrbr=%.2f|sdrsat=%.2f|sdrmin=%.3f|sdrmax=%d",
 		m.HardwareKey(),
 		strings.ToLower(strings.TrimSpace(m.Name)),
 		m.Disabled,
@@ -216,6 +224,12 @@ func monitorStateSignature(m hypr.Monitor) string {
 		strconv.FormatFloat(clampStateScale(m.Scale), 'f', 3, 64),
 		m.Transform,
 		m.VRR,
+		m.CurrentFormat,
+		m.ColorManagementPreset,
+		m.SDRBrightness,
+		m.SDRSaturation,
+		m.SDRMinLuminance,
+		m.SDRMaxLuminance,
 	)
 }
 
