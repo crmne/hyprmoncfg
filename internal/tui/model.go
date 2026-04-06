@@ -1288,12 +1288,15 @@ func (m *Model) loadLiveState() {
 		m.draftProfileName = ""
 	}
 
-	// Preserve fields that hyprctl cannot report: VRR mode (only a bool),
-	// and config-only EDID overrides (min/max luminance).
+	// Preserve fields from the previous TUI state that hyprctl cannot
+	// accurately report or that Hyprland may change as a side-effect
+	// (e.g. switching CM to "hdr" changes currentFormat/bitdepth).
 	for i := range m.editOutputs {
 		for _, prev := range prevOutputs {
 			if prev.Key == m.editOutputs[i].Key {
 				m.editOutputs[i].VRR = prev.VRR
+				m.editOutputs[i].Bitdepth = prev.Bitdepth
+				m.editOutputs[i].CM = prev.CM
 				m.editOutputs[i].MinLuminance = prev.MinLuminance
 				m.editOutputs[i].MaxLuminance = prev.MaxLuminance
 				break
@@ -1305,6 +1308,8 @@ func (m *Model) loadLiveState() {
 			for i := range m.editOutputs {
 				if saved, ok := best.OutputByKey(m.editOutputs[i].Key); ok {
 					m.editOutputs[i].VRR = saved.VRR
+					m.editOutputs[i].Bitdepth = saved.Bitdepth
+					m.editOutputs[i].CM = saved.CM
 					m.editOutputs[i].MinLuminance = saved.MinLuminance
 					m.editOutputs[i].MaxLuminance = saved.MaxLuminance
 				}
