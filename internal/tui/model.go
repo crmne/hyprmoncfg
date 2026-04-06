@@ -640,7 +640,10 @@ func (m Model) updateConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "enter":
 		if target := strings.TrimSpace(m.pending.target); target != "" && target != "draft" {
 			m.draftProfileName = target
-			m.postApply(m.profiles[m.selectedProfile])
+
+			if profile, exists := m.profileByName(target); exists {
+				m.postApply(profile)
+			}
 		}
 		m.mode = modeMain
 		m.pending = nil
