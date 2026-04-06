@@ -1410,3 +1410,77 @@ func TestIsOutputOverlapping(t *testing.T) {
 		t.Errorf("Expected DP-3 to NOT be marked as overlapping")
 	}
 }
+
+func TestLayoutMoveVimKeys(t *testing.T) {
+	tests := []struct {
+		key    string
+		wantDx int
+		wantDy int
+	}{
+		{"h", -100, 0},
+		{"j", 0, 100},
+		{"k", 0, -100},
+		{"l", 100, 0},
+		{"H", -500, 0},
+		{"J", 0, 500},
+		{"K", 0, -500},
+		{"L", 500, 0},
+	}
+	for _, tt := range tests {
+		dx, dy, ok := layoutMoveDelta(tt.key)
+		if !ok {
+			t.Errorf("layoutMoveDelta(%q) returned ok=false", tt.key)
+			continue
+		}
+		if dx != tt.wantDx || dy != tt.wantDy {
+			t.Errorf("layoutMoveDelta(%q) = (%d, %d), want (%d, %d)", tt.key, dx, dy, tt.wantDx, tt.wantDy)
+		}
+	}
+}
+
+func TestInspectorVimNavigation(t *testing.T) {
+	m := Model{
+		styles:      newStyles(),
+		mode:        modeMain,
+		tab:         tabLayout,
+		layoutFocus: layoutFocusInspector,
+		editOutputs: []editableOutput{{
+			Name:    "DP-1",
+			Enabled: true,
+			Scale:   1,
+		}},
+		inspectorField: 3,
+	}
+
+	// j moves down
+	m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.inspectorField != 4 {
+		t.Errorf("j: inspectorField = %d, want 4", m.inspectorField)
+	}
+
+	// k moves up
+	m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if m.inspectorField != 3 {
+		t.Errorf("k: inspectorField = %d, want 3", m.inspectorField)
+	}
+}
+
+func TestLayoutMoveVimKeysMatchArrows(t *testing.T) {
+	pairs := [][2]string{
+		{"h", "left"},
+		{"l", "right"},
+		{"k", "up"},
+		{"j", "down"},
+	}
+	for _, pair := range pairs {
+		vdx, vdy, vok := layoutMoveDelta(pair[0])
+		adx, ady, aok := layoutMoveDelta(pair[1])
+		if !vok || !aok {
+			t.Errorf("%q or %q returned ok=false", pair[0], pair[1])
+			continue
+		}
+		if vdx != adx || vdy != ady {
+			t.Errorf("%q=(%d,%d) != %q=(%d,%d)", pair[0], vdx, vdy, pair[1], adx, ady)
+		}
+	}
+}

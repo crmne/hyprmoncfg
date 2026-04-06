@@ -493,9 +493,9 @@ func (m *Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "up":
+	case "up", "k":
 		m.inspectorField = clampIndex(m.inspectorField-1, len(layoutFields))
-	case "down":
+	case "down", "j":
 		m.inspectorField = clampIndex(m.inspectorField+1, len(layoutFields))
 	case "left", "h", "-", "_":
 		m.adjustInspectorField(-1)
@@ -2542,13 +2542,13 @@ func clampIndex(idx, length int) int {
 
 func layoutMoveDelta(key string) (dx, dy int, ok bool) {
 	switch key {
-	case "left":
+	case "left", "h":
 		return -100, 0, true
-	case "right":
+	case "right", "l":
 		return 100, 0, true
-	case "up":
+	case "up", "k":
 		return 0, -100, true
-	case "down":
+	case "down", "j":
 		return 0, 100, true
 	case "shift+left":
 		return -10, 0, true
