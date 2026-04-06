@@ -449,7 +449,7 @@ func TestSnapshotCommandsMirror(t *testing.T) {
 }
 
 func TestEngineApplyAndRevertReplayWorkspacePlacement(t *testing.T) {
-	p := 	newTestProfile()
+	p := newTestProfile()
 	p.Workspaces = profile.WorkspaceSettings{
 		Enabled:  true,
 		Strategy: profile.WorkspaceStrategyManual,
@@ -491,7 +491,7 @@ func TestEngineApplyAndRevertReplayWorkspacePlacement(t *testing.T) {
 }
 
 func TestEnginePostApply(t *testing.T) {
-	engine, _, err := initTestEngine(t)
+	engine, logPath, err := initTestEngine(t)
 	if err != nil {
 		t.Fatalf("init test engine: %v", err)
 	}
@@ -515,10 +515,12 @@ func TestEnginePostApply(t *testing.T) {
 	ctx := context.Background()
 
 	testcases := []struct {
+		ExecPath        string
 		Name            string
 		Mode            applyMode
 		OutFile         string
 		ShouldTouchFile bool
+		VerifyResult    func()
 	}{
 		{
 			Name:    "should_not_call_post_exec_when_interactive",
@@ -531,6 +533,31 @@ func TestEnginePostApply(t *testing.T) {
 			OutFile:         filepath.Join(dir, "b33b65c7-2c39-4df6-b56b-3ff64c816ff6"),
 			ShouldTouchFile: true,
 		},
+		{
+			Name:     "should_handle_space_only_exec",
+			ExecPath: "   ",
+			Mode:     ApplyModeNonInteractive,
+			OutFile:  filepath.Join(dir, "50000812-ca77-4f76-a1ed-7f7659c65fe3"),
+		},
+		{
+			Name: "should_continue_on_post_apply_fail",
+			Mode: ApplyModeNonInteractive,
+			VerifyResult: func() {
+				logBytes, err := os.ReadFile(logPath)
+				if err != nil {
+					t.Fatalf("read hyprctl log: %v", err)
+				}
+				log := string(logBytes)
+
+				want := "post apply:"
+
+				t.Log(log)
+
+				if !strings.Contains(log, want) {
+					t.Fatalf("Expected log to contain string \"%s\"", want)
+				}
+			},
+		},
 	}
 
 	p := newTestProfile()
@@ -538,7 +565,11 @@ func TestEnginePostApply(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.Name, func(st *testing.T) {
 
-			p.Exec = fmt.Sprintf("%s %s", execPath, tc.OutFile)
+			if tc.ExecPath == "" {
+				p.Exec = fmt.Sprintf("%s %s", execPath, tc.OutFile)
+			} else {
+				p.Exec = tc.ExecPath
+			}
 
 			_, err := engine.Apply(ctx, p, monitors, tc.Mode)
 			if err != nil {
@@ -558,6 +589,10 @@ func TestEnginePostApply(t *testing.T) {
 
 			if fileExists != tc.ShouldTouchFile {
 				st.Fatalf("expected file to exist: %v. File exists: %v.", tc.ShouldTouchFile, fileExists)
+			}
+
+			if tc.VerifyResult != nil {
+				tc.VerifyResult()
 			}
 		})
 	}
@@ -649,11 +684,25 @@ exit 1
 			{Workspace: "2", OutputKey: monitors[1].HardwareKey(), OutputName: monitors[1].Name, Default: true, Persistent: true},
 		},
 	}
+	logf := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		file, err := os.OpenFile(logPath, os.O_RDWR, 0o644)
+		if err != nil {
+			t.Fatalf("open log file: %v", err)
+		}
+		defer file.Close()
+
+		_, err = file.WriteString(msg)
+		if err != nil {
+			t.Fatalf("write to log file: %v", err)
+		}
+	}
 
 	engine = &Engine{
 		Client:             client,
 		MonitorsConfPath:   monitorsConfPath,
 		HyprlandConfigPath: hyprlandConfigPath,
+		Logf:               logf,
 	}
 
 	return

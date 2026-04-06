@@ -25,6 +25,7 @@ type Engine struct {
 	Client             *hypr.Client
 	MonitorsConfPath   string
 	HyprlandConfigPath string
+	Logf               func(format string, args ...any)
 }
 
 type RevertState struct {
@@ -207,7 +208,7 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 
 	if mode == ApplyModeNonInteractive {
 		if err = e.PostApply(ctx, p); err != nil {
-			return RevertState{}, err
+			e.Logf("post apply: %v", err)
 		}
 	}
 
@@ -215,11 +216,13 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 }
 
 func (e Engine) PostApply(ctx context.Context, target profile.Profile) error {
-	if target.Exec == "" {
+	postApplyCommand := strings.TrimSpace(target.Exec)
+
+	if postApplyCommand == "" {
 		return nil
 	}
 
-	parts, err := shellwords.Split(target.Exec)
+	parts, err := shellwords.Split(postApplyCommand)
 	if err != nil {
 		return fmt.Errorf("split shellwords: %w", err)
 	}

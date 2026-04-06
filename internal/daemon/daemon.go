@@ -45,6 +45,7 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 			Client:             client,
 			MonitorsConfPath:   cfg.MonitorsConf,
 			HyprlandConfigPath: cfg.HyprConfig,
+			Logf:               cfg.Logf,
 		},
 		cfg: cfg,
 	}

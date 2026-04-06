@@ -246,6 +246,7 @@ func NewModel(client *hypr.Client, store *profile.Store, monitorsConfPath string
 			Client:             client,
 			MonitorsConfPath:   monitorsConfPath,
 			HyprlandConfigPath: hyprlandConfigPath,
+			Logf:               func(string, ...any) {},
 		},
 		openURL:     openExternalURL,
 		styles:      newStyles(),
