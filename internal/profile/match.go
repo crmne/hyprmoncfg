@@ -169,13 +169,15 @@ func outputConfigsShareEffectiveState(a, b OutputConfig) bool {
 	}
 
 	// Only compare fields that hyprctl accurately reports. Config-only
-	// fields (VRR, Bitdepth, CM, EDID luminance/overrides, SDR EOTF, ICC)
-	// are excluded because FromState cannot populate them from live state.
+	// fields (VRR mode, EDID luminance/overrides, SDR EOTF, ICC) are
+	// excluded because FromState cannot populate them from live state.
 	return a.NormalizedMode() == b.NormalizedMode() &&
 		a.X == b.X &&
 		a.Y == b.Y &&
 		clampStateScale(a.Scale) == clampStateScale(b.Scale) &&
 		a.Transform == b.Transform &&
+		a.Bitdepth == b.Bitdepth &&
+		a.CM == b.CM &&
 		a.SDRBrightness == b.SDRBrightness &&
 		a.SDRSaturation == b.SDRSaturation &&
 		a.SDRMinLuminance == b.SDRMinLuminance &&

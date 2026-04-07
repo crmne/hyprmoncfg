@@ -210,8 +210,6 @@ func TestExactStateMatchIgnoresConfigOnlyFields(t *testing.T) {
 
 	saved := FromState("desk", monitors, nil)
 	saved.Outputs[0].VRR = 2
-	saved.Outputs[0].Bitdepth = 10
-	saved.Outputs[0].CM = "wide"
 	saved.Outputs[0].MinLuminance = 0.005
 	saved.Outputs[0].MaxLuminance = 800
 	saved.Outputs[0].SupportsWideColor = 1
@@ -226,5 +224,21 @@ func TestExactStateMatchIgnoresConfigOnlyFields(t *testing.T) {
 	}
 	if got.Name != "desk" {
 		t.Fatalf("expected desk, got %q", got.Name)
+	}
+}
+
+func TestExactStateMatchDetectsBitdepthAndCMDifference(t *testing.T) {
+	monitors := []hypr.Monitor{{
+		Name: "DP-1", Make: "Dell", Model: "U2720Q", Serial: "A1",
+		Width: 2560, Height: 1440, RefreshRate: 144,
+		Scale: 1, CurrentFormat: "XRGB8888", ColorManagementPreset: "srgb",
+	}}
+
+	saved := FromState("desk", monitors, nil)
+	saved.Outputs[0].Bitdepth = 10
+	saved.Outputs[0].CM = "wide"
+
+	if _, ok := ExactStateMatch([]Profile{saved}, monitors, nil); ok {
+		t.Fatal("expected ExactStateMatch to fail when Bitdepth and CM differ from live state")
 	}
 }
