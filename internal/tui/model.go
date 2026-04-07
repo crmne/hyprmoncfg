@@ -91,38 +91,43 @@ type pendingApply struct {
 }
 
 type editableOutput struct {
-	Key             string
-	MatchKey        string
-	Name            string
-	Description     string
-	Make            string
-	Model           string
-	Serial          string
-	PhysicalWidth   int
-	PhysicalHeight  int
-	Enabled         bool
-	Modes           []string
-	ModeIndex       int
-	Width           int
-	Height          int
-	Refresh         float64
-	X               int
-	Y               int
-	Scale           float64
-	VRR             int
-	Transform       int
-	Focused         bool
-	DPMSStatus      bool
-	MirrorOf        string
-	ActiveWorkspace string
-	Bitdepth        int
-	CM              string
-	SDRBrightness   float64
-	SDRSaturation   float64
-	SDRMinLuminance float64
-	SDRMaxLuminance int
-	MinLuminance    int
-	MaxLuminance    int
+	Key               string
+	MatchKey          string
+	Name              string
+	Description       string
+	Make              string
+	Model             string
+	Serial            string
+	PhysicalWidth     int
+	PhysicalHeight    int
+	Enabled           bool
+	Modes             []string
+	ModeIndex         int
+	Width             int
+	Height            int
+	Refresh           float64
+	X                 int
+	Y                 int
+	Scale             float64
+	VRR               int
+	Transform         int
+	Focused           bool
+	DPMSStatus        bool
+	MirrorOf          string
+	ActiveWorkspace   string
+	Bitdepth          int
+	CM                string
+	SDRBrightness     float64
+	SDRSaturation     float64
+	SDRMinLuminance   float64
+	SDRMaxLuminance   int
+	MinLuminance      float64
+	MaxLuminance      int
+	SupportsWideColor int
+	SupportsHDR       int
+	MaxAvgLuminance   int
+	SDREOTF           string
+	ICC               string
 }
 
 type canvasCell struct {
@@ -1299,6 +1304,11 @@ func (m *Model) loadLiveState() {
 				m.editOutputs[i].CM = prev.CM
 				m.editOutputs[i].MinLuminance = prev.MinLuminance
 				m.editOutputs[i].MaxLuminance = prev.MaxLuminance
+				m.editOutputs[i].SupportsWideColor = prev.SupportsWideColor
+				m.editOutputs[i].SupportsHDR = prev.SupportsHDR
+				m.editOutputs[i].MaxAvgLuminance = prev.MaxAvgLuminance
+				m.editOutputs[i].SDREOTF = prev.SDREOTF
+				m.editOutputs[i].ICC = prev.ICC
 				break
 			}
 		}
@@ -1312,6 +1322,11 @@ func (m *Model) loadLiveState() {
 					m.editOutputs[i].CM = saved.CM
 					m.editOutputs[i].MinLuminance = saved.MinLuminance
 					m.editOutputs[i].MaxLuminance = saved.MaxLuminance
+					m.editOutputs[i].SupportsWideColor = saved.SupportsWideColor
+					m.editOutputs[i].SupportsHDR = saved.SupportsHDR
+					m.editOutputs[i].MaxAvgLuminance = saved.MaxAvgLuminance
+					m.editOutputs[i].SDREOTF = saved.SDREOTF
+					m.editOutputs[i].ICC = saved.ICC
 				}
 			}
 		}
@@ -1597,7 +1612,7 @@ func (m *Model) adjustInspectorField(delta int) {
 		}
 		output.Bitdepth = depths[wrapIndex(current+delta, len(depths))]
 	case 4:
-		presets := []string{"srgb", "wide", "hdr", "hdredid"}
+		presets := []string{"srgb", "auto", "wide", "hdr", "hdredid", "dcip3", "dp3", "adobe", "edid"}
 		current := 0
 		for i, p := range presets {
 			if p == output.CM {
@@ -1638,9 +1653,43 @@ func (m *Model) adjustInspectorField(delta int) {
 	case 13:
 		output.SDRMaxLuminance = clampInt(output.SDRMaxLuminance+delta*10, 0, 1000)
 	case 14:
-		output.MinLuminance = clampInt(output.MinLuminance+delta*1, 0, 1000)
+		eotfs := []string{"default", "gamma22", "srgb"}
+		cur := 0
+		for i, e := range eotfs {
+			if e == output.SDREOTF {
+				cur = i
+				break
+			}
+		}
+		output.SDREOTF = eotfs[wrapIndex(cur+delta, len(eotfs))]
 	case 15:
+		output.MinLuminance = clampFloat(output.MinLuminance+float64(delta)*0.001, 0, 1000.0)
+	case 16:
 		output.MaxLuminance = clampInt(output.MaxLuminance+delta*10, 0, 2000)
+	case 17:
+		output.MaxAvgLuminance = clampInt(output.MaxAvgLuminance+delta*10, 0, 2000)
+	case 18:
+		vals := []int{-1, 0, 1}
+		cur := 1
+		for i, v := range vals {
+			if v == output.SupportsWideColor {
+				cur = i
+				break
+			}
+		}
+		output.SupportsWideColor = vals[wrapIndex(cur+delta, len(vals))]
+	case 19:
+		vals := []int{-1, 0, 1}
+		cur := 1
+		for i, v := range vals {
+			if v == output.SupportsHDR {
+				cur = i
+				break
+			}
+		}
+		output.SupportsHDR = vals[wrapIndex(cur+delta, len(vals))]
+	case 20:
+		// ICC uses text input via activateInspectorField
 	}
 	m.layoutChanged()
 }
@@ -1848,9 +1897,25 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 	case 13:
 		return fmt.Sprintf("%d", output.SDRMaxLuminance)
 	case 14:
-		return fmt.Sprintf("%d", output.MinLuminance)
+		if output.SDREOTF == "" {
+			return "default"
+		}
+		return output.SDREOTF
 	case 15:
+		return fmt.Sprintf("%.3f", output.MinLuminance)
+	case 16:
 		return fmt.Sprintf("%d", output.MaxLuminance)
+	case 17:
+		return fmt.Sprintf("%d", output.MaxAvgLuminance)
+	case 18:
+		return triStateLabel(output.SupportsWideColor)
+	case 19:
+		return triStateLabel(output.SupportsHDR)
+	case 20:
+		if output.ICC == "" {
+			return "None"
+		}
+		return output.ICC
 	default:
 		return ""
 	}
@@ -2000,30 +2065,35 @@ func editableOutputFromMonitor(m hypr.Monitor, matchCounts map[string]int) edita
 
 func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, hasLive bool) editableOutput {
 	output := editableOutput{
-		Key:             saved.Key,
-		MatchKey:        saved.MatchIdentity(),
-		Name:            saved.Name,
-		Make:            saved.Make,
-		Model:           saved.Model,
-		Serial:          saved.Serial,
-		Enabled:         saved.Enabled,
-		Width:           saved.Width,
-		Height:          saved.Height,
-		Refresh:         saved.Refresh,
-		X:               saved.X,
-		Y:               saved.Y,
-		Scale:           clampFloat(saved.Scale, 0.25, 4.0),
-		VRR:             saved.VRR,
-		Transform:       saved.Transform,
-		MirrorOf:        saved.MirrorOf,
-		Bitdepth:        saved.Bitdepth,
-		CM:              saved.CM,
-		SDRBrightness:   saved.SDRBrightness,
-		SDRSaturation:   saved.SDRSaturation,
-		SDRMinLuminance: saved.SDRMinLuminance,
-		SDRMaxLuminance: saved.SDRMaxLuminance,
-		MinLuminance:    saved.MinLuminance,
-		MaxLuminance:    saved.MaxLuminance,
+		Key:               saved.Key,
+		MatchKey:          saved.MatchIdentity(),
+		Name:              saved.Name,
+		Make:              saved.Make,
+		Model:             saved.Model,
+		Serial:            saved.Serial,
+		Enabled:           saved.Enabled,
+		Width:             saved.Width,
+		Height:            saved.Height,
+		Refresh:           saved.Refresh,
+		X:                 saved.X,
+		Y:                 saved.Y,
+		Scale:             clampFloat(saved.Scale, 0.25, 4.0),
+		VRR:               saved.VRR,
+		Transform:         saved.Transform,
+		MirrorOf:          saved.MirrorOf,
+		Bitdepth:          saved.Bitdepth,
+		CM:                saved.CM,
+		SDRBrightness:     saved.SDRBrightness,
+		SDRSaturation:     saved.SDRSaturation,
+		SDRMinLuminance:   saved.SDRMinLuminance,
+		SDRMaxLuminance:   saved.SDRMaxLuminance,
+		MinLuminance:      saved.MinLuminance,
+		MaxLuminance:      saved.MaxLuminance,
+		SupportsWideColor: saved.SupportsWideColor,
+		SupportsHDR:       saved.SupportsHDR,
+		MaxAvgLuminance:   saved.MaxAvgLuminance,
+		SDREOTF:           saved.SDREOTF,
+		ICC:               saved.ICC,
 	}
 
 	mode := saved.NormalizedMode()
@@ -2179,31 +2249,36 @@ func (o editableOutput) DisplayMode() string {
 
 func (o editableOutput) profileOutput() profile.OutputConfig {
 	return profile.OutputConfig{
-		Key:             o.Key,
-		MatchKey:        o.MatchKey,
-		Name:            o.Name,
-		Make:            o.Make,
-		Model:           o.Model,
-		Serial:          o.Serial,
-		Enabled:         o.Enabled,
-		Mode:            o.DisplayMode(),
-		Width:           o.Width,
-		Height:          o.Height,
-		Refresh:         o.Refresh,
-		X:               o.X,
-		Y:               o.Y,
-		Scale:           o.Scale,
-		VRR:             o.VRR,
-		Transform:       o.Transform,
-		MirrorOf:        o.MirrorOf,
-		Bitdepth:        o.Bitdepth,
-		CM:              o.CM,
-		SDRBrightness:   o.SDRBrightness,
-		SDRSaturation:   o.SDRSaturation,
-		SDRMinLuminance: o.SDRMinLuminance,
-		SDRMaxLuminance: o.SDRMaxLuminance,
-		MinLuminance:    o.MinLuminance,
-		MaxLuminance:    o.MaxLuminance,
+		Key:               o.Key,
+		MatchKey:          o.MatchKey,
+		Name:              o.Name,
+		Make:              o.Make,
+		Model:             o.Model,
+		Serial:            o.Serial,
+		Enabled:           o.Enabled,
+		Mode:              o.DisplayMode(),
+		Width:             o.Width,
+		Height:            o.Height,
+		Refresh:           o.Refresh,
+		X:                 o.X,
+		Y:                 o.Y,
+		Scale:             o.Scale,
+		VRR:               o.VRR,
+		Transform:         o.Transform,
+		MirrorOf:          o.MirrorOf,
+		Bitdepth:          o.Bitdepth,
+		CM:                o.CM,
+		SDRBrightness:     o.SDRBrightness,
+		SDRSaturation:     o.SDRSaturation,
+		SDRMinLuminance:   o.SDRMinLuminance,
+		SDRMaxLuminance:   o.SDRMaxLuminance,
+		MinLuminance:      o.MinLuminance,
+		MaxLuminance:      o.MaxLuminance,
+		SupportsWideColor: o.SupportsWideColor,
+		SupportsHDR:       o.SupportsHDR,
+		MaxAvgLuminance:   o.MaxAvgLuminance,
+		SDREOTF:           o.SDREOTF,
+		ICC:               o.ICC,
 	}
 }
 
@@ -2608,6 +2683,17 @@ func vrrLabel(v int) string {
 	}
 }
 
+func triStateLabel(v int) string {
+	switch v {
+	case -1:
+		return "off"
+	case 1:
+		return "on"
+	default:
+		return "auto"
+	}
+}
+
 func transformLabel(v int) string {
 	switch v {
 	case 0:
@@ -2779,11 +2865,16 @@ var layoutFields = []string{
 	"Mirror",
 	// Advanced fields (index baseFieldCount+)
 	"SDR Bright",
-	"SDR Satur",
+	"SDR Sat",
 	"SDR Min Lum",
 	"SDR Max Lum",
-	"Min Lumin",
-	"Max Lumin",
+	"SDR Curve",
+	"Min Lum",
+	"Max Lum",
+	"Max Avg Lum",
+	"Force Wide",
+	"Force HDR",
+	"ICC Path",
 }
 
 const baseFieldCount = 10

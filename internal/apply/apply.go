@@ -248,6 +248,18 @@ func commandForOutput(name string, out profile.OutputConfig, mirrorTarget string
 	if out.SDRSaturation != 0 && out.SDRSaturation != 1.0 {
 		cmd += ",sdrsaturation," + formatFloat(out.SDRSaturation, 2)
 	}
+	if out.SDREOTF != "" && out.SDREOTF != "default" {
+		// v1 uses numeric: 0=default, 1=srgb, 2=gamma22
+		switch out.SDREOTF {
+		case "srgb":
+			cmd += ",sdr_eotf,1"
+		case "gamma22":
+			cmd += ",sdr_eotf,2"
+		}
+	}
+	if out.ICC != "" {
+		cmd += ",icc," + out.ICC
+	}
 	if mirrorTarget != "" {
 		cmd += ",mirror," + mirrorTarget
 	}
@@ -513,8 +525,23 @@ func renderMonitorV2Block(identifier string, output profile.OutputConfig, mirror
 		lines = append(lines, fmt.Sprintf("  sdr_max_luminance = %d", output.SDRMaxLuminance))
 	}
 	if output.MinLuminance != 0 || output.MaxLuminance != 0 {
-		lines = append(lines, fmt.Sprintf("  min_luminance = %d", output.MinLuminance))
+		lines = append(lines, "  min_luminance = "+formatFloat(output.MinLuminance, 3))
 		lines = append(lines, fmt.Sprintf("  max_luminance = %d", output.MaxLuminance))
+	}
+	if output.MaxAvgLuminance != 0 {
+		lines = append(lines, fmt.Sprintf("  max_avg_luminance = %d", output.MaxAvgLuminance))
+	}
+	if output.SupportsWideColor != 0 {
+		lines = append(lines, fmt.Sprintf("  supports_wide_color = %d", output.SupportsWideColor))
+	}
+	if output.SupportsHDR != 0 {
+		lines = append(lines, fmt.Sprintf("  supports_hdr = %d", output.SupportsHDR))
+	}
+	if output.SDREOTF != "" && output.SDREOTF != "default" {
+		lines = append(lines, "  sdr_eotf = "+output.SDREOTF)
+	}
+	if output.ICC != "" {
+		lines = append(lines, "  icc = "+output.ICC)
 	}
 	if mirrorTarget != "" {
 		lines = append(lines, "  mirror = "+mirrorTarget)

@@ -10,31 +10,36 @@ import (
 )
 
 type OutputConfig struct {
-	Key             string  `json:"key"`
-	MatchKey        string  `json:"match_key,omitempty"`
-	Name            string  `json:"name"`
-	Make            string  `json:"make,omitempty"`
-	Model           string  `json:"model,omitempty"`
-	Serial          string  `json:"serial,omitempty"`
-	Enabled         bool    `json:"enabled"`
-	Mode            string  `json:"mode,omitempty"`
-	Width           int     `json:"width"`
-	Height          int     `json:"height"`
-	Refresh         float64 `json:"refresh"`
-	X               int     `json:"x"`
-	Y               int     `json:"y"`
-	Scale           float64 `json:"scale"`
-	VRR             int     `json:"vrr,omitempty"`
-	Transform       int     `json:"transform"`
-	MirrorOf        string  `json:"mirror_of,omitempty"`
-	Bitdepth        int     `json:"bitdepth,omitempty"`
-	CM              string  `json:"cm,omitempty"`
-	SDRBrightness   float64 `json:"sdr_brightness,omitempty"`
-	SDRSaturation   float64 `json:"sdr_saturation,omitempty"`
-	SDRMinLuminance float64 `json:"sdr_min_luminance"`
-	SDRMaxLuminance int     `json:"sdr_max_luminance,omitempty"`
-	MinLuminance    int     `json:"min_luminance"`
-	MaxLuminance    int     `json:"max_luminance,omitempty"`
+	Key               string  `json:"key"`
+	MatchKey          string  `json:"match_key,omitempty"`
+	Name              string  `json:"name"`
+	Make              string  `json:"make,omitempty"`
+	Model             string  `json:"model,omitempty"`
+	Serial            string  `json:"serial,omitempty"`
+	Enabled           bool    `json:"enabled"`
+	Mode              string  `json:"mode,omitempty"`
+	Width             int     `json:"width"`
+	Height            int     `json:"height"`
+	Refresh           float64 `json:"refresh"`
+	X                 int     `json:"x"`
+	Y                 int     `json:"y"`
+	Scale             float64 `json:"scale"`
+	VRR               int     `json:"vrr,omitempty"`
+	Transform         int     `json:"transform"`
+	MirrorOf          string  `json:"mirror_of,omitempty"`
+	Bitdepth          int     `json:"bitdepth,omitempty"`
+	CM                string  `json:"cm,omitempty"`
+	SDRBrightness     float64 `json:"sdr_brightness,omitempty"`
+	SDRSaturation     float64 `json:"sdr_saturation,omitempty"`
+	SDRMinLuminance   float64 `json:"sdr_min_luminance"`
+	SDRMaxLuminance   int     `json:"sdr_max_luminance,omitempty"`
+	MinLuminance      float64 `json:"min_luminance"`
+	MaxLuminance      int     `json:"max_luminance,omitempty"`
+	SupportsWideColor int     `json:"supports_wide_color,omitempty"`
+	SupportsHDR       int     `json:"supports_hdr,omitempty"`
+	MaxAvgLuminance   int     `json:"max_avg_luminance,omitempty"`
+	SDREOTF           string  `json:"sdr_eotf,omitempty"`
+	ICC               string  `json:"icc,omitempty"`
 }
 
 type WorkspaceStrategy string
@@ -217,4 +222,3 @@ func (p *Profile) Normalize() {
 	p.normalizeIdentityRefs()
 	p.SortOutputs()
 }
-

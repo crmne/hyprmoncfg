@@ -34,6 +34,7 @@ const (
 	numericInputScale numericInputKind = iota
 	numericInputPositionX
 	numericInputPositionY
+	numericInputICC
 )
 
 type numericInputState struct {
@@ -283,6 +284,15 @@ func (m *Model) activateInspectorField() tea.Cmd {
 			value = strconv.Itoa(output.Y)
 		}
 		return m.openNumericInput(kind, m.selectedOutput, title, hint, value)
+	case 20:
+		output := m.editOutputs[m.selectedOutput]
+		return m.openNumericInput(
+			numericInputICC,
+			m.selectedOutput,
+			fmt.Sprintf("Set ICC Profile for %s", output.Name),
+			"Absolute path to ICC profile. Leave empty to clear. Enter applies. Esc cancels.",
+			output.ICC,
+		)
 	default:
 		m.adjustInspectorField(1)
 		return nil
@@ -293,6 +303,9 @@ func (m *Model) openNumericInput(kind numericInputKind, outputIndex int, title s
 	input := textinput.New()
 	input.Prompt = ""
 	input.CharLimit = 8
+	if kind == numericInputICC {
+		input.CharLimit = 256
+	}
 	input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
 	input.TextStyle = m.styles.value
 	input.PlaceholderStyle = m.styles.subtle
@@ -681,6 +694,13 @@ func (m *Model) commitNumericInput() tea.Cmd {
 		}
 		output.Y = value
 		status = fmt.Sprintf("Position Y set to %d for %s", value, output.Name)
+	case numericInputICC:
+		output.ICC = strings.TrimSpace(m.input.Input.Value())
+		if output.ICC == "" {
+			status = fmt.Sprintf("ICC profile cleared for %s", output.Name)
+		} else {
+			status = fmt.Sprintf("ICC profile set for %s", output.Name)
+		}
 	}
 	m.layoutChanged()
 	m.setStatusOK(status)

@@ -676,6 +676,11 @@ func TestRenderMonitorV2BlockDefaultsOmitted(t *testing.T) {
 		"sdr_max_luminance",
 		"min_luminance",
 		"max_luminance",
+		"max_avg_luminance",
+		"supports_wide_color",
+		"supports_hdr",
+		"sdr_eotf",
+		"icc",
 	} {
 		if strings.Contains(rendered, unwanted) {
 			t.Fatalf("rendered config should not contain default %q:\n%s", unwanted, rendered)
@@ -725,9 +730,9 @@ func TestRenderMonitorV2BlockLuminancePairs(t *testing.T) {
 
 	t.Run("only EDID min luminance", func(t *testing.T) {
 		out := base
-		out.MinLuminance = 5
+		out.MinLuminance = 0.005
 		rendered := testRenderV2(t, []profile.OutputConfig{out}, []hypr.Monitor{mon})
-		if !strings.Contains(rendered, "min_luminance = 5") {
+		if !strings.Contains(rendered, "min_luminance = 0.005") {
 			t.Fatalf("expected min_luminance when only min is set:\n%s", rendered)
 		}
 	})
@@ -746,6 +751,8 @@ func TestCommandForOutputV1ExtraFields(t *testing.T) {
 		VRR:          2,
 		Bitdepth:     10,
 		CM:           "wide",
+		SDREOTF:      "srgb",
+		ICC:          "/usr/share/color/icc/test.icc",
 		MaxLuminance: 800,
 	}})
 
@@ -756,13 +763,12 @@ func TestCommandForOutputV1ExtraFields(t *testing.T) {
 	if len(cmds) != 1 {
 		t.Fatalf("expected 1 command, got %d", len(cmds))
 	}
-	for _, want := range []string{"vrr,2", "bitdepth,10", "cm,wide"} {
+	for _, want := range []string{"vrr,2", "bitdepth,10", "cm,wide", "sdr_eotf,1", "icc,/usr/share/color/icc/test.icc"} {
 		if !strings.Contains(cmds[0], want) {
 			t.Fatalf("v1 command missing %q: %s", want, cmds[0])
 		}
 	}
-	// Luminance fields are monitorv2-only
-	for _, unwanted := range []string{"min_luminance", "max_luminance", "sdr_min_luminance"} {
+	for _, unwanted := range []string{"min_luminance", "max_luminance", "sdr_min_luminance", "max_avg_luminance", "supports_wide_color", "supports_hdr"} {
 		if strings.Contains(cmds[0], unwanted) {
 			t.Fatalf("v1 command should not contain %q: %s", unwanted, cmds[0])
 		}
@@ -825,5 +831,44 @@ func TestProfileValidateBitdepth(t *testing.T) {
 		if err := p.Validate(); err == nil {
 			t.Errorf("bitdepth %d should be invalid", bd)
 		}
+	}
+}
+
+func TestRenderMonitorV2BlockNewEDIDFields(t *testing.T) {
+	mon := testMonitor("DP-1", "Dell U2720Q", "Dell", "U2720Q", "A1")
+	rendered := testRenderV2(t, []profile.OutputConfig{{
+		Key: mon.HardwareKey(), Name: "DP-1", Enabled: true,
+		Width: 2560, Height: 1440, Refresh: 144, Scale: 1,
+		SupportsWideColor: -1,
+		SupportsHDR:       1,
+		MaxAvgLuminance:   350,
+		SDREOTF:           "gamma22",
+		ICC:               "/usr/share/color/icc/test.icc",
+	}}, []hypr.Monitor{mon})
+
+	for _, want := range []string{
+		"supports_wide_color = -1",
+		"supports_hdr = 1",
+		"max_avg_luminance = 350",
+		"sdr_eotf = gamma22",
+		"icc = /usr/share/color/icc/test.icc",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestRenderMonitorV2MinLuminanceFloat(t *testing.T) {
+	mon := testMonitor("DP-1", "Dell U2720Q", "Dell", "U2720Q", "A1")
+	rendered := testRenderV2(t, []profile.OutputConfig{{
+		Key: mon.HardwareKey(), Name: "DP-1", Enabled: true,
+		Width: 2560, Height: 1440, Refresh: 144, Scale: 1,
+		MinLuminance: 0.005,
+		MaxLuminance: 800,
+	}}, []hypr.Monitor{mon})
+
+	if !strings.Contains(rendered, "min_luminance = 0.005") {
+		t.Fatalf("expected float min_luminance:\n%s", rendered)
 	}
 }
