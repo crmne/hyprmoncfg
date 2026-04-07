@@ -218,7 +218,6 @@ type Model struct {
 	snap          *snapHintState
 	snapSeq       int
 
-	showAdvanced     bool
 	status           string
 	statusErr        bool
 	dirty            bool
@@ -509,18 +508,13 @@ func (m *Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "up", "k":
-		m.inspectorField = clampIndex(m.inspectorField-1, m.visibleFieldCount())
+		m.inspectorField = clampIndex(m.inspectorField-1, len(layoutFields))
 	case "down", "j":
-		m.inspectorField = clampIndex(m.inspectorField+1, m.visibleFieldCount())
+		m.inspectorField = clampIndex(m.inspectorField+1, len(layoutFields))
 	case "left", "h", "-", "_":
 		m.adjustInspectorField(-1)
 	case "right", "l", "+", "=":
 		m.adjustInspectorField(1)
-	case "x":
-		m.showAdvanced = !m.showAdvanced
-		if !m.showAdvanced && m.inspectorField >= baseFieldCount {
-			m.inspectorField = baseFieldCount - 1
-		}
 	case " ", "enter":
 		return m, m.activateInspectorField()
 	default:
@@ -1113,13 +1107,6 @@ func (m Model) compactLayoutHeights(total int) (int, int) {
 	return max(2, canvas), max(1, inspector)
 }
 
-func (m Model) visibleFieldCount() int {
-	if m.showAdvanced {
-		return len(layoutFields)
-	}
-	return baseFieldCount
-}
-
 func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compact bool) []string {
 	if compact {
 		return m.compactInspectorFieldLines(output, innerWidth)
@@ -1131,14 +1118,8 @@ func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compac
 		labelWidth = 8
 	}
 
-	fieldCount := m.visibleFieldCount()
-	lines := make([]string, 0, fieldCount+1)
-	for idx := 0; idx < fieldCount; idx++ {
-		if idx == baseFieldCount {
-			lines = append(lines, "")
-			lines = append(lines, m.styles.header.Render("▼ Advanced")+" "+m.styles.subtle.Render("(x)"))
-		}
-
+	lines := make([]string, 0, len(layoutFields))
+	for idx := range layoutFields {
 		labelText := layoutFields[idx]
 		if shortLabels {
 			labelText = layoutFieldShortLabel(idx)
@@ -1150,11 +1131,6 @@ func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compac
 		}
 		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
 		lines = append(lines, fmt.Sprintf("%s %s", label, value))
-	}
-
-	if !m.showAdvanced {
-		toggle := m.styles.subtle.Render("▶ Advanced (x)")
-		lines = append(lines, "", toggle)
 	}
 
 	return lines
@@ -1337,7 +1313,7 @@ func (m *Model) loadLiveState() {
 		m.selectedOutput = outputIndexByKey(m.editOutputs, selectedKey)
 	}
 	m.selectedOutput = clampIndex(m.selectedOutput, len(m.editOutputs))
-	m.inspectorField = clampIndex(m.inspectorField, m.visibleFieldCount())
+	m.inspectorField = clampIndex(m.inspectorField, len(layoutFields))
 	m.picker = nil
 	m.input = nil
 	m.drag = nil
@@ -1395,7 +1371,7 @@ func (m *Model) recoverMirroredIdentity() {
 func (m *Model) syncSelections() {
 	m.selectedOutput = clampIndex(m.selectedOutput, len(m.editOutputs))
 	m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
-	m.inspectorField = clampIndex(m.inspectorField, m.visibleFieldCount())
+	m.inspectorField = clampIndex(m.inspectorField, len(layoutFields))
 	m.workspaceEdit.SelectedField = clampIndex(m.workspaceEdit.SelectedField, len(workspaceFields))
 	m.workspaceEdit.SelectedOrder = clampIndex(m.workspaceEdit.SelectedOrder, len(m.workspaceEdit.MonitorOrder))
 }
@@ -2863,7 +2839,6 @@ var layoutFields = []string{
 	"Position X",
 	"Position Y",
 	"Mirror",
-	// Advanced fields (index baseFieldCount+)
 	"SDR Bright",
 	"SDR Sat",
 	"SDR Min Lum",
@@ -2876,8 +2851,6 @@ var layoutFields = []string{
 	"Force HDR",
 	"ICC Path",
 }
-
-const baseFieldCount = 10
 
 func layoutFieldShortLabel(field int) string {
 	switch field {
