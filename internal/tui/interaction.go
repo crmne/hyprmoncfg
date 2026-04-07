@@ -25,6 +25,7 @@ func (i pickerItem) Description() string { return "" }
 
 type modePickerState struct {
 	OutputIndex int
+	FieldIndex  int // -1 for mode picker, >= 0 for field option picker
 	List        list.Model
 }
 
@@ -35,11 +36,14 @@ const (
 	numericInputPositionX
 	numericInputPositionY
 	numericInputICC
+	numericInputFloat
+	numericInputInt
 )
 
 type numericInputState struct {
 	Kind        numericInputKind
 	OutputIndex int
+	FieldIndex  int
 	Title       string
 	Hint        string
 	Input       textinput.Model
@@ -258,6 +262,7 @@ func (m *Model) activateInspectorField() tea.Cmd {
 		picker.Select(clampIndex(output.ModeIndex, len(output.Modes)))
 		m.picker = &modePickerState{
 			OutputIndex: m.selectedOutput,
+			FieldIndex:  -1,
 			List:        picker,
 		}
 		m.mode = modeModePicker
@@ -284,6 +289,57 @@ func (m *Model) activateInspectorField() tea.Cmd {
 			value = strconv.Itoa(output.Y)
 		}
 		return m.openNumericInput(kind, m.selectedOutput, title, hint, value)
+	case 3:
+		m.openFieldPicker("Bit Depth", m.inspectorField, []string{"8", "10", "16"})
+		return nil
+	case 4:
+		m.openFieldPicker("Color Management", m.inspectorField, []string{"srgb", "auto", "wide", "hdr", "hdredid", "dcip3", "dp3", "adobe", "edid"})
+		return nil
+	case 5:
+		m.openFieldPicker("VRR", m.inspectorField, []string{"off", "on", "fullscreen"})
+		return nil
+	case 6:
+		m.openFieldPicker("Transform", m.inspectorField, []string{"normal", "90", "180", "270", "flipped", "flipped+90", "flipped+180", "flipped+270"})
+		return nil
+	case 9:
+		targets := []string{"None"}
+		for i, other := range m.editOutputs {
+			if i != m.selectedOutput {
+				targets = append(targets, other.displayModelLabel())
+			}
+		}
+		m.openFieldPicker("Mirror", m.inspectorField, targets)
+		return nil
+	case 10:
+		output := m.editOutputs[m.selectedOutput]
+		return m.openNumericInput(numericInputFloat, m.selectedOutput, "SDR Brightness", "Value between 0 and 3. Enter applies. Esc cancels.", fmt.Sprintf("%.2f", output.SDRBrightness))
+	case 11:
+		output := m.editOutputs[m.selectedOutput]
+		return m.openNumericInput(numericInputFloat, m.selectedOutput, "SDR Saturation", "Value between 0 and 3. Enter applies. Esc cancels.", fmt.Sprintf("%.2f", output.SDRSaturation))
+	case 12:
+		output := m.editOutputs[m.selectedOutput]
+		return m.openNumericInput(numericInputFloat, m.selectedOutput, "SDR Min Luminance", "Value between 0 and 1. Enter applies. Esc cancels.", fmt.Sprintf("%.3f", output.SDRMinLuminance))
+	case 13:
+		output := m.editOutputs[m.selectedOutput]
+		return m.openNumericInput(numericInputInt, m.selectedOutput, "SDR Max Luminance", "Integer between 0 and 1000. Enter applies. Esc cancels.", fmt.Sprintf("%d", output.SDRMaxLuminance))
+	case 14:
+		m.openFieldPicker("SDR Transfer Curve", m.inspectorField, []string{"default", "gamma22", "srgb"})
+		return nil
+	case 15:
+		output := m.editOutputs[m.selectedOutput]
+		return m.openNumericInput(numericInputFloat, m.selectedOutput, "Min Luminance", "Monitor minimum luminance. Enter applies. Esc cancels.", fmt.Sprintf("%.3f", output.MinLuminance))
+	case 16:
+		output := m.editOutputs[m.selectedOutput]
+		return m.openNumericInput(numericInputInt, m.selectedOutput, "Max Luminance", "Monitor maximum luminance. Enter applies. Esc cancels.", fmt.Sprintf("%d", output.MaxLuminance))
+	case 17:
+		output := m.editOutputs[m.selectedOutput]
+		return m.openNumericInput(numericInputInt, m.selectedOutput, "Max Avg Luminance", "Monitor average luminance. Enter applies. Esc cancels.", fmt.Sprintf("%d", output.MaxAvgLuminance))
+	case 18:
+		m.openFieldPicker("Force Wide Color", m.inspectorField, []string{"off", "auto", "on"})
+		return nil
+	case 19:
+		m.openFieldPicker("Force HDR", m.inspectorField, []string{"off", "auto", "on"})
+		return nil
 	case 20:
 		output := m.editOutputs[m.selectedOutput]
 		return m.openNumericInput(
@@ -299,14 +355,56 @@ func (m *Model) activateInspectorField() tea.Cmd {
 	}
 }
 
+func (m *Model) openFieldPicker(title string, fieldIndex int, options []string) {
+	output := m.editOutputs[m.selectedOutput]
+	currentValue := m.layoutFieldValue(output, fieldIndex)
+
+	items := make([]list.Item, 0, len(options))
+	selected := 0
+	for i, opt := range options {
+		items = append(items, pickerItem(opt))
+		if opt == currentValue {
+			selected = i
+		}
+	}
+	inner := list.NewDefaultDelegate()
+	inner.SetHeight(1)
+	inner.SetSpacing(0)
+	inner.Styles.NormalTitle = m.styles.value
+	inner.Styles.SelectedTitle = m.styles.focused.Copy().UnsetPadding()
+	inner.Styles.DimmedTitle = m.styles.subtle
+	inner.Styles.FilterMatch = m.styles.badgeAccent
+	delegate := arrowDelegate{inner}
+	height := clampInt(len(options)+2, 4, 12)
+	picker := list.New(items, delegate, m.modePickerWidth()-2, height)
+	picker.Title = title
+	picker.SetShowHelp(false)
+	picker.SetShowPagination(false)
+	picker.SetShowStatusBar(false)
+	picker.SetFilteringEnabled(false)
+	picker.DisableQuitKeybindings()
+	picker.Styles.Title = m.styles.modalTitle
+	picker.Styles.TitleBar = lipgloss.NewStyle().PaddingBottom(1)
+	picker.Styles.PaginationStyle = m.styles.subtle
+	picker.Styles.HelpStyle = m.styles.help
+	picker.Styles.NoItems = m.styles.subtle
+	picker.Select(selected)
+	m.picker = &modePickerState{
+		OutputIndex: m.selectedOutput,
+		FieldIndex:  fieldIndex,
+		List:        picker,
+	}
+	m.mode = modeModePicker
+}
+
 func (m *Model) openNumericInput(kind numericInputKind, outputIndex int, title string, hint string, value string) tea.Cmd {
 	input := textinput.New()
 	input.Prompt = ""
-	input.CharLimit = 8
+	input.CharLimit = 12
 	if kind == numericInputICC {
 		input.CharLimit = 256
 	}
-	input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
+	input.Width = clampInt(m.modalMaxWidth()-16, 12, 40)
 	input.TextStyle = m.styles.value
 	input.PlaceholderStyle = m.styles.subtle
 	input.Cursor.Style = lipgloss.NewStyle()
@@ -318,6 +416,7 @@ func (m *Model) openNumericInput(kind numericInputKind, outputIndex int, title s
 	m.input = &numericInputState{
 		Kind:        kind,
 		OutputIndex: outputIndex,
+		FieldIndex:  m.inspectorField,
 		Title:       title,
 		Hint:        hint,
 		Input:       input,
@@ -623,7 +722,18 @@ func (m *Model) commitModePicker() tea.Cmd {
 	}
 
 	output := &m.editOutputs[m.picker.OutputIndex]
-	output.ModeIndex = indexOf(output.Modes, string(selected))
+	value := string(selected)
+
+	if m.picker.FieldIndex >= 0 {
+		m.applyFieldPickerValue(output, m.picker.FieldIndex, value)
+		m.layoutChanged()
+		m.setStatusOK(fmt.Sprintf("Set %s to %s for %s", layoutFields[m.picker.FieldIndex], value, output.Name))
+		m.picker = nil
+		m.mode = modeMain
+		return nil
+	}
+
+	output.ModeIndex = indexOf(output.Modes, value)
 	if output.ModeIndex < 0 {
 		output.ModeIndex = 0
 	}
@@ -633,6 +743,81 @@ func (m *Model) commitModePicker() tea.Cmd {
 	m.picker = nil
 	m.mode = modeMain
 	return nil
+}
+
+func (m *Model) applyFieldPickerValue(output *editableOutput, field int, value string) {
+	switch field {
+	case 3:
+		output.Bitdepth, _ = strconv.Atoi(value)
+	case 4:
+		output.CM = value
+	case 5:
+		switch value {
+		case "on":
+			output.VRR = 1
+		case "fullscreen":
+			output.VRR = 2
+		default:
+			output.VRR = 0
+		}
+	case 6:
+		for i, label := range []string{"normal", "90", "180", "270", "flipped", "flipped+90", "flipped+180", "flipped+270"} {
+			if label == value {
+				output.Transform = i
+				break
+			}
+		}
+	case 9:
+		if value == "None" {
+			output.MirrorOf = ""
+		} else {
+			for _, other := range m.editOutputs {
+				if other.displayModelLabel() == value {
+					output.MirrorOf = other.Key
+					break
+				}
+			}
+		}
+	case 14:
+		output.SDREOTF = value
+	case 18:
+		switch value {
+		case "off":
+			output.SupportsWideColor = -1
+		case "on":
+			output.SupportsWideColor = 1
+		default:
+			output.SupportsWideColor = 0
+		}
+	case 19:
+		switch value {
+		case "off":
+			output.SupportsHDR = -1
+		case "on":
+			output.SupportsHDR = 1
+		default:
+			output.SupportsHDR = 0
+		}
+	}
+}
+
+func (m *Model) applyNumericFieldValue(output *editableOutput, field int, value float64) {
+	switch field {
+	case 10:
+		output.SDRBrightness = value
+	case 11:
+		output.SDRSaturation = value
+	case 12:
+		output.SDRMinLuminance = value
+	case 13:
+		output.SDRMaxLuminance = int(value)
+	case 15:
+		output.MinLuminance = value
+	case 16:
+		output.MaxLuminance = int(value)
+	case 17:
+		output.MaxAvgLuminance = int(value)
+	}
 }
 
 func (m *Model) updateNumericInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -701,6 +886,22 @@ func (m *Model) commitNumericInput() tea.Cmd {
 		} else {
 			status = fmt.Sprintf("ICC profile set for %s", output.Name)
 		}
+	case numericInputFloat:
+		value, err := strconv.ParseFloat(strings.TrimSpace(m.input.Input.Value()), 64)
+		if err != nil {
+			m.input.Input.Err = fmt.Errorf("must be a number")
+			return nil
+		}
+		m.applyNumericFieldValue(output, m.input.FieldIndex, value)
+		status = fmt.Sprintf("%s set for %s", m.input.Title, output.Name)
+	case numericInputInt:
+		value, err := strconv.Atoi(strings.TrimSpace(m.input.Input.Value()))
+		if err != nil {
+			m.input.Input.Err = fmt.Errorf("must be an integer")
+			return nil
+		}
+		m.applyNumericFieldValue(output, m.input.FieldIndex, float64(value))
+		status = fmt.Sprintf("%s set for %s", m.input.Title, output.Name)
 	}
 	m.layoutChanged()
 	m.setStatusOK(status)
@@ -1162,7 +1363,11 @@ func (m Model) inspectorFieldAt(y int, inspectorRect hitRect, compact bool) (int
 		row = inner.y + detailCount + 5
 	}
 	for idx := range layoutFields {
-		if y == row+idx {
+		offset := idx
+		if idx >= advancedFieldStart {
+			offset++ // spacer row before advanced fields
+		}
+		if y == row+offset {
 			return idx, true
 		}
 	}

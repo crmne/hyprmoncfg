@@ -218,6 +218,7 @@ type Model struct {
 	snap          *snapHintState
 	snapSeq       int
 
+	resetRequested   bool
 	status           string
 	statusErr        bool
 	dirty            bool
@@ -440,6 +441,7 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tab = tabWorkspaces
 		return m, nil
 	case "r":
+		m.resetRequested = true
 		m.draftProfileName = ""
 		m.markClean()
 		return m, m.refreshCmd()
@@ -1118,8 +1120,11 @@ func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compac
 		labelWidth = 8
 	}
 
-	lines := make([]string, 0, len(layoutFields))
+	lines := make([]string, 0, len(layoutFields)+1)
 	for idx := range layoutFields {
+		if idx == advancedFieldStart {
+			lines = append(lines, "")
+		}
 		labelText := layoutFields[idx]
 		if shortLabels {
 			labelText = layoutFieldShortLabel(idx)
@@ -1269,27 +1274,28 @@ func (m *Model) loadLiveState() {
 		m.draftProfileName = ""
 	}
 
-	// Preserve fields from the previous TUI state that hyprctl cannot
-	// accurately report or that Hyprland may change as a side-effect
-	// (e.g. switching CM to "hdr" changes currentFormat/bitdepth).
-	for i := range m.editOutputs {
-		for _, prev := range prevOutputs {
-			if prev.Key == m.editOutputs[i].Key {
-				m.editOutputs[i].VRR = prev.VRR
-				m.editOutputs[i].Bitdepth = prev.Bitdepth
-				m.editOutputs[i].CM = prev.CM
-				m.editOutputs[i].MinLuminance = prev.MinLuminance
-				m.editOutputs[i].MaxLuminance = prev.MaxLuminance
-				m.editOutputs[i].SupportsWideColor = prev.SupportsWideColor
-				m.editOutputs[i].SupportsHDR = prev.SupportsHDR
-				m.editOutputs[i].MaxAvgLuminance = prev.MaxAvgLuminance
-				m.editOutputs[i].SDREOTF = prev.SDREOTF
-				m.editOutputs[i].ICC = prev.ICC
-				break
+	// Preserve fields that hyprctl cannot accurately report, unless the
+	// user explicitly requested a reset.
+	if !m.resetRequested {
+		for i := range m.editOutputs {
+			for _, prev := range prevOutputs {
+				if prev.Key == m.editOutputs[i].Key {
+					m.editOutputs[i].VRR = prev.VRR
+					m.editOutputs[i].Bitdepth = prev.Bitdepth
+					m.editOutputs[i].CM = prev.CM
+					m.editOutputs[i].MinLuminance = prev.MinLuminance
+					m.editOutputs[i].MaxLuminance = prev.MaxLuminance
+					m.editOutputs[i].SupportsWideColor = prev.SupportsWideColor
+					m.editOutputs[i].SupportsHDR = prev.SupportsHDR
+					m.editOutputs[i].MaxAvgLuminance = prev.MaxAvgLuminance
+					m.editOutputs[i].SDREOTF = prev.SDREOTF
+					m.editOutputs[i].ICC = prev.ICC
+					break
+				}
 			}
 		}
 	}
-	if len(prevOutputs) == 0 {
+	if len(prevOutputs) == 0 || m.resetRequested {
 		if best, _, ok := profile.BestMatch(m.profiles, m.monitors); ok {
 			for i := range m.editOutputs {
 				if saved, ok := best.OutputByKey(m.editOutputs[i].Key); ok {
@@ -1307,6 +1313,7 @@ func (m *Model) loadLiveState() {
 			}
 		}
 	}
+	m.resetRequested = false
 	if idx := focusedOutputIndex(m.editOutputs); idx >= 0 {
 		m.selectedOutput = idx
 	} else if selectedKey != "" {
@@ -2851,6 +2858,8 @@ var layoutFields = []string{
 	"Force HDR",
 	"ICC Path",
 }
+
+const advancedFieldStart = 10
 
 func layoutFieldShortLabel(field int) string {
 	switch field {
