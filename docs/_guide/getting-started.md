@@ -50,6 +50,26 @@ The package installs:
 - `hyprmoncfgd` for automatic profile switching
 - a user service unit at `/usr/lib/systemd/user/hyprmoncfgd.service`
 
+
+### Void Linux
+
+Add [Blackhole-vl](https://github.com/Event-Horizon-VL/blackhole-vl) (Unofficial Repo) to your package manager:
+
+```bash
+echo repository=https://raw.githubusercontent.com/Event-Horizon-VL/blackhole-vl/repository-x86_64 | sudo tee /etc/xbps.d/20-repository-extra.conf
+```
+
+Install package with:
+
+```bash
+sudo xbps-install -S hyprmoncfg
+```
+
+The package installs:
+
+- `hyprmoncfg` to launch the TUI or use the CLI
+- `hyprmoncfgd` for automatic profile switching
+
 ### Build from source
 
 ```bash
@@ -118,6 +138,12 @@ If you installed from AUR:
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now hyprmoncfgd
+```
+
+If you installed from Blackhole-vl (Void Linux) add this line to your `~/.config/hypr/hyprland.conf`:
+
+```bash
+exec-once hyprmoncfgd
 ```
 
 If you built from source and installed into `~/.local/bin`:
