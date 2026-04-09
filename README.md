@@ -90,6 +90,13 @@ For the latest `main` branch:
 yay -S hyprmoncfg-git
 ```
 
+Void Linux [(Unofficial Repo)](https://github.com/Event-Horizon-VL/blackhole-vl):
+
+```bash
+echo repository=https://raw.githubusercontent.com/Event-Horizon-VL/blackhole-vl/repository-x86_64 | sudo tee /etc/xbps.d/20-repository-extra.conf
+sudo xbps-install -S hyprmoncfg
+```
+
 Build from source:
 
 ```bash
