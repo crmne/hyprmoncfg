@@ -275,7 +275,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.saveDialog.Input.Width = m.saveDialogInputWidth()
 		}
 		if m.input != nil {
-			m.input.Input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
+			m.input.Input.Width = m.numericInputWidthFor(m.input.Kind)
 		}
 		return m, nil
 
@@ -820,6 +820,7 @@ func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 
 	output := m.editOutputs[m.selectedOutput]
 
+	detailCount := 0
 	if compact {
 		// Compact info: one-line summary
 		info := fmt.Sprintf("%s  %s  %s", output.Name, output.displayModelLabel(), output.DisplayMode())
@@ -829,6 +830,7 @@ func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 		// Info section
 		lines = append(lines, m.styles.header.Render("Info"))
 		detailLines := m.inspectorDetailLines(output)
+		detailCount = len(detailLines)
 		lines = append(lines, detailLines...)
 	}
 
@@ -838,7 +840,30 @@ func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 	fieldLines := m.inspectorFieldLines(output, innerWidth, false)
 	lines = append(lines, fieldLines...)
 
+	if !compact && m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
+		// header(1) + blank(1) + Info(1) + details(N) + blank(1) + Preferences(1) = N+5
+		fieldBase := 5 + detailCount
+		selectedLine := fieldBase + m.inspectorField
+		if m.inspectorField >= advancedFieldStart {
+			selectedLine++ // spacer row before advanced
+		}
+		lines = scrollLinesToFit(lines, selectedLine, innerHeight)
+	}
+
 	return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
+}
+
+// scrollLinesToFit trims leading lines so that the line at selectedLine is
+// within the first `height` rows. Returns lines unchanged if already visible.
+func scrollLinesToFit(lines []string, selectedLine, height int) []string {
+	if height <= 0 || selectedLine < height {
+		return lines
+	}
+	offset := selectedLine - height + 1
+	if offset >= len(lines) {
+		offset = len(lines) - 1
+	}
+	return lines[offset:]
 }
 
 func (m Model) renderProfilesView(height int) string {

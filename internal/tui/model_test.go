@@ -1484,3 +1484,55 @@ func TestLayoutMoveVimKeysMatchArrows(t *testing.T) {
 		}
 	}
 }
+
+func TestNumericInputWidthFor(t *testing.T) {
+	m := Model{width: 120}
+	iccWidth := m.numericInputWidthFor(numericInputICC)
+	scaleWidth := m.numericInputWidthFor(numericInputScale)
+	floatWidth := m.numericInputWidthFor(numericInputFloat)
+	intWidth := m.numericInputWidthFor(numericInputInt)
+
+	if iccWidth <= scaleWidth {
+		t.Errorf("ICC width (%d) should be wider than scale width (%d)", iccWidth, scaleWidth)
+	}
+	if iccWidth < 20 || iccWidth > 60 {
+		t.Errorf("ICC width %d outside expected range [20, 60]", iccWidth)
+	}
+	if scaleWidth < 8 || scaleWidth > 12 {
+		t.Errorf("Scale width %d outside expected range [8, 12]", scaleWidth)
+	}
+	if floatWidth != scaleWidth || intWidth != scaleWidth {
+		t.Errorf("float/int widths should match scale: float=%d int=%d scale=%d", floatWidth, intWidth, scaleWidth)
+	}
+}
+
+func TestScrollLinesToFit(t *testing.T) {
+	lines := []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+
+	tests := []struct {
+		name         string
+		selectedLine int
+		height       int
+		wantFirst    string
+		wantLen      int
+	}{
+		{"selected at top, fits", 0, 10, "0", 10},
+		{"selected inside viewport", 3, 10, "0", 10},
+		{"selected at last visible row", 9, 10, "0", 10},
+		{"selected just past viewport", 5, 5, "1", 9},
+		{"selected at end", 9, 5, "5", 5},
+		{"height zero returns unchanged", 9, 0, "0", 10},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := scrollLinesToFit(lines, tt.selectedLine, tt.height)
+			if len(got) != tt.wantLen {
+				t.Errorf("len = %d, want %d", len(got), tt.wantLen)
+			}
+			if got[0] != tt.wantFirst {
+				t.Errorf("first line = %q, want %q", got[0], tt.wantFirst)
+			}
+		})
+	}
+}

@@ -397,6 +397,13 @@ func (m *Model) openFieldPicker(title string, fieldIndex int, options []string) 
 	m.mode = modeModePicker
 }
 
+func (m Model) numericInputWidthFor(kind numericInputKind) int {
+	if kind == numericInputICC {
+		return clampInt(m.modalMaxWidth()-16, 20, 60)
+	}
+	return clampInt(m.modalMaxWidth()-16, 8, 12)
+}
+
 func (m *Model) openNumericInput(kind numericInputKind, outputIndex int, title string, hint string, value string) tea.Cmd {
 	input := textinput.New()
 	input.Prompt = ""
@@ -404,7 +411,7 @@ func (m *Model) openNumericInput(kind numericInputKind, outputIndex int, title s
 	if kind == numericInputICC {
 		input.CharLimit = 256
 	}
-	input.Width = clampInt(m.modalMaxWidth()-16, 12, 40)
+	input.Width = m.numericInputWidthFor(kind)
 	input.TextStyle = m.styles.value
 	input.PlaceholderStyle = m.styles.subtle
 	input.Cursor.Style = lipgloss.NewStyle()
