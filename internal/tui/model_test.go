@@ -459,13 +459,13 @@ func TestActivateInspectorFieldOpensEditors(t *testing.T) {
 		t.Fatalf("expected numeric input to open, got mode %v input %+v", base.mode, base.input)
 	}
 
-	base.inspectorField = 5
+	base.inspectorField = 7
 	base.activateInspectorField()
 	if base.mode != modeNumericInput || base.input == nil || base.input.Kind != numericInputPositionX {
 		t.Fatalf("expected position X input to open, got mode %v input %+v", base.mode, base.input)
 	}
 
-	base.inspectorField = 6
+	base.inspectorField = 8
 	base.activateInspectorField()
 	if base.mode != modeNumericInput || base.input == nil || base.input.Kind != numericInputPositionY {
 		t.Fatalf("expected position Y input to open, got mode %v input %+v", base.mode, base.input)
@@ -951,8 +951,8 @@ func TestRenderMainFitsShortTerminalHeight(t *testing.T) {
 	if height := lipgloss.Height(view); height != m.height {
 		t.Fatalf("expected short main view to fill height %d, got %d", m.height, height)
 	}
-	if !strings.Contains(view, "Selected Monitor") {
-		t.Fatalf("expected Selected Monitor to remain visible, got:\n%s", view)
+	if !strings.Contains(view, "Preferences") {
+		t.Fatalf("expected Preferences section to be visible in inspector, got:\n%s", view)
 	}
 }
 
@@ -1481,6 +1481,141 @@ func TestLayoutMoveVimKeysMatchArrows(t *testing.T) {
 		}
 		if vdx != adx || vdy != ady {
 			t.Errorf("%q=(%d,%d) != %q=(%d,%d)", pair[0], vdx, vdy, pair[1], adx, ady)
+		}
+	}
+}
+
+func TestNumericInputWidthFor(t *testing.T) {
+	m := Model{width: 120}
+	iccWidth := m.numericInputWidthFor(numericInputICC)
+	scaleWidth := m.numericInputWidthFor(numericInputScale)
+	floatWidth := m.numericInputWidthFor(numericInputFloat)
+	intWidth := m.numericInputWidthFor(numericInputInt)
+
+	if iccWidth <= scaleWidth {
+		t.Errorf("ICC width (%d) should be wider than scale width (%d)", iccWidth, scaleWidth)
+	}
+	if iccWidth < 20 || iccWidth > 60 {
+		t.Errorf("ICC width %d outside expected range [20, 60]", iccWidth)
+	}
+	if scaleWidth < 8 || scaleWidth > 12 {
+		t.Errorf("Scale width %d outside expected range [8, 12]", scaleWidth)
+	}
+	if floatWidth != scaleWidth || intWidth != scaleWidth {
+		t.Errorf("float/int widths should match scale: float=%d int=%d scale=%d", floatWidth, intWidth, scaleWidth)
+	}
+}
+
+func TestScrollLinesToFit(t *testing.T) {
+	lines := []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+
+	tests := []struct {
+		name         string
+		selectedLine int
+		height       int
+		wantFirst    string
+		wantLen      int
+	}{
+		{"selected at top, fits", 0, 10, "0", 10},
+		{"selected inside viewport", 3, 10, "0", 10},
+		{"selected at last visible row", 9, 10, "0", 10},
+		{"selected just past viewport", 5, 5, "1", 9},
+		{"selected at end", 9, 5, "5", 5},
+		{"height zero returns unchanged", 9, 0, "0", 10},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := scrollLinesToFit(lines, tt.selectedLine, tt.height)
+			if len(got) != tt.wantLen {
+				t.Errorf("len = %d, want %d", len(got), tt.wantLen)
+			}
+			if got[0] != tt.wantFirst {
+				t.Errorf("first line = %q, want %q", got[0], tt.wantFirst)
+			}
+		})
+	}
+}
+
+func TestBuildInspectorLayoutMapsAllFields(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		editOutputs: []editableOutput{{
+			Key:             "test",
+			Name:            "DP-1",
+			Enabled:         true,
+			Modes:           []string{"3840x2160@144Hz"},
+			ModeIndex:       0,
+			Width:           3840,
+			Height:          2160,
+			Refresh:         144,
+			Scale:           1,
+			ActiveWorkspace: "1",
+		}},
+	}
+
+	for _, compact := range []bool{false, true} {
+		name := "full"
+		if compact {
+			name = "compact"
+		}
+		t.Run(name, func(t *testing.T) {
+			layout := m.buildInspectorLayout(m.editOutputs[0], 60, compact)
+			if len(layout.fieldRows) != len(layoutFields) {
+				t.Fatalf("fieldRows has %d entries, want %d", len(layout.fieldRows), len(layoutFields))
+			}
+			for idx := range layoutFields {
+				row, ok := layout.fieldRows[idx]
+				if !ok {
+					t.Errorf("field %d (%s) missing from fieldRows", idx, layoutFields[idx])
+					continue
+				}
+				if row < 0 || row >= len(layout.lines) {
+					t.Errorf("field %d row %d out of range [0, %d)", idx, row, len(layout.lines))
+				}
+			}
+		})
+	}
+}
+
+func TestBuildInspectorLayoutSpacerBeforeAdvanced(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		editOutputs: []editableOutput{{
+			Key:     "test",
+			Name:    "DP-1",
+			Enabled: true,
+			Scale:   1,
+		}},
+	}
+	layout := m.buildInspectorLayout(m.editOutputs[0], 60, false)
+
+	lastBase := layout.fieldRows[advancedFieldStart-1]
+	firstAdvanced := layout.fieldRows[advancedFieldStart]
+	if firstAdvanced-lastBase < 2 {
+		t.Errorf("expected spacer row between field %d and %d: got rows %d and %d", advancedFieldStart-1, advancedFieldStart, lastBase, firstAdvanced)
+	}
+}
+
+func TestBuildInspectorLayoutUniqueRows(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		editOutputs: []editableOutput{{
+			Key:     "test",
+			Name:    "DP-1",
+			Enabled: true,
+			Scale:   1,
+		}},
+	}
+	for _, compact := range []bool{false, true} {
+		layout := m.buildInspectorLayout(m.editOutputs[0], 60, compact)
+		seen := make(map[int]int)
+		for idx := range layoutFields {
+			row := layout.fieldRows[idx]
+			if other, exists := seen[row]; exists {
+				t.Errorf("compact=%v: field %d and %d share row %d", compact, other, idx, row)
+			}
+			seen[row] = idx
 		}
 	}
 }

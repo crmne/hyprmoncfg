@@ -256,7 +256,7 @@ func (m Model) decorateFooterBar(footer string) string {
 	// Status badge
 	unsaved := m.unsavedLabel()
 	styled = strings.Replace(styled, unsaved, m.unsavedBadge(), 1)
-	
+
 	// Style the layout overlap error
 	if m.layoutErr != nil {
 		errStr := m.layoutErr.Error()

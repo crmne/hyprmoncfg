@@ -91,30 +91,43 @@ type pendingApply struct {
 }
 
 type editableOutput struct {
-	Key             string
-	MatchKey        string
-	Name            string
-	Description     string
-	Make            string
-	Model           string
-	Serial          string
-	PhysicalWidth   int
-	PhysicalHeight  int
-	Enabled         bool
-	Modes           []string
-	ModeIndex       int
-	Width           int
-	Height          int
-	Refresh         float64
-	X               int
-	Y               int
-	Scale           float64
-	VRR             int
-	Transform       int
-	Focused         bool
-	DPMSStatus      bool
-	MirrorOf        string
-	ActiveWorkspace string
+	Key               string
+	MatchKey          string
+	Name              string
+	Description       string
+	Make              string
+	Model             string
+	Serial            string
+	PhysicalWidth     int
+	PhysicalHeight    int
+	Enabled           bool
+	Modes             []string
+	ModeIndex         int
+	Width             int
+	Height            int
+	Refresh           float64
+	X                 int
+	Y                 int
+	Scale             float64
+	VRR               int
+	Transform         int
+	Focused           bool
+	DPMSStatus        bool
+	MirrorOf          string
+	ActiveWorkspace   string
+	Bitdepth          int
+	CM                string
+	SDRBrightness     float64
+	SDRSaturation     float64
+	SDRMinLuminance   float64
+	SDRMaxLuminance   int
+	MinLuminance      float64
+	MaxLuminance      int
+	SupportsWideColor int
+	SupportsHDR       int
+	MaxAvgLuminance   int
+	SDREOTF           string
+	ICC               string
 }
 
 type canvasCell struct {
@@ -205,6 +218,7 @@ type Model struct {
 	snap          *snapHintState
 	snapSeq       int
 
+	resetRequested   bool
 	status           string
 	statusErr        bool
 	dirty            bool
@@ -261,7 +275,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.saveDialog.Input.Width = m.saveDialogInputWidth()
 		}
 		if m.input != nil {
-			m.input.Input.Width = clampInt(m.modalMaxWidth()-16, 8, 12)
+			m.input.Input.Width = m.numericInputWidthFor(m.input.Kind)
 		}
 		return m, nil
 
@@ -427,6 +441,7 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tab = tabWorkspaces
 		return m, nil
 	case "r":
+		m.resetRequested = true
 		m.draftProfileName = ""
 		m.markClean()
 		return m, m.refreshCmd()
@@ -789,6 +804,68 @@ func (m Model) renderCanvas(width, height int) string {
 	return renderCanvasCells(grid)
 }
 
+// inspectorLayout is the single source of truth shared by renderInspectorPane
+// and inspectorFieldAt so their row math cannot drift.
+type inspectorLayout struct {
+	lines     []string
+	fieldRows map[int]int // field index → index into lines
+}
+
+func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compact bool) inspectorLayout {
+	lines := []string{m.styles.header.Render("Selected Monitor")}
+
+	if compact {
+		info := fmt.Sprintf("%s  %s  %s", output.Name, output.displayModelLabel(), output.DisplayMode())
+		lines = append(lines, m.styles.subtle.Render(fitString(info, innerWidth)))
+	} else {
+		lines = append(lines, "")
+		lines = append(lines, m.styles.header.Render("Info"))
+		lines = append(lines, m.inspectorDetailLines(output)...)
+	}
+
+	lines = append(lines, "", m.styles.header.Render("Preferences"))
+
+	labelWidth := 12
+	shortLabels := compact || innerWidth < 34
+	if shortLabels {
+		labelWidth = 11
+	}
+
+	fieldRows := make(map[int]int, len(layoutFields))
+	for idx := range layoutFields {
+		if idx == advancedFieldStart {
+			lines = append(lines, "")
+		}
+		labelText := layoutFields[idx]
+		if shortLabels {
+			labelText = layoutFieldShortLabel(idx)
+		}
+		value := m.styles.value.Render(m.layoutFieldValue(output, idx))
+		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
+			value = m.styles.focused.Render(value)
+		}
+		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
+		fieldRows[idx] = len(lines)
+		lines = append(lines, fmt.Sprintf("%s %s", label, value))
+	}
+
+	return inspectorLayout{lines: lines, fieldRows: fieldRows}
+}
+
+func inspectorScrollOffset(totalLines, selectedLine, height int) int {
+	if height <= 0 || selectedLine < height {
+		return 0
+	}
+	offset := selectedLine - height + 1
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= totalLines {
+		offset = totalLines - 1
+	}
+	return offset
+}
+
 func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 	panel := m.styles.inactivePane
 	if m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
@@ -797,33 +874,27 @@ func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 	innerWidth := max(1, width-panel.GetHorizontalFrameSize())
 	innerHeight := max(1, height-panel.GetVerticalFrameSize())
 
-	lines := []string{m.styles.header.Render("Selected Monitor")}
 	if len(m.editOutputs) == 0 {
-		lines = append(lines, "(none)")
+		lines := []string{m.styles.header.Render("Selected Monitor"), "(none)"}
 		return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 	}
 
-	output := m.editOutputs[m.selectedOutput]
+	layout := m.buildInspectorLayout(m.editOutputs[m.selectedOutput], innerWidth, compact)
+	lines := layout.lines
 
-	if compact {
-		// Compact info: one-line summary
-		info := fmt.Sprintf("%s  %s  %s", output.Name, output.displayModelLabel(), output.DisplayMode())
-		lines = append(lines, m.styles.subtle.Render(fitString(info, innerWidth)))
-	} else {
-		lines = append(lines, "")
-		// Info section
-		lines = append(lines, m.styles.header.Render("Info"))
-		detailLines := m.inspectorDetailLines(output)
-		lines = append(lines, detailLines...)
+	if m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
+		if row, ok := layout.fieldRows[m.inspectorField]; ok {
+			offset := inspectorScrollOffset(len(lines), row, innerHeight)
+			lines = lines[offset:]
+		}
 	}
 
-	// Preferences section
-	lines = append(lines, "")
-	lines = append(lines, m.styles.header.Render("Preferences"))
-	fieldLines := m.inspectorFieldLines(output, innerWidth, false)
-	lines = append(lines, fieldLines...)
-
 	return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
+}
+
+func scrollLinesToFit(lines []string, selectedLine, height int) []string {
+	offset := inspectorScrollOffset(len(lines), selectedLine, height)
+	return lines[offset:]
 }
 
 func (m Model) renderProfilesView(height int) string {
@@ -1094,99 +1165,6 @@ func (m Model) compactLayoutHeights(total int) (int, int) {
 	return max(2, canvas), max(1, inspector)
 }
 
-func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compact bool) []string {
-	if compact {
-		return m.compactInspectorFieldLines(output, innerWidth)
-	}
-
-	labelWidth := 12
-	shortLabels := innerWidth < 34
-	if shortLabels {
-		labelWidth = 8
-	}
-
-	lines := make([]string, 0, len(layoutFields))
-	for idx := range layoutFields {
-		labelText := layoutFields[idx]
-		if shortLabels {
-			labelText = layoutFieldShortLabel(idx)
-		}
-
-		value := m.styles.value.Render(m.layoutFieldValue(output, idx))
-		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
-			value = m.styles.focused.Render(value)
-		}
-		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
-		lines = append(lines, fmt.Sprintf("%s %s", label, value))
-	}
-
-	return lines
-}
-
-func (m Model) compactInspectorFieldLines(output editableOutput, innerWidth int) []string {
-	switch {
-	case innerWidth >= 48:
-		return []string{
-			m.inspectorCompactFieldLine("Mode", 1, output),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("On", 0, output),
-				m.inspectorCompactFieldToken("Scale", 2, output),
-				m.inspectorCompactFieldToken("VRR", 3, output),
-			),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("Rot", 4, output),
-				m.inspectorCompactFieldToken("X", 5, output),
-				m.inspectorCompactFieldToken("Y", 6, output),
-			),
-			m.inspectorCompactFieldLine("Mirror", 7, output),
-		}
-	case innerWidth >= 36:
-		return []string{
-			m.inspectorCompactFieldLine("Mode", 1, output),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("On", 0, output),
-				m.inspectorCompactFieldToken("Scale", 2, output),
-			),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("VRR", 3, output),
-				m.inspectorCompactFieldToken("Rot", 4, output),
-			),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("X", 5, output),
-				m.inspectorCompactFieldToken("Y", 6, output),
-			),
-			m.inspectorCompactFieldLine("Mirror", 7, output),
-		}
-	default:
-		return []string{
-			m.inspectorCompactFieldLine("Mode", 1, output),
-			m.inspectorCompactFieldLine("On", 0, output),
-			m.inspectorCompactFieldLine("Scale", 2, output),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("VRR", 3, output),
-				m.inspectorCompactFieldToken("Rot", 4, output),
-			),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("X", 5, output),
-				m.inspectorCompactFieldToken("Y", 6, output),
-			),
-			m.inspectorCompactFieldLine("Mirror", 7, output),
-		}
-	}
-}
-
-func (m Model) inspectorCompactFieldLine(label string, field int, output editableOutput) string {
-	return joinInspectorTokens(m.inspectorCompactFieldToken(label, field, output))
-}
-
-func (m Model) inspectorCompactFieldToken(label string, field int, output editableOutput) string {
-	value := m.styles.value.Render(m.layoutFieldValue(output, field))
-	if m.layoutFocus == layoutFocusInspector && field == m.inspectorField && m.tab == tabLayout {
-		value = m.styles.focused.Render(value)
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Left, m.styles.label.Render(label), " ", value)
-}
-
 func (m Model) inspectorDetailLines(output editableOutput) []string {
 	lines := []string{
 		fmt.Sprintf("%s %s", m.styles.label.Render("Connector "), m.styles.value.Render(output.Name)),
@@ -1255,6 +1233,47 @@ func (m *Model) loadLiveState() {
 	} else {
 		m.draftProfileName = ""
 	}
+
+	// Preserve fields that hyprctl cannot accurately report, unless the
+	// user explicitly requested a reset.
+	if !m.resetRequested {
+		for i := range m.editOutputs {
+			for _, prev := range prevOutputs {
+				if prev.Key == m.editOutputs[i].Key {
+					m.editOutputs[i].VRR = prev.VRR
+					m.editOutputs[i].Bitdepth = prev.Bitdepth
+					m.editOutputs[i].CM = prev.CM
+					m.editOutputs[i].MinLuminance = prev.MinLuminance
+					m.editOutputs[i].MaxLuminance = prev.MaxLuminance
+					m.editOutputs[i].SupportsWideColor = prev.SupportsWideColor
+					m.editOutputs[i].SupportsHDR = prev.SupportsHDR
+					m.editOutputs[i].MaxAvgLuminance = prev.MaxAvgLuminance
+					m.editOutputs[i].SDREOTF = prev.SDREOTF
+					m.editOutputs[i].ICC = prev.ICC
+					break
+				}
+			}
+		}
+	}
+	if len(prevOutputs) == 0 || m.resetRequested {
+		if best, _, ok := profile.BestMatch(m.profiles, m.monitors); ok {
+			for i := range m.editOutputs {
+				if saved, ok := best.OutputByKey(m.editOutputs[i].Key); ok {
+					m.editOutputs[i].VRR = saved.VRR
+					m.editOutputs[i].Bitdepth = saved.Bitdepth
+					m.editOutputs[i].CM = saved.CM
+					m.editOutputs[i].MinLuminance = saved.MinLuminance
+					m.editOutputs[i].MaxLuminance = saved.MaxLuminance
+					m.editOutputs[i].SupportsWideColor = saved.SupportsWideColor
+					m.editOutputs[i].SupportsHDR = saved.SupportsHDR
+					m.editOutputs[i].MaxAvgLuminance = saved.MaxAvgLuminance
+					m.editOutputs[i].SDREOTF = saved.SDREOTF
+					m.editOutputs[i].ICC = saved.ICC
+				}
+			}
+		}
+	}
+	m.resetRequested = false
 	if idx := focusedOutputIndex(m.editOutputs); idx >= 0 {
 		m.selectedOutput = idx
 	} else if selectedKey != "" {
@@ -1526,14 +1545,34 @@ func (m *Model) adjustInspectorField(delta int) {
 	case 2:
 		output.Scale = clampFloat(output.Scale+float64(delta)*0.05, 0.25, 4.0)
 	case 3:
-		output.VRR = wrapValue(output.VRR+delta, 0, 2)
+		depths := []int{8, 10, 16}
+		current := 0
+		for i, d := range depths {
+			if d == output.Bitdepth {
+				current = i
+				break
+			}
+		}
+		output.Bitdepth = depths[wrapIndex(current+delta, len(depths))]
 	case 4:
-		output.Transform = wrapValue(output.Transform+delta, 0, 7)
+		presets := []string{"srgb", "auto", "wide", "hdr", "hdredid", "dcip3", "dp3", "adobe", "edid"}
+		current := 0
+		for i, p := range presets {
+			if p == output.CM {
+				current = i
+				break
+			}
+		}
+		output.CM = presets[wrapIndex(current+delta, len(presets))]
 	case 5:
-		output.X += delta * 10
+		output.VRR = wrapValue(output.VRR+delta, 0, 2)
 	case 6:
-		output.Y += delta * 10
+		output.Transform = wrapValue(output.Transform+delta, 0, 7)
 	case 7:
+		output.X += delta * 10
+	case 8:
+		output.Y += delta * 10
+	case 9:
 		targets := []string{""}
 		for i, other := range m.editOutputs {
 			if i != m.selectedOutput {
@@ -1548,6 +1587,52 @@ func (m *Model) adjustInspectorField(delta int) {
 			}
 		}
 		output.MirrorOf = targets[wrapIndex(current+delta, len(targets))]
+	case 10:
+		output.SDRBrightness = clampFloat(output.SDRBrightness+float64(delta)*0.05, 0, 3.0)
+	case 11:
+		output.SDRSaturation = clampFloat(output.SDRSaturation+float64(delta)*0.05, 0, 3.0)
+	case 12:
+		output.SDRMinLuminance = clampFloat(output.SDRMinLuminance+float64(delta)*0.005, 0, 1.0)
+	case 13:
+		output.SDRMaxLuminance = clampInt(output.SDRMaxLuminance+delta*10, 0, 1000)
+	case 14:
+		eotfs := []string{"default", "gamma22", "srgb"}
+		cur := 0
+		for i, e := range eotfs {
+			if e == output.SDREOTF {
+				cur = i
+				break
+			}
+		}
+		output.SDREOTF = eotfs[wrapIndex(cur+delta, len(eotfs))]
+	case 15:
+		output.MinLuminance = clampFloat(output.MinLuminance+float64(delta)*0.001, 0, 1000.0)
+	case 16:
+		output.MaxLuminance = clampInt(output.MaxLuminance+delta*10, 0, 2000)
+	case 17:
+		output.MaxAvgLuminance = clampInt(output.MaxAvgLuminance+delta*10, 0, 2000)
+	case 18:
+		vals := []int{-1, 0, 1}
+		cur := 1
+		for i, v := range vals {
+			if v == output.SupportsWideColor {
+				cur = i
+				break
+			}
+		}
+		output.SupportsWideColor = vals[wrapIndex(cur+delta, len(vals))]
+	case 19:
+		vals := []int{-1, 0, 1}
+		cur := 1
+		for i, v := range vals {
+			if v == output.SupportsHDR {
+				cur = i
+				break
+			}
+		}
+		output.SupportsHDR = vals[wrapIndex(cur+delta, len(vals))]
+	case 20:
+		// ICC uses text input via activateInspectorField
 	}
 	m.layoutChanged()
 }
@@ -1722,14 +1807,21 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 	case 2:
 		return fmt.Sprintf("%.2f", output.Scale)
 	case 3:
-		return vrrLabel(output.VRR)
+		return fmt.Sprintf("%d", output.Bitdepth)
 	case 4:
-		return transformLabel(output.Transform)
+		if output.CM == "" {
+			return "srgb"
+		}
+		return output.CM
 	case 5:
-		return fmt.Sprintf("%d", output.X)
+		return vrrLabel(output.VRR)
 	case 6:
-		return fmt.Sprintf("%d", output.Y)
+		return transformLabel(output.Transform)
 	case 7:
+		return fmt.Sprintf("%d", output.X)
+	case 8:
+		return fmt.Sprintf("%d", output.Y)
+	case 9:
 		if output.MirrorOf == "" {
 			return "None"
 		}
@@ -1739,6 +1831,34 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 			}
 		}
 		return output.MirrorOf
+	case 10:
+		return fmt.Sprintf("%.2f", output.SDRBrightness)
+	case 11:
+		return fmt.Sprintf("%.2f", output.SDRSaturation)
+	case 12:
+		return fmt.Sprintf("%.3f", output.SDRMinLuminance)
+	case 13:
+		return fmt.Sprintf("%d", output.SDRMaxLuminance)
+	case 14:
+		if output.SDREOTF == "" {
+			return "default"
+		}
+		return output.SDREOTF
+	case 15:
+		return fmt.Sprintf("%.3f", output.MinLuminance)
+	case 16:
+		return fmt.Sprintf("%d", output.MaxLuminance)
+	case 17:
+		return fmt.Sprintf("%d", output.MaxAvgLuminance)
+	case 18:
+		return triStateLabel(output.SupportsWideColor)
+	case 19:
+		return triStateLabel(output.SupportsHDR)
+	case 20:
+		if output.ICC == "" {
+			return "None"
+		}
+		return output.ICC
 	default:
 		return ""
 	}
@@ -1861,12 +1981,18 @@ func editableOutputFromMonitor(m hypr.Monitor, matchCounts map[string]int) edita
 		X:               m.X,
 		Y:               m.Y,
 		Scale:           clampFloat(m.Scale, 0.25, 4.0),
-		VRR:             boolToVRR(m.VRR),
+		VRR:             int(m.VRR),
 		Transform:       m.Transform,
 		Focused:         m.Focused,
 		DPMSStatus:      m.DPMSStatus,
 		MirrorOf:        m.MirrorOf,
 		ActiveWorkspace: m.ActiveWorkspace.Name,
+		Bitdepth:        m.Bitdepth(),
+		CM:              m.ColorManagementPreset,
+		SDRBrightness:   m.SDRBrightness,
+		SDRSaturation:   m.SDRSaturation,
+		SDRMinLuminance: m.SDRMinLuminance,
+		SDRMaxLuminance: m.SDRMaxLuminance,
 	}
 
 	output.Modes = normalizeModes(m.AvailableModes, m.ModeString())
@@ -1882,22 +2008,35 @@ func editableOutputFromMonitor(m hypr.Monitor, matchCounts map[string]int) edita
 
 func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, hasLive bool) editableOutput {
 	output := editableOutput{
-		Key:       saved.Key,
-		MatchKey:  saved.MatchIdentity(),
-		Name:      saved.Name,
-		Make:      saved.Make,
-		Model:     saved.Model,
-		Serial:    saved.Serial,
-		Enabled:   saved.Enabled,
-		Width:     saved.Width,
-		Height:    saved.Height,
-		Refresh:   saved.Refresh,
-		X:         saved.X,
-		Y:         saved.Y,
-		Scale:     clampFloat(saved.Scale, 0.25, 4.0),
-		VRR:       saved.VRR,
-		Transform: saved.Transform,
-		MirrorOf:  saved.MirrorOf,
+		Key:               saved.Key,
+		MatchKey:          saved.MatchIdentity(),
+		Name:              saved.Name,
+		Make:              saved.Make,
+		Model:             saved.Model,
+		Serial:            saved.Serial,
+		Enabled:           saved.Enabled,
+		Width:             saved.Width,
+		Height:            saved.Height,
+		Refresh:           saved.Refresh,
+		X:                 saved.X,
+		Y:                 saved.Y,
+		Scale:             clampFloat(saved.Scale, 0.25, 4.0),
+		VRR:               saved.VRR,
+		Transform:         saved.Transform,
+		MirrorOf:          saved.MirrorOf,
+		Bitdepth:          saved.Bitdepth,
+		CM:                saved.CM,
+		SDRBrightness:     saved.SDRBrightness,
+		SDRSaturation:     saved.SDRSaturation,
+		SDRMinLuminance:   saved.SDRMinLuminance,
+		SDRMaxLuminance:   saved.SDRMaxLuminance,
+		MinLuminance:      saved.MinLuminance,
+		MaxLuminance:      saved.MaxLuminance,
+		SupportsWideColor: saved.SupportsWideColor,
+		SupportsHDR:       saved.SupportsHDR,
+		MaxAvgLuminance:   saved.MaxAvgLuminance,
+		SDREOTF:           saved.SDREOTF,
+		ICC:               saved.ICC,
 	}
 
 	mode := saved.NormalizedMode()
@@ -2053,23 +2192,36 @@ func (o editableOutput) DisplayMode() string {
 
 func (o editableOutput) profileOutput() profile.OutputConfig {
 	return profile.OutputConfig{
-		Key:       o.Key,
-		MatchKey:  o.MatchKey,
-		Name:      o.Name,
-		Make:      o.Make,
-		Model:     o.Model,
-		Serial:    o.Serial,
-		Enabled:   o.Enabled,
-		Mode:      o.DisplayMode(),
-		Width:     o.Width,
-		Height:    o.Height,
-		Refresh:   o.Refresh,
-		X:         o.X,
-		Y:         o.Y,
-		Scale:     o.Scale,
-		VRR:       o.VRR,
-		Transform: o.Transform,
-		MirrorOf:  o.MirrorOf,
+		Key:               o.Key,
+		MatchKey:          o.MatchKey,
+		Name:              o.Name,
+		Make:              o.Make,
+		Model:             o.Model,
+		Serial:            o.Serial,
+		Enabled:           o.Enabled,
+		Mode:              o.DisplayMode(),
+		Width:             o.Width,
+		Height:            o.Height,
+		Refresh:           o.Refresh,
+		X:                 o.X,
+		Y:                 o.Y,
+		Scale:             o.Scale,
+		VRR:               o.VRR,
+		Transform:         o.Transform,
+		MirrorOf:          o.MirrorOf,
+		Bitdepth:          o.Bitdepth,
+		CM:                o.CM,
+		SDRBrightness:     o.SDRBrightness,
+		SDRSaturation:     o.SDRSaturation,
+		SDRMinLuminance:   o.SDRMinLuminance,
+		SDRMaxLuminance:   o.SDRMaxLuminance,
+		MinLuminance:      o.MinLuminance,
+		MaxLuminance:      o.MaxLuminance,
+		SupportsWideColor: o.SupportsWideColor,
+		SupportsHDR:       o.SupportsHDR,
+		MaxAvgLuminance:   o.MaxAvgLuminance,
+		SDREOTF:           o.SDREOTF,
+		ICC:               o.ICC,
 	}
 }
 
@@ -2404,17 +2556,6 @@ func fitString(value string, width int) string {
 	return string(runes[:width-3]) + "..."
 }
 
-func joinInspectorTokens(tokens ...string) string {
-	parts := make([]string, 0, len(tokens))
-	for _, token := range tokens {
-		if token == "" {
-			continue
-		}
-		parts = append(parts, token)
-	}
-	return strings.Join(parts, "  ")
-}
-
 func blankFallback(value string, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback
@@ -2471,6 +2612,17 @@ func vrrLabel(v int) string {
 		return "fullscreen"
 	default:
 		return "off"
+	}
+}
+
+func triStateLabel(v int) string {
+	switch v {
+	case -1:
+		return "off"
+	case 1:
+		return "on"
+	default:
+		return "auto"
 	}
 }
 
@@ -2636,24 +2788,39 @@ var layoutFields = []string{
 	"Enabled",
 	"Mode",
 	"Scale",
+	"Bit Depth",
+	"Color Mgmt",
 	"VRR",
 	"Transform",
 	"Position X",
 	"Position Y",
 	"Mirror",
+	"SDR Bright",
+	"SDR Sat",
+	"SDR Min Lum",
+	"SDR Max Lum",
+	"SDR Curve",
+	"Min Lum",
+	"Max Lum",
+	"Max Avg Lum",
+	"Force Wide",
+	"Force HDR",
+	"ICC Path",
 }
+
+const advancedFieldStart = 10
 
 func layoutFieldShortLabel(field int) string {
 	switch field {
 	case 0:
 		return "On"
-	case 4:
-		return "Rot"
-	case 5:
-		return "X"
 	case 6:
-		return "Y"
+		return "Rot"
 	case 7:
+		return "X"
+	case 8:
+		return "Y"
+	case 9:
 		return "Mirror"
 	default:
 		return layoutFields[field]
@@ -2665,13 +2832,6 @@ var workspaceFields = []string{
 	"Strategy",
 	"Max workspaces",
 	"Group size",
-}
-
-func boolToVRR(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
 }
 
 func (m Model) isOutputOverlapping(o editableOutput) bool {

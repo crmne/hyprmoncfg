@@ -200,3 +200,45 @@ func TestExactStateMatchRejectsAmbiguousDuplicateProfiles(t *testing.T) {
 		t.Fatal("expected ambiguous exact profile matches to be rejected")
 	}
 }
+
+func TestExactStateMatchIgnoresConfigOnlyFields(t *testing.T) {
+	monitors := []hypr.Monitor{{
+		Name: "DP-1", Make: "Dell", Model: "U2720Q", Serial: "A1",
+		Width: 2560, Height: 1440, RefreshRate: 144,
+		Scale: 1,
+	}}
+
+	saved := FromState("desk", monitors, nil)
+	saved.Outputs[0].VRR = 2
+	saved.Outputs[0].MinLuminance = 0.005
+	saved.Outputs[0].MaxLuminance = 800
+	saved.Outputs[0].SupportsWideColor = 1
+	saved.Outputs[0].SupportsHDR = 1
+	saved.Outputs[0].MaxAvgLuminance = 500
+	saved.Outputs[0].SDREOTF = "gamma22"
+	saved.Outputs[0].ICC = "/path/to/icc"
+
+	got, ok := ExactStateMatch([]Profile{saved}, monitors, nil)
+	if !ok {
+		t.Fatal("expected ExactStateMatch to succeed despite config-only field differences")
+	}
+	if got.Name != "desk" {
+		t.Fatalf("expected desk, got %q", got.Name)
+	}
+}
+
+func TestExactStateMatchDetectsBitdepthAndCMDifference(t *testing.T) {
+	monitors := []hypr.Monitor{{
+		Name: "DP-1", Make: "Dell", Model: "U2720Q", Serial: "A1",
+		Width: 2560, Height: 1440, RefreshRate: 144,
+		Scale: 1, CurrentFormat: "XRGB8888", ColorManagementPreset: "srgb",
+	}}
+
+	saved := FromState("desk", monitors, nil)
+	saved.Outputs[0].Bitdepth = 10
+	saved.Outputs[0].CM = "wide"
+
+	if _, ok := ExactStateMatch([]Profile{saved}, monitors, nil); ok {
+		t.Fatal("expected ExactStateMatch to fail when Bitdepth and CM differ from live state")
+	}
+}

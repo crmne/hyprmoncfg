@@ -97,16 +97,22 @@ func SnapshotCommands(monitors []hypr.Monitor) []string {
 			continue
 		}
 		out := profile.OutputConfig{
-			Enabled:   true,
-			Mode:      m.ModeString(),
-			Width:     m.Width,
-			Height:    m.Height,
-			Refresh:   m.RefreshRate,
-			X:         m.X,
-			Y:         m.Y,
-			Scale:     m.Scale,
-			VRR:       boolToVRR(m.VRR),
-			Transform: m.Transform,
+			Enabled:         true,
+			Mode:            m.ModeString(),
+			Width:           m.Width,
+			Height:          m.Height,
+			Refresh:         m.RefreshRate,
+			X:               m.X,
+			Y:               m.Y,
+			Scale:           m.Scale,
+			VRR:             int(m.VRR),
+			Transform:       m.Transform,
+			Bitdepth:        m.Bitdepth(),
+			CM:              m.ColorManagementPreset,
+			SDRBrightness:   m.SDRBrightness,
+			SDRSaturation:   m.SDRSaturation,
+			SDRMinLuminance: m.SDRMinLuminance,
+			SDRMaxLuminance: m.SDRMaxLuminance,
 		}
 		commands = append(commands, commandForOutput(m.Name, out, m.MirrorOf))
 	}
@@ -230,6 +236,30 @@ func commandForOutput(name string, out profile.OutputConfig, mirrorTarget string
 	}
 
 	cmd := fmt.Sprintf("%s,%s,%dx%d,%s,transform,%d,vrr,%d", name, mode, x, y, formatFloat(scale, 3), transform, vrr)
+	if out.Bitdepth > 0 && out.Bitdepth != 8 {
+		cmd += fmt.Sprintf(",bitdepth,%d", out.Bitdepth)
+	}
+	if out.CM != "" && out.CM != "srgb" {
+		cmd += ",cm," + out.CM
+	}
+	if out.SDRBrightness != 0 && out.SDRBrightness != 1.0 {
+		cmd += ",sdrbrightness," + formatFloat(out.SDRBrightness, 2)
+	}
+	if out.SDRSaturation != 0 && out.SDRSaturation != 1.0 {
+		cmd += ",sdrsaturation," + formatFloat(out.SDRSaturation, 2)
+	}
+	if out.SDREOTF != "" && out.SDREOTF != "default" {
+		// v1 uses numeric: 0=default, 1=srgb, 2=gamma22
+		switch out.SDREOTF {
+		case "srgb":
+			cmd += ",sdr_eotf,1"
+		case "gamma22":
+			cmd += ",sdr_eotf,2"
+		}
+	}
+	if out.ICC != "" {
+		cmd += ",icc," + out.ICC
+	}
 	if mirrorTarget != "" {
 		cmd += ",mirror," + mirrorTarget
 	}
@@ -304,13 +334,6 @@ func shellEscape(value string) string {
 		return value
 	}
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-}
-
-func boolToVRR(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
 }
 
 func (e Engine) applyLiveCommands(ctx context.Context, commands []string) error {
@@ -456,9 +479,8 @@ func ValidateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hy
 		if applied.Transform != output.Transform {
 			return fmt.Errorf("%s transform mismatch: wanted %d, got %d", monitor.Name, output.Transform, applied.Transform)
 		}
-		if boolToVRR(applied.VRR) != output.VRR {
-			return fmt.Errorf("%s VRR mismatch: wanted %d, got %d", monitor.Name, output.VRR, boolToVRR(applied.VRR))
-		}
+		// VRR validation skipped: hyprctl reports VRR as a boolean (active
+		// or not), not the configured mode (0/1/2).
 	}
 
 	return nil
@@ -485,6 +507,41 @@ func renderMonitorV2Block(identifier string, output profile.OutputConfig, mirror
 	}
 	if output.VRR != 0 {
 		lines = append(lines, fmt.Sprintf("  vrr = %d", output.VRR))
+	}
+	if output.Bitdepth > 0 && output.Bitdepth != 8 {
+		lines = append(lines, fmt.Sprintf("  bitdepth = %d", output.Bitdepth))
+	}
+	if output.CM != "" && output.CM != "srgb" {
+		lines = append(lines, "  cm = "+output.CM)
+	}
+	if output.SDRBrightness != 0 && output.SDRBrightness != 1.0 {
+		lines = append(lines, "  sdrbrightness = "+formatFloat(output.SDRBrightness, 2))
+	}
+	if output.SDRSaturation != 0 && output.SDRSaturation != 1.0 {
+		lines = append(lines, "  sdrsaturation = "+formatFloat(output.SDRSaturation, 2))
+	}
+	if output.SDRMinLuminance != 0 || output.SDRMaxLuminance != 0 {
+		lines = append(lines, "  sdr_min_luminance = "+formatFloat(output.SDRMinLuminance, 3))
+		lines = append(lines, fmt.Sprintf("  sdr_max_luminance = %d", output.SDRMaxLuminance))
+	}
+	if output.MinLuminance != 0 || output.MaxLuminance != 0 {
+		lines = append(lines, "  min_luminance = "+formatFloat(output.MinLuminance, 3))
+		lines = append(lines, fmt.Sprintf("  max_luminance = %d", output.MaxLuminance))
+	}
+	if output.MaxAvgLuminance != 0 {
+		lines = append(lines, fmt.Sprintf("  max_avg_luminance = %d", output.MaxAvgLuminance))
+	}
+	if output.SupportsWideColor != 0 {
+		lines = append(lines, fmt.Sprintf("  supports_wide_color = %d", output.SupportsWideColor))
+	}
+	if output.SupportsHDR != 0 {
+		lines = append(lines, fmt.Sprintf("  supports_hdr = %d", output.SupportsHDR))
+	}
+	if output.SDREOTF != "" && output.SDREOTF != "default" {
+		lines = append(lines, "  sdr_eotf = "+output.SDREOTF)
+	}
+	if output.ICC != "" {
+		lines = append(lines, "  icc = "+output.ICC)
 	}
 	if mirrorTarget != "" {
 		lines = append(lines, "  mirror = "+mirrorTarget)
