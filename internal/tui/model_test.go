@@ -951,8 +951,8 @@ func TestRenderMainFitsShortTerminalHeight(t *testing.T) {
 	if height := lipgloss.Height(view); height != m.height {
 		t.Fatalf("expected short main view to fill height %d, got %d", m.height, height)
 	}
-	if !strings.Contains(view, "Selected Monitor") {
-		t.Fatalf("expected Selected Monitor to remain visible, got:\n%s", view)
+	if !strings.Contains(view, "Preferences") {
+		t.Fatalf("expected Preferences section to be visible in inspector, got:\n%s", view)
 	}
 }
 
@@ -1534,5 +1534,88 @@ func TestScrollLinesToFit(t *testing.T) {
 				t.Errorf("first line = %q, want %q", got[0], tt.wantFirst)
 			}
 		})
+	}
+}
+
+func TestBuildInspectorLayoutMapsAllFields(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		editOutputs: []editableOutput{{
+			Key:             "test",
+			Name:            "DP-1",
+			Enabled:         true,
+			Modes:           []string{"3840x2160@144Hz"},
+			ModeIndex:       0,
+			Width:           3840,
+			Height:          2160,
+			Refresh:         144,
+			Scale:           1,
+			ActiveWorkspace: "1",
+		}},
+	}
+
+	for _, compact := range []bool{false, true} {
+		name := "full"
+		if compact {
+			name = "compact"
+		}
+		t.Run(name, func(t *testing.T) {
+			layout := m.buildInspectorLayout(m.editOutputs[0], 60, compact)
+			if len(layout.fieldRows) != len(layoutFields) {
+				t.Fatalf("fieldRows has %d entries, want %d", len(layout.fieldRows), len(layoutFields))
+			}
+			for idx := range layoutFields {
+				row, ok := layout.fieldRows[idx]
+				if !ok {
+					t.Errorf("field %d (%s) missing from fieldRows", idx, layoutFields[idx])
+					continue
+				}
+				if row < 0 || row >= len(layout.lines) {
+					t.Errorf("field %d row %d out of range [0, %d)", idx, row, len(layout.lines))
+				}
+			}
+		})
+	}
+}
+
+func TestBuildInspectorLayoutSpacerBeforeAdvanced(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		editOutputs: []editableOutput{{
+			Key:     "test",
+			Name:    "DP-1",
+			Enabled: true,
+			Scale:   1,
+		}},
+	}
+	layout := m.buildInspectorLayout(m.editOutputs[0], 60, false)
+
+	lastBase := layout.fieldRows[advancedFieldStart-1]
+	firstAdvanced := layout.fieldRows[advancedFieldStart]
+	if firstAdvanced-lastBase < 2 {
+		t.Errorf("expected spacer row between field %d and %d: got rows %d and %d", advancedFieldStart-1, advancedFieldStart, lastBase, firstAdvanced)
+	}
+}
+
+func TestBuildInspectorLayoutUniqueRows(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		editOutputs: []editableOutput{{
+			Key:     "test",
+			Name:    "DP-1",
+			Enabled: true,
+			Scale:   1,
+		}},
+	}
+	for _, compact := range []bool{false, true} {
+		layout := m.buildInspectorLayout(m.editOutputs[0], 60, compact)
+		seen := make(map[int]int)
+		for idx := range layoutFields {
+			row := layout.fieldRows[idx]
+			if other, exists := seen[row]; exists {
+				t.Errorf("compact=%v: field %d and %d share row %d", compact, other, idx, row)
+			}
+			seen[row] = idx
+		}
 	}
 }

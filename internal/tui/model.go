@@ -804,6 +804,68 @@ func (m Model) renderCanvas(width, height int) string {
 	return renderCanvasCells(grid)
 }
 
+// inspectorLayout is the single source of truth shared by renderInspectorPane
+// and inspectorFieldAt so their row math cannot drift.
+type inspectorLayout struct {
+	lines     []string
+	fieldRows map[int]int // field index → index into lines
+}
+
+func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compact bool) inspectorLayout {
+	lines := []string{m.styles.header.Render("Selected Monitor")}
+
+	if compact {
+		info := fmt.Sprintf("%s  %s  %s", output.Name, output.displayModelLabel(), output.DisplayMode())
+		lines = append(lines, m.styles.subtle.Render(fitString(info, innerWidth)))
+	} else {
+		lines = append(lines, "")
+		lines = append(lines, m.styles.header.Render("Info"))
+		lines = append(lines, m.inspectorDetailLines(output)...)
+	}
+
+	lines = append(lines, "", m.styles.header.Render("Preferences"))
+
+	labelWidth := 12
+	shortLabels := compact || innerWidth < 34
+	if shortLabels {
+		labelWidth = 11
+	}
+
+	fieldRows := make(map[int]int, len(layoutFields))
+	for idx := range layoutFields {
+		if idx == advancedFieldStart {
+			lines = append(lines, "")
+		}
+		labelText := layoutFields[idx]
+		if shortLabels {
+			labelText = layoutFieldShortLabel(idx)
+		}
+		value := m.styles.value.Render(m.layoutFieldValue(output, idx))
+		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
+			value = m.styles.focused.Render(value)
+		}
+		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
+		fieldRows[idx] = len(lines)
+		lines = append(lines, fmt.Sprintf("%s %s", label, value))
+	}
+
+	return inspectorLayout{lines: lines, fieldRows: fieldRows}
+}
+
+func inspectorScrollOffset(totalLines, selectedLine, height int) int {
+	if height <= 0 || selectedLine < height {
+		return 0
+	}
+	offset := selectedLine - height + 1
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= totalLines {
+		offset = totalLines - 1
+	}
+	return offset
+}
+
 func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 	panel := m.styles.inactivePane
 	if m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
@@ -812,57 +874,26 @@ func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 	innerWidth := max(1, width-panel.GetHorizontalFrameSize())
 	innerHeight := max(1, height-panel.GetVerticalFrameSize())
 
-	lines := []string{m.styles.header.Render("Selected Monitor")}
 	if len(m.editOutputs) == 0 {
-		lines = append(lines, "(none)")
+		lines := []string{m.styles.header.Render("Selected Monitor"), "(none)"}
 		return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 	}
 
-	output := m.editOutputs[m.selectedOutput]
+	layout := m.buildInspectorLayout(m.editOutputs[m.selectedOutput], innerWidth, compact)
+	lines := layout.lines
 
-	detailCount := 0
-	if compact {
-		// Compact info: one-line summary
-		info := fmt.Sprintf("%s  %s  %s", output.Name, output.displayModelLabel(), output.DisplayMode())
-		lines = append(lines, m.styles.subtle.Render(fitString(info, innerWidth)))
-	} else {
-		lines = append(lines, "")
-		// Info section
-		lines = append(lines, m.styles.header.Render("Info"))
-		detailLines := m.inspectorDetailLines(output)
-		detailCount = len(detailLines)
-		lines = append(lines, detailLines...)
-	}
-
-	// Preferences section
-	lines = append(lines, "")
-	lines = append(lines, m.styles.header.Render("Preferences"))
-	fieldLines := m.inspectorFieldLines(output, innerWidth, false)
-	lines = append(lines, fieldLines...)
-
-	if !compact && m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
-		// header(1) + blank(1) + Info(1) + details(N) + blank(1) + Preferences(1) = N+5
-		fieldBase := 5 + detailCount
-		selectedLine := fieldBase + m.inspectorField
-		if m.inspectorField >= advancedFieldStart {
-			selectedLine++ // spacer row before advanced
+	if m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
+		if row, ok := layout.fieldRows[m.inspectorField]; ok {
+			offset := inspectorScrollOffset(len(lines), row, innerHeight)
+			lines = lines[offset:]
 		}
-		lines = scrollLinesToFit(lines, selectedLine, innerHeight)
 	}
 
 	return panel.Width(innerWidth).Render(fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight))
 }
 
-// scrollLinesToFit trims leading lines so that the line at selectedLine is
-// within the first `height` rows. Returns lines unchanged if already visible.
 func scrollLinesToFit(lines []string, selectedLine, height int) []string {
-	if height <= 0 || selectedLine < height {
-		return lines
-	}
-	offset := selectedLine - height + 1
-	if offset >= len(lines) {
-		offset = len(lines) - 1
-	}
+	offset := inspectorScrollOffset(len(lines), selectedLine, height)
 	return lines[offset:]
 }
 
@@ -1132,102 +1163,6 @@ func (m Model) compactLayoutHeights(total int) (int, int) {
 		inspector = total - canvas
 	}
 	return max(2, canvas), max(1, inspector)
-}
-
-func (m Model) inspectorFieldLines(output editableOutput, innerWidth int, compact bool) []string {
-	if compact {
-		return m.compactInspectorFieldLines(output, innerWidth)
-	}
-
-	labelWidth := 12
-	shortLabels := innerWidth < 34
-	if shortLabels {
-		labelWidth = 8
-	}
-
-	lines := make([]string, 0, len(layoutFields)+1)
-	for idx := range layoutFields {
-		if idx == advancedFieldStart {
-			lines = append(lines, "")
-		}
-		labelText := layoutFields[idx]
-		if shortLabels {
-			labelText = layoutFieldShortLabel(idx)
-		}
-
-		value := m.styles.value.Render(m.layoutFieldValue(output, idx))
-		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
-			value = m.styles.focused.Render(value)
-		}
-		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
-		lines = append(lines, fmt.Sprintf("%s %s", label, value))
-	}
-
-	return lines
-}
-
-func (m Model) compactInspectorFieldLines(output editableOutput, innerWidth int) []string {
-	switch {
-	case innerWidth >= 48:
-		return []string{
-			m.inspectorCompactFieldLine("Mode", 1, output),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("On", 0, output),
-				m.inspectorCompactFieldToken("Scale", 2, output),
-				m.inspectorCompactFieldToken("VRR", 5, output),
-			),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("Rot", 6, output),
-				m.inspectorCompactFieldToken("X", 7, output),
-				m.inspectorCompactFieldToken("Y", 8, output),
-			),
-			m.inspectorCompactFieldLine("Mirror", 9, output),
-		}
-	case innerWidth >= 36:
-		return []string{
-			m.inspectorCompactFieldLine("Mode", 1, output),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("On", 0, output),
-				m.inspectorCompactFieldToken("Scale", 2, output),
-			),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("VRR", 5, output),
-				m.inspectorCompactFieldToken("Rot", 6, output),
-			),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("X", 7, output),
-				m.inspectorCompactFieldToken("Y", 8, output),
-			),
-			m.inspectorCompactFieldLine("Mirror", 9, output),
-		}
-	default:
-		return []string{
-			m.inspectorCompactFieldLine("Mode", 1, output),
-			m.inspectorCompactFieldLine("On", 0, output),
-			m.inspectorCompactFieldLine("Scale", 2, output),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("VRR", 5, output),
-				m.inspectorCompactFieldToken("Rot", 6, output),
-			),
-			joinInspectorTokens(
-				m.inspectorCompactFieldToken("X", 7, output),
-				m.inspectorCompactFieldToken("Y", 8, output),
-			),
-			m.inspectorCompactFieldLine("Mirror", 9, output),
-		}
-	}
-}
-
-func (m Model) inspectorCompactFieldLine(label string, field int, output editableOutput) string {
-	return joinInspectorTokens(m.inspectorCompactFieldToken(label, field, output))
-}
-
-func (m Model) inspectorCompactFieldToken(label string, field int, output editableOutput) string {
-	value := m.styles.value.Render(m.layoutFieldValue(output, field))
-	if m.layoutFocus == layoutFocusInspector && field == m.inspectorField && m.tab == tabLayout {
-		value = m.styles.focused.Render(value)
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Left, m.styles.label.Render(label), " ", value)
 }
 
 func (m Model) inspectorDetailLines(output editableOutput) []string {
@@ -2619,17 +2554,6 @@ func fitString(value string, width int) string {
 		return string(runes[:width])
 	}
 	return string(runes[:width-3]) + "..."
-}
-
-func joinInspectorTokens(tokens ...string) string {
-	parts := make([]string, 0, len(tokens))
-	for _, token := range tokens {
-		if token == "" {
-			continue
-		}
-		parts = append(parts, token)
-	}
-	return strings.Join(parts, "  ")
 }
 
 func blankFallback(value string, fallback string) string {

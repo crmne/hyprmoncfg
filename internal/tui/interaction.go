@@ -1040,8 +1040,9 @@ func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if inspectorRect.contains(msg.X, msg.Y) {
+		wasFocused := m.layoutFocus == layoutFocusInspector && m.tab == tabLayout
 		m.layoutFocus = layoutFocusInspector
-		if field, ok := m.inspectorFieldAt(msg.Y, inspectorRect, compact); ok && msg.Action == tea.MouseActionPress {
+		if field, ok := m.inspectorFieldAt(msg.Y, inspectorRect, compact, wasFocused); ok && msg.Action == tea.MouseActionPress {
 			m.inspectorField = field
 			switch msg.Button {
 			case tea.MouseButtonLeft:
@@ -1357,24 +1358,30 @@ func (m Model) canvasLocalPoint(x, y int, canvasRect hitRect) (int, int) {
 	return x - canvasX, y - canvasY
 }
 
-func (m Model) inspectorFieldAt(y int, inspectorRect hitRect, compact bool) (int, bool) {
+func (m Model) inspectorFieldAt(y int, inspectorRect hitRect, compact bool, wasFocused bool) (int, bool) {
 	if len(m.editOutputs) == 0 {
 		return 0, false
 	}
 	inner := inspectorRect.inner(m.styles.inactivePane)
-	row := inner.y + 4
-	if !compact {
-		output := m.editOutputs[m.selectedOutput]
-		detailCount := len(m.inspectorDetailLines(output))
-		// header + blank + info + details + blank + preferences
-		row = inner.y + detailCount + 5
+	localY := y - inner.y
+	if localY < 0 || localY >= inner.h {
+		return 0, false
 	}
-	for idx := range layoutFields {
-		offset := idx
-		if idx >= advancedFieldStart {
-			offset++ // spacer row before advanced fields
+
+	layout := m.buildInspectorLayout(m.editOutputs[m.selectedOutput], inner.w, compact)
+	scrollOffset := 0
+	if wasFocused {
+		if row, ok := layout.fieldRows[m.inspectorField]; ok {
+			scrollOffset = inspectorScrollOffset(len(layout.lines), row, inner.h)
 		}
-		if y == row+offset {
+	}
+
+	for idx := range layoutFields {
+		row, ok := layout.fieldRows[idx]
+		if !ok {
+			continue
+		}
+		if row-scrollOffset == localY {
 			return idx, true
 		}
 	}
