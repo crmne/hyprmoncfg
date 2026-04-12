@@ -3,6 +3,7 @@ module github.com/crmne/hyprmoncfg
 go 1.26.1
 
 require (
+	github.com/buildkite/shellwords v1.0.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0

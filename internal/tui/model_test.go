@@ -88,6 +88,45 @@ func TestRenderMainShowsFooterProjectLinks(t *testing.T) {
 	}
 }
 
+func TestNotifyUserRendersToastInMainView(t *testing.T) {
+	m := Model{
+		styles:          newStyles(),
+		mode:            modeMain,
+		tab:             tabProfiles,
+		width:           120,
+		height:          30,
+		selectedProfile: 0,
+		profiles:        []profile.Profile{{Name: "Desk Dock"}},
+	}
+
+	cmd := m.notifyUser("Post-apply failed", true)
+	if cmd == nil {
+		t.Fatal("expected notifyUser to return a clear command")
+	}
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Post-apply failed") {
+		t.Fatalf("expected toast message in rendered view, got:\n%s", view)
+	}
+}
+
+func TestClearToastMsgRemovesToast(t *testing.T) {
+	m := Model{
+		styles: newStyles(),
+		toast: &toastState{
+			message: "Post-apply failed",
+			err:     true,
+			token:   3,
+		},
+	}
+
+	updated, _ := m.Update(clearToastMsg{token: 3})
+	got := updated.(Model)
+	if got.toast != nil {
+		t.Fatalf("expected toast to be cleared, got %+v", got.toast)
+	}
+}
+
 func TestRenderFooterInfoIncludesVersion(t *testing.T) {
 	prevVersion := buildinfo.Version
 	buildinfo.Version = "1.2.3"
@@ -700,6 +739,114 @@ func TestLoadLiveStateInfersDraftProfileNameFromExactCurrentProfile(t *testing.T
 
 	if m.draftProfileName != "Desk Dock" {
 		t.Fatalf("expected live state to infer current profile name, got %q", m.draftProfileName)
+	}
+}
+
+func TestProfileExecEditorOpensWithCurrentValue(t *testing.T) {
+	m := Model{
+		styles:   newStyles(),
+		tab:      tabProfiles,
+		profiles: []profile.Profile{{Name: "Desk Dock", Exec: "/path/to/script.sh"}},
+	}
+
+	updatedModel, cmd := m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	got := updatedModel.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected exec editor to focus its input")
+	}
+	if got.mode != modeProfileExecInput {
+		t.Fatalf("expected exec editor mode, got %v", got.mode)
+	}
+	if got.execInput == nil {
+		t.Fatal("expected exec input state to be initialized")
+	}
+	if got.execInput.Input.Value() != "/path/to/script.sh" {
+		t.Fatalf("expected exec editor to prefill current value, got %q", got.execInput.Input.Value())
+	}
+}
+
+func TestProfileExecEditorEnterUpdatesSelectedProfileInMemory(t *testing.T) {
+	m := Model{
+		styles:   newStyles(),
+		tab:      tabProfiles,
+		profiles: []profile.Profile{{Name: "Desk Dock"}},
+	}
+
+	updatedModel, _ := m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	got := updatedModel.(Model)
+	got.execInput.Input.SetValue("/path/to/script.sh")
+
+	nextModel, _ := got.updateProfileExecInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	next := nextModel.(*Model)
+
+	if next.mode != modeMain {
+		t.Fatalf("expected exec editor to close after Enter, got %v", next.mode)
+	}
+	if next.execInput != nil {
+		t.Fatalf("expected exec input to be cleared, got %+v", next.execInput)
+	}
+	if next.profiles[0].Exec != "/path/to/script.sh" {
+		t.Fatalf("expected exec to update in memory, got %q", next.profiles[0].Exec)
+	}
+	if !strings.Contains(next.status, "Press s to save") {
+		t.Fatalf("expected status to mention explicit save, got %q", next.status)
+	}
+}
+
+func TestProfileExecEditorEscDiscardsChange(t *testing.T) {
+	m := Model{
+		styles:   newStyles(),
+		tab:      tabProfiles,
+		profiles: []profile.Profile{{Name: "Desk Dock", Exec: "/path/to/script.sh"}},
+	}
+
+	updatedModel, _ := m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	got := updatedModel.(Model)
+	got.execInput.Input.SetValue("/other/script.sh")
+
+	nextModel, _ := got.updateProfileExecInputKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	next := nextModel.(*Model)
+
+	if next.profiles[0].Exec != "/path/to/script.sh" {
+		t.Fatalf("expected Esc to discard changes, got %q", next.profiles[0].Exec)
+	}
+	if next.mode != modeMain {
+		t.Fatalf("expected exec editor to close on Esc, got %v", next.mode)
+	}
+}
+
+func TestProfilesTabSavePersistsSelectedProfileExec(t *testing.T) {
+	store := profile.NewStore(t.TempDir())
+	savedProfile := testProfile("Desk Dock", 1)
+	savedProfile.Exec = "/path/to/script.sh"
+	m := Model{
+		styles:           newStyles(),
+		tab:              tabProfiles,
+		store:            store,
+		profiles:         []profile.Profile{savedProfile},
+		draftProfileName: "Draft Name",
+	}
+
+	updatedModel, cmd := m.updateMainKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	got := updatedModel.(Model)
+	if cmd == nil {
+		t.Fatal("expected Profiles-tab save to return a command")
+	}
+
+	msg := cmd()
+	finalModel, _ := got.Update(msg)
+	final := finalModel.(Model)
+
+	saved, err := store.Load("Desk Dock")
+	if err != nil {
+		t.Fatalf("expected selected profile to be saved: %v", err)
+	}
+	if saved.Exec != savedProfile.Exec {
+		t.Fatalf("expected saved exec %q, got %q", savedProfile.Exec, saved.Exec)
+	}
+	if final.draftProfileName != "Draft Name" {
+		t.Fatalf("expected Profiles-tab save not to rewrite draft name, got %q", final.draftProfileName)
 	}
 }
 
