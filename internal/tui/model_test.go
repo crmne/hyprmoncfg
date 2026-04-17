@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/crmne/hyprmoncfg/internal/buildinfo"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
+	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
@@ -855,6 +857,112 @@ func TestSaveDialogDoesNotShowStaleSuccessStatus(t *testing.T) {
 	view = got.renderSavePrompt()
 	if !strings.Contains(view, "Profile name cannot be empty") {
 		t.Fatalf("expected save dialog to show errors, got:\n%s", view)
+	}
+}
+
+func TestRefreshMsgBackgroundReloadsEditorWhenLiveConfigChanges(t *testing.T) {
+	monitorsA := []hypr.Monitor{{
+		Name:        "DP-1",
+		Make:        "Dell",
+		Model:       "U2720Q",
+		Serial:      "A1",
+		Width:       2560,
+		Height:      1440,
+		RefreshRate: 144,
+		Scale:       1,
+	}}
+	monitorsB := append(append([]hypr.Monitor(nil), monitorsA...), hypr.Monitor{
+		Name:        "HDMI-A-1",
+		Make:        "LG",
+		Model:       "27GP850",
+		Serial:      "B2",
+		Width:       2560,
+		Height:      1440,
+		RefreshRate: 144,
+		X:           2560,
+		Scale:       1,
+	})
+
+	m := Model{
+		styles:   newStyles(),
+		monitors: monitorsA,
+		lidState: lid.Open,
+	}
+	m.loadLiveState()
+	m.editOutputs[0].X = 999
+	m.dirty = true
+
+	updatedModel, _ := m.Update(refreshMsg{
+		monitors:   monitorsB,
+		lidState:   lid.Open,
+		background: true,
+	})
+	got := updatedModel.(Model)
+
+	if got.dirty {
+		t.Fatal("expected live config change to reset dirty draft")
+	}
+	if len(got.editOutputs) != 2 {
+		t.Fatalf("expected editor to reload two outputs, got %d", len(got.editOutputs))
+	}
+	if got.editOutputs[0].X == 999 {
+		t.Fatal("expected stale draft position to be discarded after live config change")
+	}
+	if !strings.Contains(got.status, "Monitor configuration changed") {
+		t.Fatalf("expected live reload status, got %q", got.status)
+	}
+}
+
+func TestRefreshMsgBackgroundPreservesDirtyDraftWhenLiveConfigUnchanged(t *testing.T) {
+	monitors := []hypr.Monitor{{
+		Name:        "DP-1",
+		Make:        "Dell",
+		Model:       "U2720Q",
+		Serial:      "A1",
+		Width:       2560,
+		Height:      1440,
+		RefreshRate: 144,
+		Scale:       1,
+	}}
+
+	m := Model{
+		styles:   newStyles(),
+		monitors: monitors,
+		lidState: lid.Open,
+	}
+	m.loadLiveState()
+	m.editOutputs[0].X = 999
+	m.dirty = true
+
+	updatedModel, _ := m.Update(refreshMsg{
+		monitors:   monitors,
+		lidState:   lid.Open,
+		background: true,
+	})
+	got := updatedModel.(Model)
+
+	if !got.dirty {
+		t.Fatal("expected unchanged live config to preserve dirty draft")
+	}
+	if len(got.editOutputs) != 1 {
+		t.Fatalf("expected one output to remain in editor, got %d", len(got.editOutputs))
+	}
+	if got.editOutputs[0].X != 999 {
+		t.Fatalf("expected draft position to remain intact, got %d", got.editOutputs[0].X)
+	}
+}
+
+func TestTickMsgStartsBackgroundRefreshWhenIdle(t *testing.T) {
+	m := Model{styles: newStyles()}
+
+	updatedModel, cmd := m.Update(tickMsg(time.Now()))
+	got := updatedModel.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected tick to schedule follow-up work")
+	}
+	if !got.refreshInFlight {
+		t.Fatal("expected tick to queue a background refresh when idle")
 	}
 }
 

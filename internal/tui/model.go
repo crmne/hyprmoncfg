@@ -50,6 +50,7 @@ type refreshMsg struct {
 	workspaceRules []hypr.WorkspaceRule
 	workspaces     []hypr.WorkspaceState
 	lidState       lid.State
+	background     bool
 	err            error
 }
 
@@ -229,6 +230,7 @@ type Model struct {
 	draftSaved       bool
 	draftProfileName string
 	daemonOK         bool
+	refreshInFlight  bool
 
 	width  int
 	height int
@@ -263,7 +265,7 @@ func NewModel(client *hypr.Client, store *profile.Store, monitorsConfPath string
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.refreshCmd(), tickCmd())
+	return tea.Batch(m.refreshCmd(false), tickCmd())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -284,10 +286,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case refreshMsg:
+		m.refreshInFlight = false
 		if msg.err != nil {
 			m.setStatusErr(msg.err.Error())
 			return m, nil
 		}
+
+		prevSig := m.liveConfigSignature()
+		nextSig := liveConfigSignature(msg.monitors, msg.lidState)
+		liveChanged := prevSig != nextSig
+		wasDirty := m.dirty
 
 		m.daemonOK = isDaemonRunning()
 		m.monitors = msg.monitors
@@ -296,11 +304,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.workspaces = msg.workspaces
 		m.lidState = msg.lidState
 
-		if len(m.editOutputs) == 0 || !m.dirty {
+		reloadLive := len(m.editOutputs) == 0 || liveChanged || (!msg.background && !m.dirty)
+		if reloadLive {
 			m.loadLiveState()
+			if liveChanged && wasDirty {
+				m.markClean()
+				m.setStatusOK("Monitor configuration changed. Reloaded live state.")
+				m.syncSelections()
+				return m, nil
+			}
 		}
 		m.syncSelections()
-		m.status = ""
+		if !msg.background {
+			m.status = ""
+		}
 		return m, nil
 
 	case saveMsg:
@@ -324,12 +341,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if action == saveActionApply {
 			return m, tea.Batch(
-				m.refreshCmd(),
+				m.refreshCmd(false),
 				m.applyCmd(m.currentProfile(msg.name)),
 			)
 		}
 		m.setStatusOK(fmt.Sprintf("Saved profile %q", msg.name))
-		return m, m.refreshCmd()
+		return m, m.refreshCmd(false)
 
 	case clearSnapMsg:
 		if m.snap != nil && msg.token == m.snap.Token {
@@ -347,7 +364,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setStatusOK(fmt.Sprintf("Deleted profile %q", msg.name))
 		m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
-		return m, m.refreshCmd()
+		return m, m.refreshCmd(false)
 
 	case applyMsg:
 		if msg.err != nil {
@@ -375,7 +392,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.markClean()
 		m.draftProfileName = ""
 		m.setStatusOK("Configuration reverted: " + msg.reason)
-		return m, m.refreshCmd()
+		return m, m.refreshCmd(false)
 
 	case openURLMsg:
 		if msg.err != nil {
@@ -391,7 +408,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.revertCmd(snapshot, "timeout")
 			}
 		}
-		return m, tickCmd()
+		cmds := []tea.Cmd{tickCmd()}
+		if !m.refreshInFlight {
+			m.refreshInFlight = true
+			cmds = append(cmds, m.refreshCmd(true))
+		}
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
 		switch m.mode {
@@ -449,7 +471,7 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.resetRequested = true
 		m.draftProfileName = ""
 		m.markClean()
-		return m, m.refreshCmd()
+		return m, m.refreshCmd(false)
 	case "s":
 		return m.openSaveDialog()
 	case "a":
@@ -614,7 +636,7 @@ func (m Model) updateConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pending = nil
 		m.markClean()
 		m.setStatusOK("Configuration kept")
-		return m, m.refreshCmd()
+		return m, m.refreshCmd(false)
 	case "n", "esc":
 		snapshot := m.pending.snapshot
 		return m, m.revertCmd(snapshot, "user request")
@@ -1744,7 +1766,15 @@ func (m *Model) nudgeSelectedOutput(dx, dy int, snapThreshold int) tea.Cmd {
 	return m.showSnapHint(m.previewSelectedSnap(snapThreshold))
 }
 
-func (m Model) refreshCmd() tea.Cmd {
+func liveConfigSignature(monitors []hypr.Monitor, lidState lid.State) string {
+	return profile.MonitorStateHash(monitors) + "|lid=" + string(lidState)
+}
+
+func (m Model) liveConfigSignature() string {
+	return liveConfigSignature(m.monitors, m.lidState)
+}
+
+func (m Model) refreshCmd(background bool) tea.Cmd {
 	client := m.client
 	store := m.store
 	return func() tea.Msg {
@@ -1753,19 +1783,19 @@ func (m Model) refreshCmd() tea.Cmd {
 
 		monitors, err := client.Monitors(ctx)
 		if err != nil {
-			return refreshMsg{err: err}
+			return refreshMsg{background: background, err: err}
 		}
 		profiles, err := store.List()
 		if err != nil {
-			return refreshMsg{err: err}
+			return refreshMsg{background: background, err: err}
 		}
 		workspaceRules, err := client.WorkspaceRules(ctx)
 		if err != nil {
-			return refreshMsg{err: err}
+			return refreshMsg{background: background, err: err}
 		}
 		workspaces, err := client.Workspaces(ctx)
 		if err != nil {
-			return refreshMsg{err: err}
+			return refreshMsg{background: background, err: err}
 		}
 		lidState, err := lid.ReadState(ctx)
 		if err != nil {
@@ -1778,6 +1808,7 @@ func (m Model) refreshCmd() tea.Cmd {
 			workspaceRules: workspaceRules,
 			workspaces:     workspaces,
 			lidState:       lidState,
+			background:     background,
 		}
 	}
 }

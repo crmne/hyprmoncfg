@@ -13,6 +13,8 @@ When you launch `hyprmoncfg`, you land on the layout tab. This is where you arra
 
 Drag monitors on the canvas to reposition them. The inspector updates in real time. When you need pixel-perfect placement, use the `Position X` and `Position Y` fields in the inspector instead of dragging.
 
+While the TUI is open, it also refreshes live monitor state in the background. Plugging or unplugging a monitor, docking, undocking, or changing lid state reloads the editor so the canvas matches the current hardware.
+
 ![Layout editor]({{ '/assets/images/screenshots/layout-dark.png' | relative_url }})
 {: .screenshot }
 
