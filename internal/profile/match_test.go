@@ -53,6 +53,83 @@ func TestBestMatchPrefersProfileWithDisabledOutput(t *testing.T) {
 	}
 }
 
+func TestBestMatchWithLidClosedPrefersInternalDisabledProfile(t *testing.T) {
+	laptop := hypr.Monitor{Name: "eDP-1", Make: "BOE", Model: "Panel", Serial: "C3"}
+	external := hypr.Monitor{Name: "DP-6", Make: "Dell", Model: "P3421W", Serial: "DW1"}
+	monitors := []hypr.Monitor{laptop, external}
+
+	lidOpen := false
+	lidClosed := true
+
+	openProfile := New("open", []OutputConfig{
+		{Key: laptop.HardwareKey(), Name: laptop.Name, Enabled: true, Scale: 1, Width: 2880, Height: 1920},
+		{Key: external.HardwareKey(), Name: external.Name, Enabled: true, Scale: 1, Width: 3440, Height: 1440},
+	})
+	closedProfile := New("clamshell", []OutputConfig{
+		{Key: laptop.HardwareKey(), Name: laptop.Name, Enabled: false},
+		{Key: external.HardwareKey(), Name: external.Name, Enabled: true, Scale: 1, Width: 3440, Height: 1440},
+	})
+
+	picked, _, ok := BestMatchWithLidState([]Profile{openProfile, closedProfile}, monitors, &lidClosed)
+	if !ok {
+		t.Fatal("expected closed-lid match")
+	}
+	if picked.Name != "clamshell" {
+		t.Fatalf("expected closed lid to prefer clamshell profile, got %q", picked.Name)
+	}
+
+	picked, _, ok = BestMatchWithLidState([]Profile{closedProfile, openProfile}, monitors, &lidOpen)
+	if !ok {
+		t.Fatal("expected open-lid match")
+	}
+	if picked.Name != "open" {
+		t.Fatalf("expected open lid to prefer open profile, got %q", picked.Name)
+	}
+}
+
+func TestBestMatchWithLidClosedCanPreferProfileOmittingInternalOutput(t *testing.T) {
+	laptop := hypr.Monitor{Name: "eDP-1", Make: "BOE", Model: "Panel", Serial: "C3"}
+	external := hypr.Monitor{Name: "DP-6", Make: "Dell", Model: "P3421W", Serial: "DW1"}
+	monitors := []hypr.Monitor{laptop, external}
+
+	lidClosed := true
+
+	openProfile := New("open", []OutputConfig{
+		{Key: laptop.HardwareKey(), Name: laptop.Name, Enabled: true, Scale: 1, Width: 2880, Height: 1920},
+		{Key: external.HardwareKey(), Name: external.Name, Enabled: true, Scale: 1, Width: 3440, Height: 1440},
+	})
+	externalOnly := New("external-only", []OutputConfig{
+		{Key: external.HardwareKey(), Name: external.Name, Enabled: true, Scale: 1, Width: 3440, Height: 1440},
+	})
+
+	picked, _, ok := BestMatchWithLidState([]Profile{openProfile, externalOnly}, monitors, &lidClosed)
+	if !ok {
+		t.Fatal("expected closed-lid match")
+	}
+	if picked.Name != "external-only" {
+		t.Fatalf("expected closed lid to prefer external-only profile, got %q", picked.Name)
+	}
+}
+
+func TestBestMatchWithLidStateFallsBackToOnlyPositiveProfile(t *testing.T) {
+	laptop := hypr.Monitor{Name: "eDP-1", Make: "BOE", Model: "Panel", Serial: "C3"}
+	external := hypr.Monitor{Name: "DP-6", Make: "Dell", Model: "P3421W", Serial: "DW1"}
+	monitors := []hypr.Monitor{laptop, external}
+
+	lidOpen := false
+	externalOnly := New("external-only", []OutputConfig{
+		{Key: external.HardwareKey(), Name: external.Name, Enabled: true, Scale: 1, Width: 3440, Height: 1440},
+	})
+
+	picked, _, ok := BestMatchWithLidState([]Profile{externalOnly}, monitors, &lidOpen)
+	if !ok {
+		t.Fatal("expected fallback match")
+	}
+	if picked.Name != "external-only" {
+		t.Fatalf("expected only profile to remain eligible, got %q", picked.Name)
+	}
+}
+
 func TestBestMatchCountsDuplicateMonitorsSeparately(t *testing.T) {
 	monitors := []hypr.Monitor{
 		{Name: "DP-5", Make: "VIE", Model: "C24PULSE", Serial: "0x01010101"},

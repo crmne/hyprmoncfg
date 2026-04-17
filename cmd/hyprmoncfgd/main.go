@@ -15,6 +15,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/config"
 	"github.com/crmne/hyprmoncfg/internal/daemon"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
+	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
@@ -29,6 +30,7 @@ func newRootCmd() *cobra.Command {
 	var configDir string
 	var debounce time.Duration
 	var poll time.Duration
+	var lidPoll time.Duration
 	var forceProfile string
 	var quiet bool
 	var monitorsConf string
@@ -59,12 +61,13 @@ func newRootCmd() *cobra.Command {
 			}
 
 			svc := daemon.New(client, store, daemon.Config{
-				Debounce:      debounce,
-				PollInterval:  poll,
-				ForcedProfile: forceProfile,
-				MonitorsConf:  monitorsConf,
-				HyprConfig:    hyprConfig,
-				Logf:          logf,
+				Debounce:        debounce,
+				PollInterval:    poll,
+				LidPollInterval: lidPoll,
+				ForcedProfile:   forceProfile,
+				MonitorsConf:    monitorsConf,
+				HyprConfig:      hyprConfig,
+				Logf:            logf,
 			})
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -83,6 +86,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().StringVar(&configDir, "config-dir", "", "Config directory (default: ~/.config/hyprmoncfg)")
 	cmd.Flags().DurationVar(&debounce, "debounce", 1200*time.Millisecond, "Debounce duration before applying profile")
 	cmd.Flags().DurationVar(&poll, "poll-interval", 5*time.Second, "Polling interval for monitor changes")
+	cmd.Flags().DurationVar(&lidPoll, "lid-poll-interval", lid.DefaultPollInterval, "Polling interval for lid-state fallback checks")
 	cmd.Flags().StringVar(&forceProfile, "profile", "", "Force this profile instead of auto-matching")
 	cmd.Flags().StringVar(&monitorsConf, "monitors-conf", "", "Hyprland monitor config target to write and reload (default: ~/.config/hypr/monitors.conf)")
 	cmd.Flags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config to verify source directives against (default: ~/.config/hypr/hyprland.conf)")

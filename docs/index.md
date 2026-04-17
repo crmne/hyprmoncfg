@@ -6,7 +6,7 @@ permalink: /
 hero:
   name: hyprmoncfg
   text: Stop editing Hyprland monitor lines by hand
-  tagline: A spatial layout editor, named profiles, automatic hotplug switching, and workspace planning. From the terminal. No Python, no GTK, no nonsense.
+  tagline: A spatial layout editor, named profiles, automatic hotplug and lid switching, and workspace planning. From the terminal. No Python, no GTK, no nonsense.
   actions:
     - theme: brand
       text: What is hyprmoncfg?
@@ -27,8 +27,8 @@ features:
     title: Spatial Layout Editor
     details: Drag monitors on a canvas, tweak mode, scale, VRR, mirror, and exact position in the inspector. See the result before you apply it.
   - icon: 🔌
-    title: Hotplug-Aware Daemon
-    details: Plug in a monitor and walk away. The daemon scores your saved profiles against connected hardware and applies the best match automatically.
+    title: Hotplug and Lid-Aware Daemon
+    details: Plug in a monitor, close the lid, and walk away. The daemon scores your saved profiles against connected hardware and lid state, then applies the best match automatically.
   - icon: 🔁
     title: Safe Apply with Revert
     details: Every apply writes monitors.conf atomically, reloads Hyprland, and verifies the result. A 10-second confirmation window means you never get locked out.

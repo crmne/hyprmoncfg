@@ -7,16 +7,18 @@ import (
 
 	"github.com/crmne/hyprmoncfg/internal/apply"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
+	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
 type Config struct {
-	Debounce      time.Duration
-	PollInterval  time.Duration
-	ForcedProfile string
-	MonitorsConf  string
-	HyprConfig    string
-	Logf          func(format string, args ...any)
+	Debounce        time.Duration
+	PollInterval    time.Duration
+	LidPollInterval time.Duration
+	ForcedProfile   string
+	MonitorsConf    string
+	HyprConfig      string
+	Logf            func(format string, args ...any)
 }
 
 type Service struct {
@@ -26,6 +28,7 @@ type Service struct {
 	cfg          Config
 	applied      string
 	lastSeenHash string
+	lidState     lid.State
 }
 
 func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
@@ -34,6 +37,9 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 	}
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 5 * time.Second
+	}
+	if cfg.LidPollInterval <= 0 {
+		cfg.LidPollInterval = lid.DefaultPollInterval
 	}
 	if cfg.Logf == nil {
 		cfg.Logf = func(string, ...any) {}
@@ -68,6 +74,16 @@ func (s *Service) Run(ctx context.Context) error {
 
 	pushTrigger("startup")
 
+	var lidStates <-chan lid.State
+	var lidErrs <-chan error
+	if state, err := lid.ReadState(ctx); err != nil {
+		s.cfg.Logf("lid events disabled: %v", err)
+	} else {
+		s.lidState = state
+		s.cfg.Logf("lid state: %s", state)
+		lidStates, lidErrs = lid.Watch(ctx, s.cfg.LidPollInterval)
+	}
+
 	events, eventErrs := s.client.SubscribeMonitorEvents(ctx)
 	go func() {
 		for ev := range events {
@@ -90,9 +106,30 @@ func (s *Service) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case err, ok := <-eventErrs:
-			if ok && err != nil {
+			if !ok {
+				eventErrs = nil
+				continue
+			}
+			if err != nil {
 				s.cfg.Logf("socket2 disabled: %v", err)
 				eventErrs = nil
+			}
+		case state, ok := <-lidStates:
+			if !ok {
+				lidStates = nil
+				continue
+			}
+			if state != s.lidState {
+				s.lidState = state
+				pushTrigger("lid:" + string(state))
+			}
+		case err, ok := <-lidErrs:
+			if !ok {
+				lidErrs = nil
+				continue
+			}
+			if err != nil {
+				s.cfg.Logf("lid state unavailable: %v", err)
 			}
 		case <-pollTicker.C:
 			monitors, err := s.client.Monitors(ctx)
@@ -149,12 +186,17 @@ func (s *Service) applyBest(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		best, score, ok := profile.BestMatch(profiles, monitors)
+		lidClosed := s.lidState.ClosedPtr()
+		best, score, ok := profile.BestMatchWithLidState(profiles, monitors, lidClosed)
 		if !ok {
 			s.cfg.Logf("no matching profile for monitor set %s", hash)
 			return nil
 		}
-		s.cfg.Logf("best profile %q score=%d", best.Name, score)
+		if s.lidState.Known() {
+			s.cfg.Logf("best profile %q score=%d lid=%s", best.Name, score, s.lidState)
+		} else {
+			s.cfg.Logf("best profile %q score=%d", best.Name, score)
+		}
 		target = best
 	}
 

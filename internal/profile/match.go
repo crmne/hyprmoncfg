@@ -63,13 +63,17 @@ func MatchScore(p Profile, monitors []hypr.Monitor) int {
 }
 
 func BestMatch(profiles []Profile, monitors []hypr.Monitor) (Profile, int, bool) {
+	return BestMatchWithLidState(profiles, monitors, nil)
+}
+
+func BestMatchWithLidState(profiles []Profile, monitors []hypr.Monitor, lidClosed *bool) (Profile, int, bool) {
 	type candidate struct {
 		profile Profile
 		score   int
 	}
 	candidates := make([]candidate, 0, len(profiles))
 	for _, p := range profiles {
-		score := MatchScore(p, monitors)
+		score := matchScoreWithLidState(p, monitors, lidClosed)
 		if score <= 0 {
 			continue
 		}
@@ -85,6 +89,90 @@ func BestMatch(profiles []Profile, monitors []hypr.Monitor) (Profile, int, bool)
 		return strings.ToLower(candidates[i].profile.Name) < strings.ToLower(candidates[j].profile.Name)
 	})
 	return candidates[0].profile, candidates[0].score, true
+}
+
+func matchScoreWithLidState(p Profile, monitors []hypr.Monitor, lidClosed *bool) int {
+	score := MatchScore(p, monitors)
+	if score <= 0 {
+		return score
+	}
+	if lidClosed == nil {
+		return score
+	}
+	return max(1, score+lidStateScore(p, monitors, *lidClosed))
+}
+
+func lidStateScore(p Profile, monitors []hypr.Monitor, lidClosed bool) int {
+	const (
+		matchBonus      = 150
+		mismatchPenalty = 150
+	)
+
+	if !monitorSetHasInternalAndExternal(monitors) {
+		return 0
+	}
+
+	p.normalizeIdentityRefs()
+	resolver := NewMonitorResolver(monitors)
+
+	internalKnown := 0
+	internalEnabled := 0
+	internalDisabled := 0
+	externalEnabled := 0
+
+	for _, output := range p.Outputs {
+		monitor, ok := resolver.ResolveOutput(output)
+		if !ok {
+			continue
+		}
+		if monitor.IsInternal() {
+			internalKnown++
+			if output.Enabled {
+				internalEnabled++
+			} else {
+				internalDisabled++
+			}
+			continue
+		}
+		if output.Enabled {
+			externalEnabled++
+		}
+	}
+
+	if externalEnabled == 0 {
+		return 0
+	}
+
+	if lidClosed {
+		if internalEnabled > 0 {
+			return -mismatchPenalty
+		}
+		if internalDisabled > 0 || internalKnown == 0 {
+			return matchBonus
+		}
+		return 0
+	}
+
+	if internalEnabled > 0 {
+		return matchBonus
+	}
+	if internalDisabled > 0 || internalKnown == 0 {
+		return -mismatchPenalty
+	}
+	return 0
+}
+
+func monitorSetHasInternalAndExternal(monitors []hypr.Monitor) bool {
+	hasInternal := false
+	hasExternal := false
+	for _, monitor := range monitors {
+		if monitor.IsInternal() {
+			hasInternal = true
+		} else {
+			hasExternal = true
+		}
+	}
+	return hasInternal && hasExternal
 }
 
 func ExactStateMatch(profiles []Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) (Profile, bool) {

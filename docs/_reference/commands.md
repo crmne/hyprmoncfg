@@ -55,8 +55,9 @@ The daemon. Runs in the foreground by default.
 | `--monitors-conf <path>` | Override the target monitors.conf path |
 | `--hypr-config <path>` | Override the root hyprland.conf path |
 | `--profile <name>` | Force a specific profile instead of auto-matching |
-| `--debounce <duration>` | Delay before applying after a hotplug event (default: 1200ms) |
-| `--poll-interval <duration>` | Polling frequency when socket2 is unavailable (default: 5s) |
+| `--debounce <duration>` | Delay before applying after a monitor or lid event (default: 1200ms) |
+| `--poll-interval <duration>` | Polling frequency for monitor fallback checks (default: 5s) |
+| `--lid-poll-interval <duration>` | Polling frequency for lid-state fallback checks (default: 1s) |
 | `--quiet` | Suppress log output |
 
 ## Exit behavior

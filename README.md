@@ -52,7 +52,7 @@ hyprmoncfg ships two binaries:
 | | |
 |---|---|
 | `hyprmoncfg` | TUI + CLI for layout editing, profile management, and workspace planning |
-| `hyprmoncfgd` | Background daemon that auto-applies the best matching profile on hotplug |
+| `hyprmoncfgd` | Background daemon that auto-applies the best matching profile on hotplug and lid changes |
 
 Both use the same apply engine: write `monitors.conf` atomically, reload Hyprland, verify the result, revert if anything is wrong.
 
@@ -62,12 +62,12 @@ Both use the same apply engine: write `monitors.conf` atomically, reload Hyprlan
 - **Per-monitor inspector** -- mode, scale, VRR, transform, mirror, exact position
 - **Named profiles** -- save "desk", "conference", "home-office", switch between them instantly
 - **Hardware-identity matching** -- profiles follow your monitors, not connector names
-- **Hotplug-aware daemon** -- plug in, walk away, the right profile is applied automatically
+- **Hotplug and lid-aware daemon** -- plug in, close the lid, walk away, the right profile is applied automatically; UPower is recommended for immediate lid events
 - **Monitor mirroring** -- mirror any monitor to another, with configurable resolution to avoid pixelation
 - **Workspace planner** -- sequential, interleave, or manual workspace placement across monitors
 - **Safe apply with revert** -- a 10-second confirmation window so you never get locked out
 - **Source-chain verification** -- refuses to write a `monitors.conf` that Hyprland isn't even reading
-- **One runtime dependency: Hyprland** -- compiled Go, statically linked, nothing else to install
+- **Only one hard runtime dependency: Hyprland** -- UPower is optional but recommended for the best lid-event behavior
 ## Screenshots
 
 hyprmoncfg adapts to your theme. Here are some examples:
