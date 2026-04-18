@@ -65,7 +65,7 @@ type deleteMsg struct {
 }
 
 type applyMsg struct {
-	target   string
+	profile  profile.Profile
 	snapshot apply.RevertState
 	err      error
 }
@@ -92,8 +92,8 @@ type clearSnapMsg struct {
 type tickMsg time.Time
 
 type pendingApply struct {
+	profile  profile.Profile
 	snapshot apply.RevertState
-	target   string
 	deadline time.Time
 }
 
@@ -259,7 +259,7 @@ func NewModel(client *hypr.Client, store *profile.Store, monitorsConfPath string
 			Client:             client,
 			MonitorsConfPath:   monitorsConfPath,
 			HyprlandConfigPath: hyprlandConfigPath,
-			Logf:               func(format string, args ...any) {
+			Logf: func(format string, args ...any) {
 				fmt.Fprintf(os.Stderr, format, args...)
 			},
 		},
@@ -385,13 +385,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pending = &pendingApply{
+			profile:  msg.profile,
 			snapshot: msg.snapshot,
-			target:   msg.target,
 			deadline: time.Now().Add(10 * time.Second),
 		}
 		m.mode = modeConfirm
 		m.statusErr = false
-		m.status = fmt.Sprintf("%s applied. Changes are live until you confirm or revert.", targetLabel(msg.target))
+		m.status = fmt.Sprintf("%s applied. Changes are live until you confirm or revert.", targetLabel(msg.profile.Name))
 		return m, tickCmd()
 
 	case revertMsg:
@@ -660,14 +660,14 @@ func (m Model) updateConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "y", "enter":
 		var toastCmd tea.Cmd
-		if target := strings.TrimSpace(m.pending.target); target != "" && target != "draft" {
-			m.draftProfileName = target
 
-			if profile, exists := m.profileByName(target); exists {
-				if err := m.postApply(profile); err != nil {
-					toastCmd = m.notifyUser(fmt.Sprintf("Post-apply failed for %q: %v", profile.Name, err), true)
-				}
-			}
+		p := m.pending.profile
+		if target := strings.TrimSpace(p.Name); target != "" && target != "draft" {
+			m.draftProfileName = target
+		}
+
+		if err := m.postApply(p); err != nil {
+			toastCmd = m.notifyUser(fmt.Sprintf("Post-apply failed for %q: %v", p.Name, err), true)
 		}
 
 		m.mode = modeMain
@@ -1195,7 +1195,7 @@ func (m Model) renderConfirm() string {
 	}
 
 	body := []string{
-		m.styles.warning.Render(fmt.Sprintf("%s is live now.", targetLabel(m.pending.target))),
+		m.styles.warning.Render(fmt.Sprintf("%s is live now.", targetLabel(m.pending.profile.Name))),
 		m.styles.subtle.Render(fmt.Sprintf("Keep it within %ds or the previous state will be restored.", remaining)),
 		"",
 		m.renderStatus(),
@@ -1904,13 +1904,13 @@ func (m Model) applyCmd(p profile.Profile) tea.Cmd {
 
 		monitors, err := client.Monitors(ctx)
 		if err != nil {
-			return applyMsg{target: p.Name, err: err}
+			return applyMsg{profile: p, err: err}
 		}
 		snapshot, err := engine.Apply(ctx, p, monitors, apply.ApplyModeInteractive)
 		if err != nil {
-			return applyMsg{target: p.Name, err: err}
+			return applyMsg{profile: p, err: err}
 		}
-		return applyMsg{target: p.Name, snapshot: snapshot}
+		return applyMsg{profile: p, snapshot: snapshot}
 	}
 }
 
