@@ -75,7 +75,7 @@ Type "s"
 Sleep 0.8s
 
 # Type a name
-Backspace 11
+Backspace 30
 Type "My Setup"
 Sleep 0.5s
 Enter
