@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/crmne/hyprmoncfg/internal/apply"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
@@ -54,6 +55,7 @@ type profileExecInputState struct {
 	Title        string
 	Hint         string
 	Input        textinput.Model
+	Err          error
 }
 
 type profileListItem struct {
@@ -510,7 +512,7 @@ func (m *Model) openProfileExecInput() tea.Cmd {
 	m.execInput = &profileExecInputState{
 		ProfileIndex: m.selectedProfile,
 		Title:        fmt.Sprintf("Edit Exec for %s", selected.Name),
-		Hint:         "Set the optional command to run after this profile is applied. Enter updates the profile in memory. Esc cancels.",
+		Hint:         "Set the optional command to run after this profile is applied. Enter validates and saves. Esc cancels.",
 		Input:        input,
 	}
 	m.mode = modeProfileExecInput
@@ -532,9 +534,11 @@ func (m Model) renderProfileExecInput() string {
 		"",
 		m.styles.label.Render("Exec"),
 		inputBox,
-		"",
-		m.styles.help.MaxWidth(max(20, m.modalMaxWidth()-6)).Render("Enter confirms the edit. Esc discards it. Press s on the Profiles tab to save the profile."),
 	}
+	if m.execInput.Err != nil {
+		body = append(body, "", m.styles.statusError.MaxWidth(max(20, m.modalMaxWidth()-6)).Render(m.execInput.Err.Error()))
+	}
+	body = append(body, "", m.styles.help.MaxWidth(max(20, m.modalMaxWidth()-6)).Render("Enter saves the profile when the command is executable. Leave empty to clear. Esc discards it."))
 	return m.renderModalFrame(m.execInput.Title, body)
 }
 
@@ -790,19 +794,25 @@ func (m *Model) commitProfileExecInput() tea.Cmd {
 		return nil
 	}
 
+	execValue := strings.TrimSpace(m.execInput.Input.Value())
+	if err := apply.ValidatePostApplyExec(execValue); err != nil {
+		m.execInput.Err = err
+		return nil
+	}
+
 	selected := &m.profiles[m.execInput.ProfileIndex]
-	selected.Exec = strings.TrimSpace(m.execInput.Input.Value())
+	selected.Exec = execValue
 	if strings.EqualFold(strings.TrimSpace(m.draftProfileName), strings.TrimSpace(selected.Name)) {
 		m.draftExec = selected.Exec
 	}
 	if selected.Exec == "" {
-		m.setStatusOK(fmt.Sprintf("Cleared exec for %q. Press s to save.", selected.Name))
+		m.setStatusOK(fmt.Sprintf("Cleared exec for %q", selected.Name))
 	} else {
-		m.setStatusOK(fmt.Sprintf("Updated exec for %q. Press s to save.", selected.Name))
+		m.setStatusOK(fmt.Sprintf("Updated exec for %q", selected.Name))
 	}
 	m.execInput = nil
 	m.mode = modeMain
-	return nil
+	return m.saveProfileCmd(*selected)
 }
 
 func (m *Model) updateModePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

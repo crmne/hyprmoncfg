@@ -2,9 +2,12 @@ package apply
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -218,23 +221,16 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 }
 
 func (e Engine) PostApply(ctx context.Context, target profile.Profile) error {
-	postApplyCommand := strings.TrimSpace(target.Exec)
-
-	if postApplyCommand == "" {
+	parts, err := splitPostApplyCommand(target.Exec)
+	if err != nil {
+		return err
+	}
+	if len(parts) == 0 {
 		return nil
 	}
 
-	parts, err := shellwords.Split(postApplyCommand)
-	if err != nil {
-		return fmt.Errorf("split shellwords: %w", err)
-	}
-
-	var args []string
 	command := parts[0]
-
-	if len(parts) > 1 {
-		args = parts[1:]
-	}
+	args := parts[1:]
 
 	cmd := exec.CommandContext(ctx, command, args...)
 	out, err := cmd.CombinedOutput()
@@ -243,6 +239,71 @@ func (e Engine) PostApply(ctx context.Context, target profile.Profile) error {
 	}
 
 	return nil
+}
+
+func ValidatePostApplyExec(command string) error {
+	parts, err := splitPostApplyCommand(command)
+	if err != nil {
+		return err
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+
+	executable := parts[0]
+	if strings.Contains(executable, string(os.PathSeparator)) {
+		info, err := os.Stat(executable)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("%s does not exist", executable)
+			}
+			return fmt.Errorf("cannot access %s: %w", executable, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("%s is a directory", executable)
+		}
+		if info.Mode().Perm()&0o111 == 0 {
+			return fmt.Errorf("%s is not executable", executable)
+		}
+		return nil
+	}
+
+	if _, err := exec.LookPath(executable); err != nil {
+		return fmt.Errorf("%q is not executable or was not found in PATH", executable)
+	}
+	return nil
+}
+
+func splitPostApplyCommand(command string) ([]string, error) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return nil, nil
+	}
+
+	parts, err := shellwords.Split(command)
+	if err != nil {
+		return nil, fmt.Errorf("split shellwords: %w", err)
+	}
+	if len(parts) == 0 {
+		return nil, nil
+	}
+
+	parts[0] = expandUserPath(parts[0])
+	return parts, nil
+}
+
+func expandUserPath(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~/"))
 }
 
 func (e Engine) Revert(ctx context.Context, state RevertState) error {

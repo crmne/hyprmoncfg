@@ -598,6 +598,70 @@ func TestEnginePostApply(t *testing.T) {
 	}
 }
 
+func TestEnginePostApplyExpandsHomePath(t *testing.T) {
+	engine, _, err := initTestEngine(t)
+	if err != nil {
+		t.Fatalf("init test engine: %v", err)
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	execPath := filepath.Join(home, "post-apply.sh")
+	outPath := filepath.Join(home, "post-apply.out")
+	execScript := `#!/bin/sh
+touch "$1"`
+	if err := os.WriteFile(execPath, []byte(execScript), 0o755); err != nil {
+		t.Fatalf("write exec script: %v", err)
+	}
+
+	p := newTestProfile()
+	p.Exec = "~/post-apply.sh " + outPath
+	if err := engine.PostApply(context.Background(), p); err != nil {
+		t.Fatalf("post apply: %v", err)
+	}
+	if _, err := os.Stat(outPath); err != nil {
+		t.Fatalf("expected post-apply script to create output file: %v", err)
+	}
+}
+
+func TestValidatePostApplyExec(t *testing.T) {
+	dir := t.TempDir()
+	execPath := filepath.Join(dir, "ok.sh")
+	if err := os.WriteFile(execPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write executable script: %v", err)
+	}
+	nonExecPath := filepath.Join(dir, "not-ok.sh")
+	if err := os.WriteFile(nonExecPath, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+		t.Fatalf("write non-executable script: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		command string
+		wantErr string
+	}{
+		{name: "empty", command: ""},
+		{name: "executable path", command: execPath},
+		{name: "path with args", command: fmt.Sprintf("%s --flag value", execPath)},
+		{name: "non executable path", command: nonExecPath, wantErr: "not executable"},
+		{name: "missing path", command: filepath.Join(dir, "missing.sh"), wantErr: "does not exist"},
+		{name: "missing path command", command: "definitely-missing-hyprmoncfg-test-command", wantErr: "not executable or was not found in PATH"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidatePostApplyExec(tc.command)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validate exec: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestEngineApplyPostApplyFailureWithNilLogger(t *testing.T) {
 	engine, _, err := initTestEngine(t)
 	if err != nil {

@@ -3,6 +3,8 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -808,7 +810,62 @@ func TestProfileExecEditorOpensWithCurrentValue(t *testing.T) {
 	}
 }
 
-func TestProfileExecEditorEnterUpdatesSelectedProfileInMemory(t *testing.T) {
+func TestProfileExecEditorEnterSavesExecutableCommand(t *testing.T) {
+	store := profile.NewStore(t.TempDir())
+	savedProfile := testProfile("Desk Dock", 1)
+	if err := store.Save(savedProfile); err != nil {
+		t.Fatalf("save initial profile: %v", err)
+	}
+	execPath := filepath.Join(t.TempDir(), "post-apply.sh")
+	if err := os.WriteFile(execPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write executable script: %v", err)
+	}
+
+	m := Model{
+		styles:   newStyles(),
+		tab:      tabProfiles,
+		store:    store,
+		profiles: []profile.Profile{savedProfile},
+	}
+
+	updatedModel, _ := m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	got := updatedModel.(Model)
+	got.execInput.Input.SetValue(execPath)
+
+	nextModel, cmd := got.updateProfileExecInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	next := nextModel.(*Model)
+	if cmd == nil {
+		t.Fatal("expected exec editor to return an auto-save command")
+	}
+
+	if next.mode != modeMain {
+		t.Fatalf("expected exec editor to close after Enter, got %v", next.mode)
+	}
+	if next.execInput != nil {
+		t.Fatalf("expected exec input to be cleared, got %+v", next.execInput)
+	}
+	if next.profiles[0].Exec != execPath {
+		t.Fatalf("expected exec to update in memory, got %q", next.profiles[0].Exec)
+	}
+	msg := cmd()
+	if _, ok := msg.(saveMsg); !ok {
+		t.Fatalf("expected saveMsg from auto-save command, got %T", msg)
+	}
+	saved, err := store.Load("Desk Dock")
+	if err != nil {
+		t.Fatalf("load saved profile: %v", err)
+	}
+	if saved.Exec != execPath {
+		t.Fatalf("expected exec to be saved, got %q", saved.Exec)
+	}
+}
+
+func TestProfileExecEditorRejectsNonExecutablePath(t *testing.T) {
+	execPath := filepath.Join(t.TempDir(), "post-apply.sh")
+	if err := os.WriteFile(execPath, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+		t.Fatalf("write non-executable script: %v", err)
+	}
+
 	m := Model{
 		styles:   newStyles(),
 		tab:      tabProfiles,
@@ -817,22 +874,28 @@ func TestProfileExecEditorEnterUpdatesSelectedProfileInMemory(t *testing.T) {
 
 	updatedModel, _ := m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
 	got := updatedModel.(Model)
-	got.execInput.Input.SetValue("/path/to/script.sh")
+	got.execInput.Input.SetValue(execPath)
 
-	nextModel, _ := got.updateProfileExecInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	nextModel, cmd := got.updateProfileExecInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	next := nextModel.(*Model)
-
-	if next.mode != modeMain {
-		t.Fatalf("expected exec editor to close after Enter, got %v", next.mode)
+	if cmd != nil {
+		t.Fatal("expected invalid exec to skip save command")
 	}
-	if next.execInput != nil {
-		t.Fatalf("expected exec input to be cleared, got %+v", next.execInput)
+	if next.mode != modeProfileExecInput {
+		t.Fatalf("expected exec editor to stay open, got %v", next.mode)
 	}
-	if next.profiles[0].Exec != "/path/to/script.sh" {
-		t.Fatalf("expected exec to update in memory, got %q", next.profiles[0].Exec)
+	if next.execInput == nil || next.execInput.Err == nil {
+		t.Fatal("expected exec editor to retain validation error")
 	}
-	if !strings.Contains(next.status, "Press s to save") {
-		t.Fatalf("expected status to mention explicit save, got %q", next.status)
+	if !strings.Contains(next.execInput.Err.Error(), "not executable") {
+		t.Fatalf("expected validation error to mention executable bit, got %v", next.execInput.Err)
+	}
+	if next.profiles[0].Exec != "" {
+		t.Fatalf("expected invalid exec not to update profile, got %q", next.profiles[0].Exec)
+	}
+	view := ansi.Strip(next.View())
+	if !strings.Contains(view, "not ex") {
+		t.Fatalf("expected validation error in modal, got:\n%s", view)
 	}
 }
 
