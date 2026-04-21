@@ -41,7 +41,7 @@ func (m Model) footerHelpText() string {
 	case tabLayout:
 		return "`drag/arrows` move | `[ ]` cycle monitors | `Enter` edit | `Tab` pane | `a` apply | `s` save | `r` reset"
 	case tabProfiles:
-		return "`Enter` load | `a` apply | `d` delete | `s` save"
+		return "`Enter` load | `a` apply | `e` edit exec | `d` delete | `s` save"
 	case tabWorkspaces:
 		return "`↑↓` select | `←→` adjust or reorder | `a` apply | `s` save"
 	default:

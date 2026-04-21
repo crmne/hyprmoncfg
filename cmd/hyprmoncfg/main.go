@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -134,6 +135,7 @@ func newSaveCmd(configDir *string) *cobra.Command {
 		Short: "Save current monitor state as profile",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
 			client, store, err := bootstrap(*configDir)
 			if err != nil {
 				return err
@@ -148,7 +150,12 @@ func newSaveCmd(configDir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p := profile.FromState(args[0], monitors, rules)
+			p := profile.FromState(name, monitors, rules)
+			existing, err := store.Load(name)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			p.Exec = existing.Exec
 			if err := store.Save(p); err != nil {
 				return err
 			}
@@ -187,18 +194,28 @@ func newApplyCmd(configDir *string, monitorsConf *string, hyprConfig *string) *c
 				applyProfile, _ = profile.ApplyClosedLidPolicy(p, monitors)
 			}
 
+			isInteractive := confirmTimeout > 0
+
 			engine := apply.Engine{
 				Client:             client,
 				MonitorsConfPath:   *monitorsConf,
 				HyprlandConfigPath: *hyprConfig,
+				Logf: func(format string, args ...any) {
+					fmt.Printf(format, args...)
+				},
 			}
-			snapshot, err := engine.Apply(ctx, applyProfile, monitors)
+			snapshot, err := engine.Apply(ctx, applyProfile, monitors, apply.ApplyModeInteractive)
 			if err != nil {
 				return err
 			}
 			fmt.Printf("Applied profile %q\n", p.Name)
 
-			if confirmTimeout <= 0 {
+			if !isInteractive {
+				postApplyCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+				if err := engine.PostApply(postApplyCtx, applyProfile); err != nil {
+					fmt.Printf("Post-apply failed for %s: %v\n", p.Name, err)
+				}
 				return nil
 			}
 
@@ -208,6 +225,15 @@ func newApplyCmd(configDir *string, monitorsConf *string, hyprConfig *string) *c
 			}
 			if keep {
 				fmt.Println("Configuration kept")
+
+				postApplyCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+
+				err = engine.PostApply(postApplyCtx, applyProfile)
+				if err != nil {
+					fmt.Printf("Post-apply failed for %s: %v\n", p.Name, err)
+				}
+
 				return nil
 			}
 

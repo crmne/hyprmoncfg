@@ -108,6 +108,8 @@ type styles struct {
 	tabInactive      lipgloss.Style
 	statusOK         lipgloss.Style
 	statusError      lipgloss.Style
+	toast            lipgloss.Style
+	toastError       lipgloss.Style
 	help             lipgloss.Style
 	selectedDesc     lipgloss.Style
 	footerLinkWarm   lipgloss.Style
@@ -147,6 +149,8 @@ func newStyles() styles {
 		tabInactive:      withFG(lipgloss.NewStyle().Border(inactiveTabBorder).BorderForeground(lipgloss.Color(p.tabBorder)).Padding(0, 1), p.tabInactiveFg),
 		statusOK:         withFG(lipgloss.NewStyle().Bold(true), p.statusOK),
 		statusError:      withFG(lipgloss.NewStyle().Bold(true), p.statusError),
+		toast:            withBG(withFG(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(p.paneActiveBorder)).Padding(0, 2).Bold(true), p.badgeOnFg), p.badgeOnBg),
+		toastError:       withBG(withFG(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("15")).Padding(0, 2).Bold(true), "0"), "9"),
 		help:             withFG(lipgloss.NewStyle(), p.help),
 		selectedDesc:     withBG(withFG(lipgloss.NewStyle(), p.selectedDesc), p.fieldSelectedBg),
 		footerLinkWarm:   withFG(lipgloss.NewStyle().Underline(true), p.footerWarm),

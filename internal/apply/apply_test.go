@@ -3,6 +3,8 @@ package apply
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,18 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
+
+var monitors = []hypr.Monitor{
+	{Name: "DP-1", Description: "Microstep MPG321UR-QD", Make: "Microstep", Model: "MPG321UR-QD", Serial: "A1", Width: 3840, Height: 2160, RefreshRate: 143.99, Scale: 1, VRR: hypr.VRRMode(1)},
+	{Name: "eDP-1", Description: "Samsung Display Corp. ATNA60CL10-0", Make: "Samsung Display Corp.", Model: "ATNA60CL10-0", Serial: "B2", Width: 2880, Height: 1800, RefreshRate: 120, X: 3840, Scale: 1},
+}
+
+func newTestProfile() profile.Profile {
+	return profile.New("desk", []profile.OutputConfig{
+		{Key: monitors[0].HardwareKey(), Name: monitors[0].Name, Enabled: true, Width: 3840, Height: 2160, Refresh: 143.99, X: 0, Y: 0, Scale: 1, VRR: 1},
+		{Key: monitors[1].HardwareKey(), Name: monitors[1].Name, Enabled: true, Width: 2880, Height: 1800, Refresh: 120, X: 3840, Y: 0, Scale: 1},
+	})
+}
 
 func TestCommandsForProfile(t *testing.T) {
 	mon := hypr.Monitor{Name: "DP-1", Make: "Dell", Model: "U2720Q", Serial: "A1"}
@@ -435,8 +449,173 @@ func TestSnapshotCommandsMirror(t *testing.T) {
 }
 
 func TestEngineApplyAndRevertReplayWorkspacePlacement(t *testing.T) {
+	p := newTestProfile()
+	p.Workspaces = profile.WorkspaceSettings{
+		Enabled:  true,
+		Strategy: profile.WorkspaceStrategyManual,
+		Rules: []profile.WorkspaceRule{
+			{Workspace: "1", OutputKey: monitors[0].HardwareKey(), OutputName: monitors[0].Name, Default: true, Persistent: true},
+			{Workspace: "2", OutputKey: monitors[1].HardwareKey(), OutputName: monitors[1].Name, Default: true, Persistent: true},
+		},
+	}
+
+	engine, logPath, err := initTestEngine(t)
+	if err != nil {
+		t.Fatalf("init test engine: %v", err)
+	}
+
+	ctx := context.Background()
+	snapshot, err := engine.Apply(ctx, p, monitors)
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	if err := engine.Revert(ctx, snapshot); err != nil {
+		t.Fatalf("revert failed: %v", err)
+	}
+
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read hyprctl log: %v", err)
+	}
+	log := string(logBytes)
+
+	for _, want := range []string{
+		"reload",
+		"BATCH:keyword workspace 1, monitor:desc:Microstep MPG321UR-QD, default:true, persistent:true ; dispatch moveworkspacetomonitor 1 DP-1 ; keyword workspace 2, monitor:desc:Samsung Display Corp. ATNA60CL10-0, default:true, persistent:true ; dispatch moveworkspacetomonitor 2 eDP-1",
+		"BATCH:keyword monitor DP-1,3840x2160@143.99,0x0,1,transform,0,vrr,1 ; keyword monitor eDP-1,2880x1800@120.00,3840x0,1,transform,0,vrr,0 ; keyword workspace 1, monitor:desc:Samsung Display Corp. ATNA60CL10-0, default:true, persistent:true ; keyword workspace 2, monitor:desc:Microstep MPG321UR-QD, default:true, persistent:true ; dispatch moveworkspacetomonitor 1 eDP-1 ; dispatch moveworkspacetomonitor 2 DP-1",
+	} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("expected hyprctl log to contain %q, got:\n%s", want, log)
+		}
+	}
+}
+
+func TestEnginePostApply(t *testing.T) {
+	engine, logPath, err := initTestEngine(t)
+	if err != nil {
+		t.Fatalf("init test engine: %v", err)
+	}
+
 	dir := t.TempDir()
-	logPath := filepath.Join(dir, "hyprctl.log")
+	execPath := filepath.Join(dir, "post_apply.sh")
+
+	execScript := `#!/bin/bash
+	OUT_FILE="$1"
+
+	if [ -z "$OUT_FILE" ]; then
+	  exit 1
+	fi
+
+	touch "$OUT_FILE"`
+
+	if err := os.WriteFile(execPath, []byte(execScript), 0o755); err != nil {
+		t.Fatalf("write exec script: %v", err)
+	}
+
+	ctx := context.Background()
+
+	testcases := []struct {
+		ExecPath        string
+		Name            string
+		Mode            applyMode
+		OutFile         string
+		ShouldTouchFile bool
+		VerifyResult    func()
+	}{
+		{
+			Name:    "should_not_call_post_exec_when_interactive",
+			Mode:    ApplyModeInteractive,
+			OutFile: filepath.Join(dir, "8d0f0878-6240-4deb-ac28-b5f2f251a606"),
+		},
+		{
+			Name:            "should_call_post_exec_when_noninteractive",
+			Mode:            ApplyModeNonInteractive,
+			OutFile:         filepath.Join(dir, "b33b65c7-2c39-4df6-b56b-3ff64c816ff6"),
+			ShouldTouchFile: true,
+		},
+		{
+			Name:     "should_handle_space_only_exec",
+			ExecPath: "   ",
+			Mode:     ApplyModeNonInteractive,
+			OutFile:  filepath.Join(dir, "50000812-ca77-4f76-a1ed-7f7659c65fe3"),
+		},
+		{
+			Name: "should_continue_on_post_apply_fail",
+			Mode: ApplyModeNonInteractive,
+			VerifyResult: func() {
+				logBytes, err := os.ReadFile(logPath)
+				if err != nil {
+					t.Fatalf("read hyprctl log: %v", err)
+				}
+				log := string(logBytes)
+
+				want := "post apply:"
+
+				t.Log(log)
+
+				if !strings.Contains(log, want) {
+					t.Fatalf("Expected log to contain string \"%s\"", want)
+				}
+			},
+		},
+	}
+
+	p := newTestProfile()
+
+	for _, tc := range testcases {
+		t.Run(tc.Name, func(st *testing.T) {
+
+			if tc.ExecPath == "" {
+				p.Exec = fmt.Sprintf("%s %s", execPath, tc.OutFile)
+			} else {
+				p.Exec = tc.ExecPath
+			}
+
+			_, err := engine.Apply(ctx, p, monitors, tc.Mode)
+			if err != nil {
+				st.Fatalf("%s: apply: %v", tc.Name, err)
+			}
+
+			var fileExists bool
+
+			_, err = os.Stat(tc.OutFile)
+			if err != nil {
+				if !errors.Is(err, os.ErrNotExist) {
+					st.Fatalf("stat file: %v", err)
+				}
+			} else {
+				fileExists = true
+			}
+
+			if fileExists != tc.ShouldTouchFile {
+				st.Fatalf("expected file to exist: %v. File exists: %v.", tc.ShouldTouchFile, fileExists)
+			}
+
+			if tc.VerifyResult != nil {
+				tc.VerifyResult()
+			}
+		})
+	}
+}
+
+func TestEngineApplyPostApplyFailureWithNilLogger(t *testing.T) {
+	engine, _, err := initTestEngine(t)
+	if err != nil {
+		t.Fatalf("init test engine: %v", err)
+	}
+	engine.Logf = nil
+
+	p := newTestProfile()
+	p.Exec = "/definitely/missing/post-apply-script"
+
+	if _, err := engine.Apply(context.Background(), p, monitors, ApplyModeNonInteractive); err != nil {
+		t.Fatalf("apply should not fail when post-apply logging is unset: %v", err)
+	}
+}
+
+func initTestEngine(t *testing.T) (engine *Engine, logPath string, err error) {
+	dir := t.TempDir()
+	logPath = filepath.Join(dir, "hyprctl.log")
 	monitorsConfPath := filepath.Join(dir, "monitors.conf")
 	hyprlandConfigPath := filepath.Join(dir, "hyprland.conf")
 	hyprctlPath := filepath.Join(dir, "hyprctl")
@@ -500,7 +679,8 @@ exit 1
 
 	client, err := hypr.NewClient()
 	if err != nil {
-		t.Fatalf("new hypr client: %v", err)
+		err = fmt.Errorf("new hypr client: %w", err)
+		return
 	}
 
 	monitors := []hypr.Monitor{
@@ -519,37 +699,28 @@ exit 1
 			{Workspace: "2", OutputKey: monitors[1].HardwareKey(), OutputName: monitors[1].Name, Default: true, Persistent: true},
 		},
 	}
+	logf := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		file, err := os.OpenFile(logPath, os.O_RDWR, 0o644)
+		if err != nil {
+			t.Fatalf("open log file: %v", err)
+		}
+		defer file.Close()
 
-	engine := Engine{
+		_, err = file.WriteString(msg)
+		if err != nil {
+			t.Fatalf("write to log file: %v", err)
+		}
+	}
+
+	engine = &Engine{
 		Client:             client,
 		MonitorsConfPath:   monitorsConfPath,
 		HyprlandConfigPath: hyprlandConfigPath,
+		Logf:               logf,
 	}
 
-	ctx := context.Background()
-	snapshot, err := engine.Apply(ctx, p, monitors)
-	if err != nil {
-		t.Fatalf("apply failed: %v", err)
-	}
-	if err := engine.Revert(ctx, snapshot); err != nil {
-		t.Fatalf("revert failed: %v", err)
-	}
-
-	logBytes, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf("read hyprctl log: %v", err)
-	}
-	log := string(logBytes)
-
-	for _, want := range []string{
-		"reload",
-		"BATCH:keyword workspace 1, monitor:desc:Microstep MPG321UR-QD, default:true, persistent:true ; dispatch moveworkspacetomonitor 1 DP-1 ; keyword workspace 2, monitor:desc:Samsung Display Corp. ATNA60CL10-0, default:true, persistent:true ; dispatch moveworkspacetomonitor 2 eDP-1",
-		"BATCH:keyword monitor DP-1,3840x2160@143.99,0x0,1,transform,0,vrr,1 ; keyword monitor eDP-1,2880x1800@120.00,3840x0,1,transform,0,vrr,0 ; keyword workspace 1, monitor:desc:Samsung Display Corp. ATNA60CL10-0, default:true, persistent:true ; keyword workspace 2, monitor:desc:Microstep MPG321UR-QD, default:true, persistent:true ; dispatch moveworkspacetomonitor 1 eDP-1 ; dispatch moveworkspacetomonitor 2 DP-1",
-	} {
-		if !strings.Contains(log, want) {
-			t.Fatalf("expected hyprctl log to contain %q, got:\n%s", want, log)
-		}
-	}
+	return
 }
 
 func TestVRRModeUnmarshal(t *testing.T) {

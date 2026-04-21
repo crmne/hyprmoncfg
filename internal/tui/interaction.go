@@ -49,6 +49,13 @@ type numericInputState struct {
 	Input       textinput.Model
 }
 
+type profileExecInputState struct {
+	ProfileIndex int
+	Title        string
+	Hint         string
+	Input        textinput.Model
+}
+
 type profileListItem struct {
 	name    string
 	updated time.Time
@@ -195,12 +202,23 @@ func (m Model) renderModalScreen(overlay string) string {
 
 	width := m.terminalWidth()
 	height := m.terminalHeight()
+	toast := m.renderToast()
+	toastHeight := 0
+	if toast != "" {
+		toastHeight = lipgloss.Height(toast) + 1
+	}
 
 	title := m.renderTitleBar()
 	tabs := m.renderTabs()
-	bodyHeight := max(12, height-lipgloss.Height(title)-lipgloss.Height(tabs)-2)
+	bodyHeight := max(12, height-lipgloss.Height(title)-lipgloss.Height(tabs)-2-toastHeight)
 	centered := lipgloss.Place(width-2, bodyHeight, lipgloss.Center, lipgloss.Center, overlay)
 	body := m.styles.modalBackdrop.Width(width).Height(bodyHeight).Render(centered)
+	if toast != "" {
+		body = strings.Join([]string{
+			body,
+			lipgloss.PlaceHorizontal(max(1, width-2), lipgloss.Center, toast),
+		}, "\n")
+	}
 	return strings.Join([]string{title, tabs, body}, "\n")
 }
 
@@ -470,6 +488,54 @@ func (m Model) renderNumericInput() string {
 	return m.renderModalFrame(m.input.Title, body)
 }
 
+func (m *Model) openProfileExecInput() tea.Cmd {
+	if len(m.profiles) == 0 || m.selectedProfile < 0 || m.selectedProfile >= len(m.profiles) {
+		return nil
+	}
+
+	selected := m.profiles[m.selectedProfile]
+	input := textinput.New()
+	input.Prompt = ""
+	input.CharLimit = 512
+	input.Width = clampInt(m.modalMaxWidth()-16, 24, 72)
+	input.TextStyle = m.styles.value
+	input.PlaceholderStyle = m.styles.subtle
+	input.Cursor.Style = lipgloss.NewStyle()
+	input.Placeholder = "/path/to/script.sh"
+	input.SetValue(selected.Exec)
+	cmd := input.Focus()
+
+	m.execInput = &profileExecInputState{
+		ProfileIndex: m.selectedProfile,
+		Title:        fmt.Sprintf("Edit Exec for %s", selected.Name),
+		Hint:         "Set the optional command to run after this profile is applied. Enter updates the profile in memory. Esc cancels.",
+		Input:        input,
+	}
+	m.mode = modeProfileExecInput
+	return cmd
+}
+
+func (m Model) renderProfileExecInput() string {
+	if m.execInput == nil {
+		return ""
+	}
+
+	inputBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(m.styles.palette.paneActiveBorder)).
+		Padding(0, 1).
+		Render(m.execInput.Input.View())
+	body := []string{
+		m.styles.subtle.MaxWidth(max(20, m.modalMaxWidth()-6)).Render(m.execInput.Hint),
+		"",
+		m.styles.label.Render("Exec"),
+		inputBox,
+		"",
+		m.styles.help.MaxWidth(max(20, m.modalMaxWidth()-6)).Render("Enter confirms the edit. Esc discards it. Press s on the Profiles tab to save the profile."),
+	}
+	return m.renderModalFrame(m.execInput.Title, body)
+}
+
 func (m *Model) openSaveDialog() (tea.Model, tea.Cmd) {
 	input := textinput.New()
 	input.Prompt = ""
@@ -689,6 +755,52 @@ func (m Model) updateSaveConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
+}
+
+func (m *Model) updateProfileExecInputKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.execInput == nil {
+		m.mode = modeMain
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc", "q":
+		m.execInput = nil
+		m.mode = modeMain
+		return m, nil
+	case "enter":
+		return m, m.commitProfileExecInput()
+	}
+
+	var cmd tea.Cmd
+	m.execInput.Input, cmd = m.execInput.Input.Update(msg)
+	return m, cmd
+}
+
+func (m *Model) commitProfileExecInput() tea.Cmd {
+	if m.execInput == nil {
+		m.mode = modeMain
+		return nil
+	}
+	if m.execInput.ProfileIndex < 0 || m.execInput.ProfileIndex >= len(m.profiles) {
+		m.execInput = nil
+		m.mode = modeMain
+		return nil
+	}
+
+	selected := &m.profiles[m.execInput.ProfileIndex]
+	selected.Exec = strings.TrimSpace(m.execInput.Input.Value())
+	if strings.EqualFold(strings.TrimSpace(m.draftProfileName), strings.TrimSpace(selected.Name)) {
+		m.draftExec = selected.Exec
+	}
+	if selected.Exec == "" {
+		m.setStatusOK(fmt.Sprintf("Cleared exec for %q. Press s to save.", selected.Name))
+	} else {
+		m.setStatusOK(fmt.Sprintf("Updated exec for %q. Press s to save.", selected.Name))
+	}
+	m.execInput = nil
+	m.mode = modeMain
+	return nil
 }
 
 func (m *Model) updateModePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -923,7 +1035,7 @@ func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.updateSaveMouse(msg)
 	case modeModePicker:
 		return m.updateModePickerMouse(msg)
-	case modeNumericInput, modeSaveConfirm, modeConfirm:
+	case modeNumericInput, modeProfileExecInput, modeSaveConfirm, modeConfirm:
 		return m, nil
 	}
 

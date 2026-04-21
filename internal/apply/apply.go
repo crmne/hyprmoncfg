@@ -4,18 +4,28 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os/exec"
 	"strconv"
 	"strings"
 
+	"github.com/buildkite/shellwords"
 	"github.com/crmne/hyprmoncfg/internal/config"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/profile"
+)
+
+type applyMode int
+
+const (
+	ApplyModeInteractive applyMode = iota
+	ApplyModeNonInteractive
 )
 
 type Engine struct {
 	Client             *hypr.Client
 	MonitorsConfPath   string
 	HyprlandConfigPath string
+	Logf               func(format string, args ...any)
 }
 
 type RevertState struct {
@@ -119,7 +129,12 @@ func SnapshotCommands(monitors []hypr.Monitor) []string {
 	return commands
 }
 
-func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Monitor) (RevertState, error) {
+func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Monitor, modearg ...applyMode) (RevertState, error) {
+	mode := ApplyModeNonInteractive
+	if len(modearg) > 0 {
+		mode = modearg[0]
+	}
+
 	if e.Client == nil {
 		return RevertState{}, fmt.Errorf("nil hypr client")
 	}
@@ -191,7 +206,43 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		return RevertState{}, err
 	}
 
+	if mode == ApplyModeNonInteractive {
+		if err = e.PostApply(ctx, p); err != nil {
+			if e.Logf != nil {
+				e.Logf("post apply: %v", err)
+			}
+		}
+	}
+
 	return revertState, nil
+}
+
+func (e Engine) PostApply(ctx context.Context, target profile.Profile) error {
+	postApplyCommand := strings.TrimSpace(target.Exec)
+
+	if postApplyCommand == "" {
+		return nil
+	}
+
+	parts, err := shellwords.Split(postApplyCommand)
+	if err != nil {
+		return fmt.Errorf("split shellwords: %w", err)
+	}
+
+	var args []string
+	command := parts[0]
+
+	if len(parts) > 1 {
+		args = parts[1:]
+	}
+
+	cmd := exec.CommandContext(ctx, command, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to exec script: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	return nil
 }
 
 func (e Engine) Revert(ctx context.Context, state RevertState) error {
