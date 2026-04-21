@@ -556,6 +556,46 @@ func TestModePickerMouseSelectsVisibleMode(t *testing.T) {
 	}
 }
 
+func TestModePickerRendersOptionsWithoutBlankRows(t *testing.T) {
+	m := Model{
+		styles:         newStyles(),
+		width:          120,
+		height:         28,
+		tab:            tabLayout,
+		layoutFocus:    layoutFocusInspector,
+		inspectorField: 1,
+		editOutputs: []editableOutput{{
+			Name:      "DP-1",
+			Enabled:   true,
+			Modes:     []string{"3840x2160@143.99Hz", "2560x1440@143.97Hz"},
+			ModeIndex: 0,
+			Scale:     1,
+		}},
+	}
+
+	m.activateInspectorField()
+	if m.picker == nil {
+		t.Fatal("expected mode picker to be active")
+	}
+
+	lines := strings.Split(ansi.Strip(m.picker.List.View()), "\n")
+	first, second := -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "3840x2160@143.99Hz") {
+			first = i
+		}
+		if strings.Contains(line, "2560x1440@143.97Hz") {
+			second = i
+		}
+	}
+	if first < 0 || second < 0 {
+		t.Fatalf("expected both mode options in picker view, got:\n%s", strings.Join(lines, "\n"))
+	}
+	if second != first+1 {
+		t.Fatalf("expected mode options on adjacent rows, got rows %d and %d:\n%s", first, second, strings.Join(lines, "\n"))
+	}
+}
+
 func TestCanvasLayoutPreservesWideMonitorAspect(t *testing.T) {
 	m := Model{
 		editOutputs: []editableOutput{

@@ -258,6 +258,7 @@ func (m *Model) activateInspectorField() tea.Cmd {
 			items = append(items, pickerItem(mode))
 		}
 		inner := list.NewDefaultDelegate()
+		inner.ShowDescription = false
 		inner.SetHeight(1)
 		inner.SetSpacing(0)
 		inner.Styles.NormalTitle = m.styles.value
@@ -386,6 +387,7 @@ func (m *Model) openFieldPicker(title string, fieldIndex int, options []string) 
 		}
 	}
 	inner := list.NewDefaultDelegate()
+	inner.ShowDescription = false
 	inner.SetHeight(1)
 	inner.SetSpacing(0)
 	inner.Styles.NormalTitle = m.styles.value
