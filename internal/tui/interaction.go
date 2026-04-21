@@ -53,7 +53,6 @@ type numericInputState struct {
 type profileExecInputState struct {
 	ProfileIndex int
 	Title        string
-	Hint         string
 	Input        textinput.Model
 	Err          error
 }
@@ -512,7 +511,6 @@ func (m *Model) openProfileExecInput() tea.Cmd {
 	m.execInput = &profileExecInputState{
 		ProfileIndex: m.selectedProfile,
 		Title:        fmt.Sprintf("Edit Exec for %s", selected.Name),
-		Hint:         "Set the optional command to run after this profile is applied. Enter validates and saves. Esc cancels.",
 		Input:        input,
 	}
 	m.mode = modeProfileExecInput
@@ -529,12 +527,7 @@ func (m Model) renderProfileExecInput() string {
 		BorderForeground(lipgloss.Color(m.styles.palette.paneActiveBorder)).
 		Padding(0, 1).
 		Render(m.execInput.Input.View())
-	body := []string{
-		m.styles.subtle.MaxWidth(max(20, m.modalMaxWidth()-6)).Render(m.execInput.Hint),
-		"",
-		m.styles.label.Render("Exec"),
-		inputBox,
-	}
+	body := []string{m.styles.label.Render("Exec"), inputBox}
 	if m.execInput.Err != nil {
 		body = append(body, "", m.styles.statusError.MaxWidth(max(20, m.modalMaxWidth()-6)).Render(m.execInput.Err.Error()))
 	}
