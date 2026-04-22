@@ -16,6 +16,7 @@ type Config struct {
 	Debounce        time.Duration
 	PollInterval    time.Duration
 	LidPollInterval time.Duration
+	EventRetry      time.Duration
 	ForcedProfile   string
 	MonitorsConf    string
 	HyprConfig      string
@@ -41,6 +42,9 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 	}
 	if cfg.LidPollInterval <= 0 {
 		cfg.LidPollInterval = lid.DefaultPollInterval
+	}
+	if cfg.EventRetry <= 0 {
+		cfg.EventRetry = 5 * time.Second
 	}
 	if cfg.Logf == nil {
 		cfg.Logf = func(string, ...any) {}
@@ -88,11 +92,12 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	events, eventErrs := s.client.SubscribeMonitorEvents(ctx)
-	go func() {
-		for ev := range events {
-			pushTrigger(string(ev.Type) + ":" + ev.Value)
+	var eventRetry <-chan time.Time
+	scheduleEventRetry := func() {
+		if eventRetry == nil {
+			eventRetry = time.After(s.cfg.EventRetry)
 		}
-	}()
+	}
 
 	pollTicker := time.NewTicker(s.cfg.PollInterval)
 	defer pollTicker.Stop()
@@ -111,11 +116,27 @@ func (s *Service) Run(ctx context.Context) error {
 		case err, ok := <-eventErrs:
 			if !ok {
 				eventErrs = nil
+				if events == nil {
+					scheduleEventRetry()
+				}
 				continue
 			}
 			if err != nil {
-				s.cfg.Logf("socket2 disabled: %v", err)
-				eventErrs = nil
+				s.cfg.Logf("socket2 unavailable: %v; retrying in %s", err, s.cfg.EventRetry)
+			}
+		case ev, ok := <-events:
+			if !ok {
+				events = nil
+				if eventErrs == nil {
+					scheduleEventRetry()
+				}
+				continue
+			}
+			pushTrigger(string(ev.Type) + ":" + ev.Value)
+		case <-eventRetry:
+			eventRetry = nil
+			if events == nil && eventErrs == nil {
+				events, eventErrs = s.client.SubscribeMonitorEvents(ctx)
 			}
 		case state, ok := <-lidStates:
 			if !ok {
