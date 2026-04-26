@@ -5,10 +5,7 @@
   --vp-c-brand-soft: rgba(15, 118, 110, 0.14);
   --vp-home-hero-name-color: transparent;
   --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #0f766e 18%, #0ea5e9 88%);
-  --vp-home-hero-image-background-image:
-    radial-gradient(circle at 34% 32%, rgba(15, 118, 110, 0.58), transparent 36%),
-    radial-gradient(circle at 68% 64%, rgba(14, 165, 233, 0.48), transparent 38%);
-  --vp-home-hero-image-filter: blur(60px);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #0f766e 48%, #0ea5e9 52%);
 }
 
 .dark {
@@ -18,10 +15,7 @@
   --vp-c-brand-soft: rgba(20, 184, 166, 0.16);
   --vp-home-hero-name-color: transparent;
   --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #2dd4bf 20%, #60a5fa 88%);
-  --vp-home-hero-image-background-image:
-    radial-gradient(circle at 34% 32%, rgba(20, 184, 166, 0.42), transparent 38%),
-    radial-gradient(circle at 68% 64%, rgba(59, 130, 246, 0.34), transparent 40%);
-  --vp-home-hero-image-filter: blur(64px);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #14b8a6 48%, #3b82f6 52%);
 }
 
 .VPHero .image-src,
