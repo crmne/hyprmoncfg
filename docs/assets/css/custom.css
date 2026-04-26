@@ -1,23 +1,27 @@
 :root {
   --vp-c-brand-1: #0f766e;
-  --vp-c-brand-2: #14b8a6;
+  --vp-c-brand-2: #0891b2;
   --vp-c-brand-3: #115e59;
-  --vp-c-brand-soft: rgba(20, 184, 166, 0.15);
-  --vp-home-hero-name-color: #0f766e;
+  --vp-c-brand-soft: rgba(15, 118, 110, 0.14);
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #0f766e 18%, #0ea5e9 88%);
   --vp-home-hero-image-background-image:
-    radial-gradient(circle at 35% 30%, rgba(20, 184, 166, 0.28), transparent 34%),
-    radial-gradient(circle at 68% 62%, rgba(59, 130, 246, 0.18), transparent 36%);
+    radial-gradient(circle at 34% 32%, rgba(15, 118, 110, 0.58), transparent 36%),
+    radial-gradient(circle at 68% 64%, rgba(14, 165, 233, 0.48), transparent 38%);
+  --vp-home-hero-image-filter: blur(60px);
 }
 
 .dark {
-  --vp-c-brand-1: #5eead4;
-  --vp-c-brand-2: #99f6e4;
-  --vp-c-brand-3: #2dd4bf;
-  --vp-c-brand-soft: rgba(45, 212, 191, 0.18);
-  --vp-home-hero-name-color: #99f6e4;
+  --vp-c-brand-1: #2dd4bf;
+  --vp-c-brand-2: #38bdf8;
+  --vp-c-brand-3: #14b8a6;
+  --vp-c-brand-soft: rgba(20, 184, 166, 0.16);
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #2dd4bf 20%, #60a5fa 88%);
   --vp-home-hero-image-background-image:
-    radial-gradient(circle at 35% 30%, rgba(45, 212, 191, 0.26), transparent 34%),
-    radial-gradient(circle at 68% 62%, rgba(96, 165, 250, 0.16), transparent 36%);
+    radial-gradient(circle at 34% 32%, rgba(20, 184, 166, 0.42), transparent 38%),
+    radial-gradient(circle at 68% 64%, rgba(59, 130, 246, 0.34), transparent 40%);
+  --vp-home-hero-image-filter: blur(64px);
 }
 
 .VPHero .image-src,
