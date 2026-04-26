@@ -67,6 +67,10 @@ jekyll_vitepress:
     repository: crmne/hyprmoncfg
     text: Star
     show_count: true
+  github_sponsor:
+    enabled: true
+    user: crmne
+    text: Sponsor
 
 plugins:
   - jekyll-vitepress-theme
