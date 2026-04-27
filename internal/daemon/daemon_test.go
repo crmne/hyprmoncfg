@@ -8,7 +8,7 @@ import (
 
 func TestInternalOnlyFallbackProfileEnablesInternalWhenAllOutputsDisabled(t *testing.T) {
 	monitors := []hypr.Monitor{
-		{Name: "eDP-1", Make: "Framework", Model: "Panel", Serial: "A1", Disabled: true},
+		{Name: "eDP-1", Make: "Framework", Model: "Panel", Serial: "A1", Width: 2880, Height: 1800, RefreshRate: 120, X: 3840, Scale: 1.5, Disabled: true},
 	}
 
 	got, ok := internalOnlyFallbackProfile(monitors)
@@ -23,10 +23,10 @@ func TestInternalOnlyFallbackProfileEnablesInternalWhenAllOutputsDisabled(t *tes
 	if !output.Enabled {
 		t.Fatal("expected internal output to be enabled")
 	}
-	if output.Mode != "preferred" || output.Width != 0 || output.Height != 0 || output.Refresh != 0 {
+	if output.Mode != "2880x1800@120.00Hz" || output.Width != 2880 || output.Height != 1800 || output.Refresh != 120 {
 		t.Fatalf("unexpected fallback mode: %+v", output)
 	}
-	if output.X != 0 || output.Y != 0 || output.Scale != 1 || output.MirrorOf != "" {
+	if output.X != 0 || output.Y != 0 || output.Scale != 1.5 || output.MirrorOf != "" {
 		t.Fatalf("unexpected fallback placement: %+v", output)
 	}
 	if got.Workspaces.Enabled {

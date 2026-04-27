@@ -301,13 +301,11 @@ func internalOnlyFallbackProfile(monitors []hypr.Monitor) (profile.Profile, bool
 		if fallback.Outputs[idx].Key != internalKey {
 			continue
 		}
-		fallback.Outputs[idx].Mode = "preferred"
-		fallback.Outputs[idx].Width = 0
-		fallback.Outputs[idx].Height = 0
-		fallback.Outputs[idx].Refresh = 0
 		fallback.Outputs[idx].X = 0
 		fallback.Outputs[idx].Y = 0
-		fallback.Outputs[idx].Scale = 1
+		if fallback.Outputs[idx].Scale <= 0 {
+			fallback.Outputs[idx].Scale = 1
+		}
 	}
 	fallback.Workspaces = profile.WorkspaceSettings{}
 	fallback.Normalize()
