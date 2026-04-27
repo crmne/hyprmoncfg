@@ -212,15 +212,22 @@ func (s *Service) applyBest(ctx context.Context) error {
 		}
 		best, score, ok := profile.BestMatch(profiles, monitors)
 		if !ok {
-			s.cfg.Logf("no matching profile for monitor set %s", hash)
-			return nil
-		}
-		if s.lidState.Known() {
-			s.cfg.Logf("best profile %q score=%d lid=%s", best.Name, score, s.lidState)
+			fallback, fallbackOK := internalOnlyFallbackProfile(monitors)
+			if fallbackOK {
+				s.cfg.Logf("no matching profile for monitor set %s; enabling internal output", hash)
+				target = fallback
+			} else {
+				s.cfg.Logf("no matching profile for monitor set %s", hash)
+				return nil
+			}
 		} else {
-			s.cfg.Logf("best profile %q score=%d", best.Name, score)
+			if s.lidState.Known() {
+				s.cfg.Logf("best profile %q score=%d lid=%s", best.Name, score, s.lidState)
+			} else {
+				s.cfg.Logf("best profile %q score=%d", best.Name, score)
+			}
+			target = best
 		}
-		target = best
 	}
 
 	effective := target
@@ -266,4 +273,41 @@ func (s *Service) applyBest(ctx context.Context) error {
 	s.lastSeenHash = appliedHash
 	s.cfg.Logf("applied profile: %s", target.Name)
 	return nil
+}
+
+func internalOnlyFallbackProfile(monitors []hypr.Monitor) (profile.Profile, bool) {
+	if len(monitors) == 0 {
+		return profile.Profile{}, false
+	}
+
+	internalIndex := -1
+	for idx, monitor := range monitors {
+		if !monitor.Disabled {
+			return profile.Profile{}, false
+		}
+		if internalIndex < 0 && monitor.IsInternal() {
+			internalIndex = idx
+		}
+	}
+	if internalIndex < 0 {
+		return profile.Profile{}, false
+	}
+
+	fallback := profile.FromMonitors("internal-fallback", monitors)
+	internalKey := hypr.MonitorOutputKey(monitors[internalIndex], hypr.MonitorMatchCounts(monitors))
+	for idx := range fallback.Outputs {
+		fallback.Outputs[idx].Enabled = fallback.Outputs[idx].Key == internalKey
+		fallback.Outputs[idx].MirrorOf = ""
+		if fallback.Outputs[idx].Key != internalKey {
+			continue
+		}
+		fallback.Outputs[idx].X = 0
+		fallback.Outputs[idx].Y = 0
+		if fallback.Outputs[idx].Scale <= 0 {
+			fallback.Outputs[idx].Scale = 1
+		}
+	}
+	fallback.Workspaces = profile.WorkspaceSettings{}
+	fallback.Normalize()
+	return fallback, true
 }
