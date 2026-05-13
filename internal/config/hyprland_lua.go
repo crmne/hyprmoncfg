@@ -27,7 +27,21 @@ func VerifyLuaIncludeChain(rootConfigPath string, targetPath string) error {
 		return nil
 	}
 
-	return fmt.Errorf("%s is not included by %s; add `require(%q)` to your Hyprland Lua config or pass a different --monitors-conf target", targetPath, rootConfigPath, strings.TrimSuffix(targetPath, filepath.Ext(targetPath)))
+	return fmt.Errorf("%s is not included by %s; add `%s` to your Hyprland Lua config or pass a different --monitors-conf target", targetPath, rootConfigPath, luaIncludeSuggestion(rootConfigPath, targetPath))
+}
+
+func luaIncludeSuggestion(rootConfigPath string, targetPath string) string {
+	rootDir := filepath.Dir(rootConfigPath)
+	targetDir := filepath.Dir(targetPath)
+	moduleName := strings.TrimSuffix(filepath.Base(targetPath), filepath.Ext(targetPath))
+	if targetDir == rootDir {
+		return "require(" + quoteLuaArg(moduleName) + ")"
+	}
+	return "dofile(" + quoteLuaArg(targetPath) + ")"
+}
+
+func quoteLuaArg(value string) string {
+	return fmt.Sprintf("%q", value)
 }
 
 func isLuaPathIncluded(rootConfigPath string, targetPath string, visited map[string]bool) (bool, error) {
@@ -133,10 +147,9 @@ func parseLuaLiteralCall(line string, name string) []string {
 			continue
 		}
 		line = strings.TrimLeft(line, " \t")
-		if !strings.HasPrefix(line, "(") {
-			continue
+		if strings.HasPrefix(line, "(") {
+			line = strings.TrimLeft(line[1:], " \t")
 		}
-		line = strings.TrimLeft(line[1:], " \t")
 		if line == "" || (line[0] != '\'' && line[0] != '"') {
 			continue
 		}

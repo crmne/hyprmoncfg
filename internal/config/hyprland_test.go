@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -169,6 +170,40 @@ func TestVerifyLuaSourceChainFindsLiteralRequire(t *testing.T) {
 	}
 }
 
+func TestVerifyLuaSourceChainFindsStringCallRequire(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(root, "monitors.lua")
+
+	if err := os.WriteFile(rootConfig, []byte("require \"monitors\"\n"), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected string-call lua require to verify, got %v", err)
+	}
+}
+
+func TestVerifyLuaSourceChainFindsStringCallDofile(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(root, "monitors.lua")
+
+	if err := os.WriteFile(rootConfig, []byte("dofile 'monitors.lua'\n"), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected string-call lua dofile to verify, got %v", err)
+	}
+}
+
 func TestVerifyLuaSourceChainFindsPackagePathStyleRequire(t *testing.T) {
 	root := t.TempDir()
 	configHome := filepath.Join(root, ".config")
@@ -206,5 +241,30 @@ func TestVerifyLuaSourceChainRejectsUnsourcedTarget(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not included") {
 		t.Fatalf("expected unsourced error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), `require("monitors")`) {
+		t.Fatalf("expected co-located target suggestion, got %v", err)
+	}
+}
+
+func TestVerifyLuaSourceChainSuggestsAbsoluteDofileForCustomTarget(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(root, "generated", "monitors.lua")
+
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	if err := os.WriteFile(rootConfig, []byte("-- no include\n"), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+
+	err := VerifyIncludeChain(HyprConfigLua, rootConfig, target)
+	if err == nil {
+		t.Fatal("expected verify to fail for unsourced lua target")
+	}
+	want := "dofile(" + strconv.Quote(target) + ")"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected absolute dofile suggestion %s, got %v", want, err)
 	}
 }
