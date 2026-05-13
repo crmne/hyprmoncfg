@@ -152,13 +152,16 @@ func TestResolveHyprlandConfigExplicitExtensionForcesFormat(t *testing.T) {
 	}
 }
 
-func TestVerifyLuaSourceChainFindsLiteralDofile(t *testing.T) {
+func TestVerifyLuaSourceChainFindsLiteralRequire(t *testing.T) {
 	root := t.TempDir()
 	rootConfig := filepath.Join(root, "hyprland.lua")
 	target := filepath.Join(root, "monitors.lua")
 
-	if err := os.WriteFile(rootConfig, []byte("dofile('./monitors.lua')\n"), 0o644); err != nil {
+	if err := os.WriteFile(rootConfig, []byte("require('monitors')\n"), 0o644); err != nil {
 		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
 	}
 
 	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
