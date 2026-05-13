@@ -43,8 +43,8 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 	root.PersistentFlags().StringVar(&configDir, "config-dir", "", "Config directory (default: ~/.config/hyprmoncfg)")
-	root.PersistentFlags().StringVar(&monitorsConf, "monitors-conf", "", "Hyprland monitor config target to write and reload (default: ~/.config/hypr/monitors.conf)")
-	root.PersistentFlags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config to verify source directives against (default: ~/.config/hypr/hyprland.conf)")
+	root.PersistentFlags().StringVar(&monitorsConf, "monitors-conf", "", "Generated monitor config target to write and reload (default: monitors.conf, or monitors.lua when hyprland.lua is active)")
+	root.PersistentFlags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config for include verification (default: hyprland.conf, or hyprland.lua when active)")
 
 	root.AddCommand(newTUICmd(&configDir, &monitorsConf, &hyprConfig))
 	root.AddCommand(newMonitorsCmd(&configDir))

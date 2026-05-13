@@ -88,8 +88,8 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&poll, "poll-interval", 5*time.Second, "Polling interval for monitor changes")
 	cmd.Flags().DurationVar(&lidPoll, "lid-poll-interval", lid.DefaultPollInterval, "Polling interval for lid-state fallback checks")
 	cmd.Flags().StringVar(&forceProfile, "profile", "", "Force this profile instead of auto-matching")
-	cmd.Flags().StringVar(&monitorsConf, "monitors-conf", "", "Hyprland monitor config target to write and reload (default: ~/.config/hypr/monitors.conf)")
-	cmd.Flags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config to verify source directives against (default: ~/.config/hypr/hyprland.conf)")
+	cmd.Flags().StringVar(&monitorsConf, "monitors-conf", "", "Generated monitor config target to write and reload (default: monitors.conf, or monitors.lua when hyprland.lua is active)")
+	cmd.Flags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config for include verification (default: hyprland.conf, or hyprland.lua when active)")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "Suppress logs")
 	cmd.AddCommand(newVersionCmd("hyprmoncfgd"))
 
