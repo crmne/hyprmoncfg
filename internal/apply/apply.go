@@ -150,23 +150,23 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		return RevertState{}, err
 	}
 
+	version, err := e.Client.Version(ctx)
+	if err != nil {
+		return RevertState{}, err
+	}
 	supportsV2, err := e.Client.SupportsMonitorV2(ctx)
 	if err != nil {
 		return RevertState{}, err
 	}
 
-	monitorsConfPath, err := config.ResolveMonitorsConfPath(e.MonitorsConfPath)
+	resolvedConfig, err := config.ResolveHyprlandConfig(firstNonEmpty(version.Version, version.Tag), e.MonitorsConfPath, e.HyprlandConfigPath)
 	if err != nil {
 		return RevertState{}, err
 	}
-	hyprlandConfigPath, err := config.ResolveHyprlandConfigPath(e.HyprlandConfigPath)
-	if err != nil {
+	if err := config.VerifyIncludeChain(resolvedConfig.Format, resolvedConfig.RootPath, resolvedConfig.MonitorsPath); err != nil {
 		return RevertState{}, err
 	}
-	if err := config.VerifySourceChain(hyprlandConfigPath, monitorsConfPath); err != nil {
-		return RevertState{}, err
-	}
-	backup, err := config.SnapshotFile(monitorsConfPath)
+	backup, err := config.SnapshotFile(resolvedConfig.MonitorsPath)
 	if err != nil {
 		return RevertState{}, err
 	}
@@ -183,11 +183,11 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		Commands:     SnapshotState(monitors, currentRules, currentWorkspaces),
 	}
 
-	rendered, err := RenderHyprlandConfig(p, monitors, supportsV2)
+	rendered, err := RenderConfig(p, monitors, RenderOptions{Format: resolvedConfig.Format, UseMonitorV2: supportsV2})
 	if err != nil {
 		return RevertState{}, err
 	}
-	if err := config.WriteFileAtomic(monitorsConfPath, []byte(rendered), 0o644); err != nil {
+	if err := config.WriteFileAtomic(resolvedConfig.MonitorsPath, []byte(rendered), 0o644); err != nil {
 		return RevertState{}, err
 	}
 	if err := e.Client.Reload(ctx); err != nil {
@@ -451,6 +451,15 @@ func shellEscape(value string) string {
 		return value
 	}
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (e Engine) applyLiveCommands(ctx context.Context, commands []string) error {

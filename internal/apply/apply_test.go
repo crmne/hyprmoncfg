@@ -727,6 +727,92 @@ func TestEngineApplyPostApplyFailureWithNilLogger(t *testing.T) {
 	}
 }
 
+func TestEngineApplyWritesLuaMonitorConfigWhenHyprlandLuaIsActive(t *testing.T) {
+	dir := t.TempDir()
+	xdg := filepath.Join(dir, "xdg")
+	hyprDir := filepath.Join(xdg, "hypr")
+	if err := os.MkdirAll(hyprDir, 0o755); err != nil {
+		t.Fatalf("mkdir hypr dir: %v", err)
+	}
+	hyprlandLuaPath := filepath.Join(hyprDir, "hyprland.lua")
+	monitorsLuaPath := filepath.Join(hyprDir, "monitors.lua")
+	if err := os.WriteFile(hyprlandLuaPath, []byte("require('monitors')\n"), 0o644); err != nil {
+		t.Fatalf("write hyprland.lua: %v", err)
+	}
+	if err := os.WriteFile(monitorsLuaPath, []byte("-- initial\n"), 0o644); err != nil {
+		t.Fatalf("write monitors.lua: %v", err)
+	}
+
+	hyprctlPath := filepath.Join(dir, "hyprctl")
+	hyprctlScript := `#!/usr/bin/env bash
+set -eu
+if [ "${1-}" = "--instance" ]; then
+  shift 2
+fi
+cmd1="${1-}"
+cmd2="${2-}"
+cmd3="${3-}"
+
+if [ "$cmd1" = "-j" ] && [ "$cmd2" = "version" ]; then
+  printf '{"version":"0.55.0"}'
+  exit 0
+fi
+
+if [ "$cmd1" = "-j" ] && [ "$cmd2" = "monitors" ] && [ "$cmd3" = "all" ]; then
+  printf '%s' '[{"id":1,"name":"DP-1","description":"Microstep MPG321UR-QD","make":"Microstep","model":"MPG321UR-QD","serial":"A1","width":3840,"height":2160,"refreshRate":143.99,"x":0,"y":0,"scale":1,"transform":0,"focused":true,"dpmsStatus":true,"vrr":true,"disabled":false,"mirrorOf":"","activeWorkspace":{"id":1,"name":"1"}},{"id":2,"name":"eDP-1","description":"Samsung Display Corp. ATNA60CL10-0","make":"Samsung Display Corp.","model":"ATNA60CL10-0","serial":"B2","width":2880,"height":1800,"refreshRate":120,"x":3840,"y":0,"scale":1,"transform":0,"focused":false,"dpmsStatus":true,"vrr":false,"disabled":false,"mirrorOf":"","activeWorkspace":{"id":2,"name":"2"}}]'
+  exit 0
+fi
+
+if [ "$cmd1" = "-j" ] && [ "$cmd2" = "workspacerules" ]; then
+  printf '[]'
+  exit 0
+fi
+
+if [ "$cmd1" = "-j" ] && [ "$cmd2" = "workspaces" ]; then
+  printf '[]'
+  exit 0
+fi
+
+if [ "$cmd1" = "reload" ]; then
+  exit 0
+fi
+
+if [ "$cmd1" = "--batch" ]; then
+  exit 0
+fi
+
+echo "unexpected args: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(hyprctlPath, []byte(hyprctlScript), 0o755); err != nil {
+		t.Fatalf("write fake hyprctl: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("HYPRLAND_INSTANCE_SIGNATURE", "sig-test")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	client, err := hypr.NewClient()
+	if err != nil {
+		t.Fatalf("new hypr client: %v", err)
+	}
+	engine := Engine{Client: client}
+	if _, err := engine.Apply(context.Background(), newTestProfile(), monitors, ApplyModeNonInteractive); err != nil {
+		t.Fatalf("apply lua config: %v", err)
+	}
+
+	rendered, err := os.ReadFile(monitorsLuaPath)
+	if err != nil {
+		t.Fatalf("read monitors.lua: %v", err)
+	}
+	if !strings.Contains(string(rendered), "hl.monitorv2") {
+		t.Fatalf("expected monitors.lua to contain lua monitor config, got:\n%s", rendered)
+	}
+	if _, err := os.Stat(filepath.Join(hyprDir, "monitors.conf")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected monitors.conf not to be written, stat error: %v", err)
+	}
+}
+
 func initTestEngine(t *testing.T) (engine *Engine, logPath string, err error) {
 	dir := t.TempDir()
 	logPath = filepath.Join(dir, "hyprctl.log")
