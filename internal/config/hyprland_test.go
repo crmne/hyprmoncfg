@@ -169,6 +169,28 @@ func TestVerifyLuaSourceChainFindsLiteralRequire(t *testing.T) {
 	}
 }
 
+func TestVerifyLuaSourceChainFindsPackagePathStyleRequire(t *testing.T) {
+	root := t.TempDir()
+	configHome := filepath.Join(root, ".config")
+	hypr := filepath.Join(configHome, "hypr")
+	if err := os.MkdirAll(hypr, 0o755); err != nil {
+		t.Fatalf("mkdir hypr dir: %v", err)
+	}
+	rootConfig := filepath.Join(hypr, "hyprland.lua")
+	target := filepath.Join(hypr, "monitors.lua")
+
+	if err := os.WriteFile(rootConfig, []byte("require('hypr.monitors')\n"), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected package-path style lua include to verify, got %v", err)
+	}
+}
+
 func TestVerifyLuaSourceChainRejectsUnsourcedTarget(t *testing.T) {
 	root := t.TempDir()
 	rootConfig := filepath.Join(root, "hyprland.lua")

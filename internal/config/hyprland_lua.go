@@ -50,39 +50,55 @@ func isLuaPathIncluded(rootConfigPath string, targetPath string, visited map[str
 	}
 
 	for _, includeValue := range parseLuaIncludeCalls(string(content)) {
-		includePath, err := resolveLuaIncludePath(includeValue, filepath.Dir(rootConfigPath))
+		includePaths, err := resolveLuaIncludePaths(includeValue, filepath.Dir(rootConfigPath))
 		if err != nil {
 			return false, err
 		}
-		if includePath == targetPath {
-			return true, nil
-		}
-		info, err := os.Stat(includePath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+		for _, includePath := range includePaths {
+			if includePath == targetPath {
+				return true, nil
+			}
+			info, err := os.Stat(includePath)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+				return false, err
+			}
+			if info.IsDir() {
 				continue
 			}
-			return false, err
-		}
-		if info.IsDir() {
-			continue
-		}
-		ok, err := isLuaPathIncluded(includePath, targetPath, visited)
-		if err != nil {
-			return false, err
-		}
-		if ok {
-			return true, nil
+			ok, err := isLuaPathIncluded(includePath, targetPath, visited)
+			if err != nil {
+				return false, err
+			}
+			if ok {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
 }
 
-func resolveLuaIncludePath(value string, baseDir string) (string, error) {
+func resolveLuaIncludePaths(value string, baseDir string) ([]string, error) {
 	if strings.HasSuffix(value, ".lua") || strings.Contains(value, "/") {
-		return resolvePath(value, baseDir)
+		resolved, err := resolvePath(value, baseDir)
+		if err != nil {
+			return nil, err
+		}
+		return []string{resolved}, nil
 	}
-	return resolvePath(strings.ReplaceAll(value, ".", string(os.PathSeparator))+".lua", baseDir)
+
+	modulePath := strings.ReplaceAll(value, ".", string(os.PathSeparator)) + ".lua"
+	candidates := []string{filepath.Join(baseDir, modulePath)}
+	parent := filepath.Dir(baseDir)
+	if parent != baseDir {
+		candidates = append(candidates, filepath.Join(parent, modulePath))
+	}
+	for i := range candidates {
+		candidates[i] = filepath.Clean(candidates[i])
+	}
+	return candidates, nil
 }
 
 func parseLuaIncludeCalls(content string) []string {
