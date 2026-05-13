@@ -26,8 +26,8 @@ Running `hyprmoncfg` with no arguments opens the TUI.
 | Flag | Description |
 |------|-------------|
 | `--config-dir <path>` | Override the profile storage directory (default: `~/.config/hyprmoncfg`) |
-| `--monitors-conf <path>` | Override the target monitors.conf path |
-| `--hypr-config <path>` | Override the root hyprland.conf path for source verification |
+| `--monitors-conf <path>` | Override the generated monitor config path (`monitors.conf` or `monitors.lua`) |
+| `--hypr-config <path>` | Override the root Hyprland config path for include verification (`.conf` or `.lua`) |
 
 ### Apply flags
 
@@ -52,8 +52,8 @@ The daemon. Runs in the foreground by default.
 | Flag | Description |
 |------|-------------|
 | `--config-dir <path>` | Override the profile storage directory |
-| `--monitors-conf <path>` | Override the target monitors.conf path |
-| `--hypr-config <path>` | Override the root hyprland.conf path |
+| `--monitors-conf <path>` | Override the generated monitor config path (`monitors.conf` or `monitors.lua`) |
+| `--hypr-config <path>` | Override the root Hyprland config path (`.conf` or `.lua`) |
 | `--profile <name>` | Force a specific profile instead of auto-matching |
 | `--debounce <duration>` | Delay before applying after a monitor or lid event (default: 1200ms) |
 | `--poll-interval <duration>` | Polling frequency for monitor fallback checks (default: 5s) |
@@ -62,6 +62,6 @@ The daemon. Runs in the foreground by default.
 
 ## Exit behavior
 
-- CLI commands exit non-zero on Hyprland query failures, invalid layouts, missing profiles, or source-chain verification failures.
-- `apply` exits with an error **before writing anything** if the configured `monitors.conf` is not sourced by `hyprland.conf`.
+- CLI commands exit non-zero on Hyprland query failures, invalid layouts, missing profiles, or include-chain verification failures.
+- `apply` exits with an error **before writing anything** if the configured generated monitor file is not included by the active Hyprland config.
 - The daemon exits cleanly on `SIGINT` or `SIGTERM`.

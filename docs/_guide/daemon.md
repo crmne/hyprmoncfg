@@ -39,7 +39,7 @@ When the daemon detects a monitor or lid-state change, it runs through these ste
 2. Score every saved profile against the connected hardware (see [Profile matching](#profile-matching) below for how scoring works)
 3. Pick the highest-scoring profile
 4. If the lid is closed and an external monitor is connected, force internal laptop-panel outputs off for this apply
-5. Write `monitors.conf` atomically (temp file + rename, so a crash mid-write can't corrupt your config)
+5. Write the active generated monitor file atomically (temp file + rename, so a crash mid-write can't corrupt your config)
 6. Tell Hyprland to reload
 7. Re-read monitor state and verify the result matches what was intended
 
@@ -103,7 +103,7 @@ systemctl --user stop hyprmoncfgd
 hyprmoncfgd --profile conference-projector
 ```
 
-Running two daemons at the same time causes them to fight over `monitors.conf` -- your monitors will flicker back and forth between profiles.
+Running two daemons at the same time causes them to fight over the generated monitor config -- your monitors will flicker back and forth between profiles.
 
 ## Logs
 
@@ -111,7 +111,7 @@ Running two daemons at the same time causes them to fight over `monitors.conf` -
 journalctl --user -u hyprmoncfgd -f
 ```
 
-The log shows every step: which profiles were scored, what each one scored, which one won, what was written to `monitors.conf`, and whether verification passed. This is the first place to look when you want to understand why the daemon picked a particular profile.
+The log shows every step: which profiles were scored, what each one scored, which one won, what generated monitor config was written, and whether verification passed. This is the first place to look when you want to understand why the daemon picked a particular profile.
 
 {% include alert.html type="tip" title="Separate Matching From Applying" content="If you're not sure whether the daemon picked the wrong profile or failed to apply the right one, test the profile directly with <code>hyprmoncfg apply &lt;name&gt;</code>. If the layout looks correct, the problem is matching, not applying -- check the logs and your profile directory." %}
 

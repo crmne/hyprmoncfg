@@ -31,7 +31,7 @@ features:
     details: Save profiles for your real setups. The daemon picks the best match when monitors change or the laptop lid closes.
   - icon: 🔁
     title: Safe Apply with Revert
-    details: hyprmoncfg writes monitors.conf atomically, reloads Hyprland, verifies the result, and reverts unless you confirm.
+    details: Every apply writes the generated monitor config atomically, reloads Hyprland, and verifies the result. A 10-second confirmation window means you never get locked out.
   - icon: 🗂️
     title: Workspace Planning
     details: Assign workspaces with sequential, interleave, or manual strategies and apply them together with the monitor layout.

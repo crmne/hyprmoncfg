@@ -46,36 +46,47 @@ If you want predictable daemon behavior, keep this directory curated:
 
 ## Hyprland targets
 
-Default apply target:
+Default legacy apply target:
 
 ```
 ~/.config/hypr/monitors.conf
 ```
 
-Default root config used for source verification:
+Default legacy root config used for source verification:
 
 ```
 ~/.config/hypr/hyprland.conf
 ```
+
+On Hyprland 0.55+, if `~/.config/hypr/hyprland.lua` exists, hyprmoncfg switches to Lua mode and uses:
+
+```
+~/.config/hypr/monitors.lua
+~/.config/hypr/hyprland.lua
+```
+
+If Hyprland 0.55+ is still using `hyprland.conf`, hyprmoncfg stays in legacy mode. Explicit `--hypr-config` paths ending in `.conf` or `.lua` force the matching format.
 
 Override either path:
 
 ```bash
 hyprmoncfg --monitors-conf /path/to/monitors.conf --hypr-config /path/to/hyprland.conf
 hyprmoncfgd --monitors-conf /path/to/monitors.conf --hypr-config /path/to/hyprland.conf
+hyprmoncfg --monitors-conf /path/to/monitors.lua --hypr-config /path/to/hyprland.lua
+hyprmoncfgd --monitors-conf /path/to/monitors.lua --hypr-config /path/to/hyprland.lua
 ```
 
-## The source-chain check
+## The include-chain check
 
-Before writing anything, hyprmoncfg parses your `hyprland.conf` and confirms it contains a `source` line that includes the target `monitors.conf`. This catches a surprisingly common problem: a tool writes a config file that Hyprland never reads, so nothing happens and you're left wondering why.
+Before writing anything, hyprmoncfg confirms Hyprland includes the generated monitor file. This catches a surprisingly common problem: a tool writes a config file that Hyprland never reads, so nothing happens and you're left wondering why.
 
-If the check fails, hyprmoncfg refuses to write and tells you exactly what's missing. The fix is usually one of two things: add `source = ~/.config/hypr/monitors.conf` to your `hyprland.conf`, or point hyprmoncfg at the files you're actually using with `--monitors-conf` and `--hypr-config`.
+For legacy configs, add `source = ~/.config/hypr/monitors.conf` to `hyprland.conf`. For Lua configs, add `require("monitors")` to `hyprland.lua`. If your files live elsewhere, point hyprmoncfg at them with `--monitors-conf` and `--hypr-config`.
 
 ## What gets written
 
-When you apply a profile (via TUI, CLI, or daemon), hyprmoncfg writes `monitors.conf` with either `monitorv2 { }` blocks (Hyprland 0.50+) or legacy `monitor = ` lines, depending on your Hyprland version. Workspace rules are included when workspace planning is enabled in the profile.
+When you apply a profile (via TUI, CLI, or daemon), hyprmoncfg writes the active generated monitor file. Legacy configs get `monitors.conf` with either `monitorv2 { }` blocks (Hyprland 0.50+) or legacy `monitor = ` lines, depending on your Hyprland version. Lua configs get `monitors.lua` with `hl.monitorv2`, `hl.monitor`, and `hl.workspace` calls.
 
-`monitors.conf` is generated output. hyprmoncfg fully manages and rewrites the target file on every apply.
+`monitors.conf` and `monitors.lua` are generated output. hyprmoncfg fully manages and rewrites the active target file on every apply.
 
 Do not put unrelated Hyprland settings in that file. Keep blocks like `render`, `cursor`, `misc`, and `env` in other sourced config files.
 

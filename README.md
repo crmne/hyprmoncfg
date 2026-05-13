@@ -38,6 +38,7 @@ hyprmoncfg is a terminal layout editor, CLI, profile store, and hotplug/lid-awar
 - **Workspace planner** -- assign workspaces across monitors with sequential, interleave, or manual strategies
 - **Safe apply with revert** -- reload Hyprland, verify the result, and revert unless you confirm
 - **Source-chain verification** -- refuse to write a `monitors.conf` that Hyprland is not reading
+- **Hyprland 0.55 Lua config support** -- use `monitors.lua` automatically when `hyprland.lua` is active, while preserving legacy `monitors.conf` setups
 - **One hard runtime dependency** -- Hyprland; UPower is optional for immediate lid events
 
 ## Install
@@ -165,7 +166,7 @@ chezmoi add ~/.config/hyprmoncfg
 
 Now your desk at home, your laptop on the road, and your Raspberry Pi in the closet all share the same profile library. The daemon picks the right one based on what's actually plugged in.
 
-You don't commit `monitors.conf`. You commit your profiles. The tool writes `monitors.conf` for you.
+You don't commit `monitors.conf` or `monitors.lua`. You commit your profiles. The tool writes the active generated monitor config for you.
 
 ## How it compares
 
@@ -180,7 +181,8 @@ You don't commit `monitors.conf`. You commit your profiles. The tool writes `mon
 | Workspace planning | Yes | Yes | No | No | Basic | No |
 | Mirror support | Yes | Yes | Yes | Yes | Yes | No |
 | Safe apply with revert | Yes | Yes | No | Partial (manual rollback) | No | No |
-| Source-chain verification | Yes | No | No | No | No | No |
+| Hyprland 0.55 Lua config | Yes | No | No | No | Yes | N/A |
+| Include-chain verification | Yes | No | No | No | No | No |
 | Additional runtime dependencies | None | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
 
 ## Docs

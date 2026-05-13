@@ -16,7 +16,7 @@ The daemon on each machine looks at what's actually plugged in and picks the rig
 
 **Commit**: `~/.config/hyprmoncfg/` -- your profile library.
 
-**Don't commit**: `~/.config/hypr/monitors.conf` -- this is generated output. hyprmoncfg rewrites it from the active profile. Committing it causes conflicts between machines with different monitors.
+**Don't commit**: `~/.config/hypr/monitors.conf` or `~/.config/hypr/monitors.lua` -- this is generated output. hyprmoncfg rewrites the active target from the active profile. Committing it causes conflicts between machines with different monitors.
 
 ## chezmoi
 

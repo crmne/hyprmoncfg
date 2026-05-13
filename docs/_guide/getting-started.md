@@ -67,22 +67,29 @@ hyprmoncfg needs:
 
 - A running Hyprland session
 - `hyprctl` in `PATH`
-- A `source` line in `hyprland.conf` that includes `monitors.conf`
+- A Hyprland config that includes hyprmoncfg's generated monitor file
 
-Most setups already have this in `~/.config/hypr/hyprland.conf`:
+For legacy hyprlang configs, most setups already have this in `~/.config/hypr/hyprland.conf`:
 
 ```text
 source = ~/.config/hypr/monitors.conf
 ```
 
-If yours does not, add it now. Hyprland does not read `monitors.conf` automatically, so hyprmoncfg checks this before writing. If the `source` line is missing, it refuses to write and tells you what to fix.
+For Hyprland 0.55+ Lua configs, add this to `~/.config/hypr/hyprland.lua` instead:
 
-You do not need to create `monitors.conf` yourself. hyprmoncfg creates it when you apply your first profile, then rewrites it on each apply. Keep unrelated Hyprland settings in other sourced files.
+```lua
+require("monitors")
+```
+
+Hyprland does not read the generated monitor file automatically, so hyprmoncfg checks this before writing. If the include line is missing, it refuses to write and tells you what to fix.
+
+You do not need to create `monitors.conf` or `monitors.lua` yourself. hyprmoncfg creates the active generated file when you apply your first profile, then rewrites it on each apply. Keep unrelated Hyprland settings in other included files.
 
 If your config files live somewhere other than the defaults:
 
 ```bash
 hyprmoncfg --monitors-conf /path/to/monitors.conf --hypr-config /path/to/hyprland.conf
+hyprmoncfg --monitors-conf /path/to/monitors.lua --hypr-config /path/to/hyprland.lua
 ```
 
 ## Create your first profile
@@ -141,10 +148,16 @@ systemctl --user daemon-reload
 systemctl --user enable --now hyprmoncfgd
 ```
 
-If you installed from Blackhole-vl (Void Linux) add this line to your `~/.config/hypr/hyprland.conf`:
+If you installed from Blackhole-vl (Void Linux), autostart the daemon from your Hyprland config. In legacy `hyprland.conf`:
 
 ```bash
 exec-once hyprmoncfgd
+```
+
+In `hyprland.lua`:
+
+```lua
+hl.autostart "hyprmoncfgd"
 ```
 
 If you built from source and installed into `~/.local/bin`:
@@ -156,7 +169,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now hyprmoncfgd
 ```
 
-Now when you plug in a monitor, unplug one, dock your laptop, or close the lid, the daemon finds the profile that best matches your current hardware and applies it. No interaction needed.
+Now when you plug in a monitor, unplug one, dock your laptop, or close the lid, the daemon finds the profile that best matches your current hardware and applies it. No interaction needed. The packaged systemd service works with both config formats because the daemon detects the active Hyprland config and writes `monitors.conf` or `monitors.lua` through the same apply engine as the TUI.
 
 If the daemon ever applies a layout you didn't expect, the most common cause is stale or duplicate profiles in `~/.config/hyprmoncfg/profiles/`. The daemon scores every profile it finds, not just the ones you remember saving. Delete old experiments, keep one profile per real setup, and the matching becomes predictable. See [Daemon Behavior](/daemon/) for the full scoring breakdown.
 
@@ -172,7 +185,7 @@ chezmoi add ~/.config/hyprmoncfg
 
 Your desk at home, your laptop bag setup, your conference projector layout -- all versioned, all portable. The daemon on each machine picks the right profile based on what's actually plugged in.
 
-You never commit `monitors.conf`. You commit your profiles. hyprmoncfg writes `monitors.conf` for you.
+You never commit `monitors.conf` or `monitors.lua`. You commit your profiles. hyprmoncfg writes the active generated monitor config for you.
 
 ## Next steps
 
