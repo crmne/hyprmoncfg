@@ -157,7 +157,9 @@ exec-once hyprmoncfgd
 In `hyprland.lua`:
 
 ```lua
-hl.autostart "hyprmoncfgd"
+hl.on("hyprland.start", function()
+  hl.exec_cmd("hyprmoncfgd")
+end)
 ```
 
 If you built from source and installed into `~/.local/bin`:

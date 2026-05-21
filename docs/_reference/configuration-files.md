@@ -84,7 +84,7 @@ For legacy configs, add `source = ~/.config/hypr/monitors.conf` to `hyprland.con
 
 ## What gets written
 
-When you apply a profile (via TUI, CLI, or daemon), hyprmoncfg writes the active generated monitor file. Legacy configs get `monitors.conf` with either `monitorv2 { }` blocks (Hyprland 0.50+) or legacy `monitor = ` lines, depending on your Hyprland version. Lua configs get `monitors.lua` with `hl.monitorv2`, `hl.monitor`, and `hl.workspace` calls.
+When you apply a profile (via TUI, CLI, or daemon), hyprmoncfg writes the active generated monitor file. Legacy configs get `monitors.conf` with either `monitorv2 { }` blocks (Hyprland 0.50+) or legacy `monitor = ` lines, depending on your Hyprland version. Lua configs get `monitors.lua` with `hl.monitor({ ... })` and `hl.workspace_rule({ ... })` calls.
 
 `monitors.conf` and `monitors.lua` are generated output. hyprmoncfg fully manages and rewrites the active target file on every apply.
 
