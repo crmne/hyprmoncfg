@@ -187,6 +187,55 @@ func TestVerifyLuaSourceChainFindsStringCallRequire(t *testing.T) {
 	}
 }
 
+func TestVerifyLuaSourceChainFindsStandardLiteralRequireForms(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "semicolon", content: `; require("monitors")`},
+		{name: "assignment", content: `local monitors = require("monitors")`},
+		{name: "long bracket", content: `require [[monitors]]`},
+		{name: "leveled long bracket", content: `require [=[monitors]=]`},
+		{name: "comment after call", content: `require("monitors") -- include generated monitors`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			rootConfig := filepath.Join(root, "hyprland.lua")
+			target := filepath.Join(root, "monitors.lua")
+
+			if err := os.WriteFile(rootConfig, []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("write root config: %v", err)
+			}
+			if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+				t.Fatalf("write target config: %v", err)
+			}
+
+			if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+				t.Fatalf("expected standard lua require form to verify, got %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyLuaSourceChainHandlesCommentMarkerInsideString(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(root, "mon--itors.lua")
+
+	if err := os.WriteFile(rootConfig, []byte(`require("mon--itors")`), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected -- inside string literal to stay part of require, got %v", err)
+	}
+}
+
 func TestVerifyLuaSourceChainFindsSlashRequire(t *testing.T) {
 	root := t.TempDir()
 	confDir := filepath.Join(root, "conf.d")
@@ -256,8 +305,7 @@ func TestVerifyLuaSourceChainFindsPackagePathStyleRequire(t *testing.T) {
 	rootConfig := filepath.Join(hypr, "hyprland.lua")
 	target := filepath.Join(hypr, "monitors.lua")
 
-	t.Setenv("HOME", root)
-	content := `package.path = os.getenv("HOME") .. "/.config/?.lua;" .. package.path
+	content := `package.path = "` + filepath.ToSlash(filepath.Join(configHome, "?.lua")) + `;" .. package.path
 require('hypr.monitors')
 `
 	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
@@ -272,32 +320,19 @@ require('hypr.monitors')
 	}
 }
 
-func TestVerifyLuaSourceChainFindsOmarchyPackagePathRequires(t *testing.T) {
+func TestVerifyLuaSourceChainFindsHomePackagePathRequire(t *testing.T) {
 	root := t.TempDir()
 	configHome := filepath.Join(root, ".config")
-	omarchyPath := filepath.Join(root, ".local", "share", "omarchy")
 	hypr := filepath.Join(configHome, "hypr")
-	omarchyDefault := filepath.Join(omarchyPath, "default", "hypr")
 	if err := os.MkdirAll(hypr, 0o755); err != nil {
 		t.Fatalf("mkdir hypr dir: %v", err)
 	}
-	if err := os.MkdirAll(omarchyDefault, 0o755); err != nil {
-		t.Fatalf("mkdir omarchy default dir: %v", err)
-	}
 	rootConfig := filepath.Join(hypr, "hyprland.lua")
 	target := filepath.Join(hypr, "monitors.lua")
-	omarchyModule := filepath.Join(omarchyDefault, "omarchy.lua")
 
 	t.Setenv("HOME", root)
-	t.Setenv("OMARCHY_PATH", omarchyPath)
-	content := `package.path = os.getenv("HOME")
-  .. "/.config/?.lua;"
-  .. (os.getenv("OMARCHY_PATH") or (os.getenv("HOME") .. "/.local/share/omarchy"))
-  .. "/?.lua;"
-  .. package.path
-
-require("default.hypr.omarchy")
-require("hypr.monitors")
+	content := `package.path = os.getenv("HOME") .. "/.config/?.lua;" .. package.path
+require('hypr.monitors')
 `
 	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
 		t.Fatalf("write root config: %v", err)
@@ -305,12 +340,9 @@ require("hypr.monitors")
 	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
 		t.Fatalf("write target config: %v", err)
 	}
-	if err := os.WriteFile(omarchyModule, []byte("-- defaults\n"), 0o644); err != nil {
-		t.Fatalf("write omarchy module: %v", err)
-	}
 
 	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
-		t.Fatalf("expected Omarchy package-path lua include to verify, got %v", err)
+		t.Fatalf("expected HOME package-path lua include to verify, got %v", err)
 	}
 }
 
@@ -340,7 +372,7 @@ require('hypr.monitors')
 	}
 }
 
-func TestVerifyLuaSourceChainFindsXDGConfigHomeHyprPackagePathRequire(t *testing.T) {
+func TestVerifyLuaSourceChainFindsMultilineEnvPackagePathRequire(t *testing.T) {
 	root := t.TempDir()
 	xdgConfigHome := filepath.Join(root, "xdg-config")
 	hypr := filepath.Join(xdgConfigHome, "hypr")
@@ -351,8 +383,10 @@ func TestVerifyLuaSourceChainFindsXDGConfigHomeHyprPackagePathRequire(t *testing
 	target := filepath.Join(hypr, "monitors.lua")
 
 	t.Setenv("XDG_CONFIG_HOME", xdgConfigHome)
-	content := `package.path = os.getenv("XDG_CONFIG_HOME") .. "/hypr/?.lua;" .. package.path
-require('monitors')
+	content := `package.path = os.getenv("XDG_CONFIG_HOME") ..
+  .. "/?.lua;"
+  .. package.path
+require('hypr.monitors')
 `
 	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
 		t.Fatalf("write root config: %v", err)
@@ -362,7 +396,7 @@ require('monitors')
 	}
 
 	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
-		t.Fatalf("expected XDG_CONFIG_HOME hypr package-path lua include to verify, got %v", err)
+		t.Fatalf("expected multiline env package-path lua include to verify, got %v", err)
 	}
 }
 
@@ -384,6 +418,118 @@ func TestVerifyLuaSourceChainDoesNotUseImplicitParentFallback(t *testing.T) {
 
 	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
 		t.Fatal("expected package-path style require without package.path to fail")
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresUnassignedPackagePathString(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(os.TempDir(), "monitors.lua")
+
+	content := `package.path = package.path
+local example = "/tmp/?.lua"
+require("monitors")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+		t.Fatal("expected unrelated package-path-shaped string to be ignored")
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresPackagePathEnvOutsideAssignment(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(os.TempDir(), "monitors.lua")
+
+	t.Setenv("HOME", root)
+	content := `local home = os.getenv("HOME")
+local example = "/tmp/?.lua"
+require("monitors")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+		t.Fatal("expected package-path-shaped string after os.getenv to be ignored")
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresRequireInsideString(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(root, "monitors.lua")
+
+	if err := os.WriteFile(rootConfig, []byte(`local note = "require('monitors')"`), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+		t.Fatal("expected require inside a string literal to be ignored")
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresRequireInsideLongComment(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(root, "monitors.lua")
+
+	content := `--[[
+require("monitors")
+]]
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+		t.Fatal("expected require inside a long comment to be ignored")
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresRequireFieldCall(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(root, "monitors.lua")
+
+	content := `local loader = {}
+loader.require("monitors")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+		t.Fatal("expected require field call to be ignored")
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresUnclosedParenthesizedRequire(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(root, "monitors.lua")
+
+	if err := os.WriteFile(rootConfig, []byte(`require("monitors"`), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+		t.Fatal("expected unclosed parenthesized require to be ignored")
 	}
 }
 

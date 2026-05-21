@@ -156,44 +156,92 @@ func parseLuaPackagePathPatterns(content string) []string {
 		return nil
 	}
 	patterns := make([]string, 0)
-	for _, literal := range parseLuaStringLiterals(content) {
-		if !strings.Contains(literal, "?") || !strings.Contains(literal, ".lua") {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	inPackagePath := false
+	activePackagePathEnv := ""
+	longCommentClose := ""
+	for scanner.Scan() {
+		line := strings.TrimSpace(stripLuaCommentsState(scanner.Text(), &longCommentClose))
+		if line == "" {
+			inPackagePath = false
+			activePackagePathEnv = ""
 			continue
 		}
-		patterns = append(patterns, expandLuaPackagePathLiteral(literal)...)
-	}
-	patterns = append(patterns, parseLuaPackagePathEnvPatterns(content)...)
-	return patterns
-}
-
-func parseLuaPackagePathEnvPatterns(content string) []string {
-	out := make([]string, 0)
-	activeEnv := ""
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		line := stripLuaComments(scanner.Text())
-		if strings.TrimSpace(line) == "" {
+		if strings.Contains(line, "package.path") && strings.Contains(line, "=") {
+			inPackagePath = true
+			activePackagePathEnv = ""
+		}
+		if !inPackagePath {
 			continue
 		}
 		if envName, ok := parseLuaGetenvName(line); ok {
-			activeEnv = envName
-		}
-		if activeEnv == "" {
-			continue
-		}
-		base := strings.TrimSpace(os.Getenv(activeEnv))
-		if base == "" {
-			continue
+			activePackagePathEnv = envName
 		}
 		for _, literal := range parseLuaStringLiterals(line) {
-			for _, part := range strings.Split(literal, ";") {
-				part = strings.TrimSpace(part)
-				if !strings.Contains(part, "?") || !strings.Contains(part, ".lua") || !strings.HasPrefix(part, "/") {
-					continue
-				}
-				out = append(out, filepath.Join(base, strings.TrimPrefix(part, "/")))
+			if !strings.Contains(literal, "?") || !strings.Contains(literal, ".lua") {
+				continue
+			}
+			patterns = append(patterns, expandLuaPackagePathLiteral(literal)...)
+			patterns = append(patterns, expandLuaPackagePathEnvLiteral(literal, activePackagePathEnv)...)
+		}
+		if !isLuaPackagePathContinuation(line) {
+			inPackagePath = false
+			activePackagePathEnv = ""
+		}
+	}
+	return patterns
+}
+
+func isLuaPackagePathContinuation(line string) bool {
+	if idx := strings.Index(line, "="); idx >= 0 {
+		rhs := strings.TrimSpace(line[idx+1:])
+		if rhs == "package.path" {
+			return false
+		}
+	}
+	return strings.HasSuffix(strings.TrimSpace(line), "..")
+}
+
+func expandLuaPackagePathLiteral(value string) []string {
+	parts := strings.Split(value, ";")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(part, "/.config/"):
+			if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
+				out = append(out, filepath.Join(home, strings.TrimPrefix(part, "/")))
+			}
+		case strings.HasPrefix(part, "/") || strings.HasPrefix(part, "~"):
+			resolved, err := resolvePath(part, "")
+			if err == nil {
+				out = append(out, resolved)
+			}
+		case strings.HasPrefix(part, ".config/"):
+			if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
+				out = append(out, filepath.Join(home, part))
 			}
 		}
+	}
+	return out
+}
+
+func expandLuaPackagePathEnvLiteral(value string, envName string) []string {
+	base := strings.TrimSpace(os.Getenv(envName))
+	if base == "" {
+		return nil
+	}
+	parts := strings.Split(value, ";")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if !strings.Contains(part, "?") || !strings.Contains(part, ".lua") || !strings.HasPrefix(part, "/") {
+			continue
+		}
+		out = append(out, filepath.Join(base, strings.TrimPrefix(part, "/")))
 	}
 	return out
 }
@@ -220,44 +268,14 @@ func parseLuaGetenvName(line string) (string, bool) {
 	return line[:end], true
 }
 
-func expandLuaPackagePathLiteral(value string) []string {
-	parts := strings.Split(value, ";")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		switch {
-		case strings.HasPrefix(part, "/.config/"):
-			if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
-				out = append(out, filepath.Join(home, strings.TrimPrefix(part, "/")))
-			}
-		case strings.HasPrefix(part, "/") || strings.HasPrefix(part, "~"):
-			resolved, err := resolvePath(part, "")
-			if err == nil {
-				out = append(out, resolved)
-			}
-		case strings.HasPrefix(part, ".config/"):
-			if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
-				out = append(out, filepath.Join(home, part))
-			}
-		default:
-			if strings.HasPrefix(part, ".local/share/omarchy/") {
-				if omarchyPath := strings.TrimSpace(os.Getenv("OMARCHY_PATH")); omarchyPath != "" {
-					out = append(out, filepath.Join(omarchyPath, strings.TrimPrefix(part, ".local/share/omarchy/")))
-				} else if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
-					out = append(out, filepath.Join(home, part))
-				}
-			}
-		}
-	}
-	return out
-}
-
 func parseLuaStringLiterals(content string) []string {
 	out := make([]string, 0)
 	for i := 0; i < len(content); i++ {
+		if value, next, ok := parseLuaLongBracket(content, i); ok {
+			out = append(out, value)
+			i = next - 1
+			continue
+		}
 		if content[i] != '\'' && content[i] != '"' {
 			continue
 		}
@@ -280,8 +298,9 @@ func parseLuaStringLiterals(content string) []string {
 func parseLuaIncludeCalls(content string) []luaIncludeCall {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	out := make([]luaIncludeCall, 0)
+	longCommentClose := ""
 	for scanner.Scan() {
-		line := stripLuaComments(scanner.Text())
+		line := stripLuaCommentsState(scanner.Text(), &longCommentClose)
 		for _, value := range parseLuaLiteralCall(line, "require") {
 			out = append(out, luaIncludeCall{Kind: luaIncludeRequire, Value: value})
 		}
@@ -292,45 +311,175 @@ func parseLuaIncludeCalls(content string) []luaIncludeCall {
 	return out
 }
 
-func stripLuaComments(line string) string {
-	if idx := strings.Index(line, "--"); idx >= 0 {
-		return line[:idx]
+func stripLuaCommentsState(line string, longCommentClose *string) string {
+	if *longCommentClose != "" {
+		if idx := strings.Index(line, *longCommentClose); idx >= 0 {
+			line = line[idx+len(*longCommentClose):]
+			*longCommentClose = ""
+		} else {
+			return ""
+		}
+	}
+	for i := 0; i < len(line); i++ {
+		if line[i] == '\'' || line[i] == '"' {
+			if next, ok := skipLuaShortString(line, i); ok {
+				i = next - 1
+				continue
+			}
+		}
+		if _, next, ok := parseLuaLongBracket(line, i); ok {
+			i = next - 1
+			continue
+		}
+		if i+1 < len(line) && line[i] == '-' && line[i+1] == '-' {
+			if close, contentStart, ok := parseLuaLongBracketDelimiter(line, i+2); ok {
+				if end := strings.Index(line[contentStart:], close); end >= 0 {
+					rest := stripLuaCommentsState(line[contentStart+end+len(close):], longCommentClose)
+					return line[:i] + rest
+				}
+				*longCommentClose = close
+			}
+			return line[:i]
+		}
 	}
 	return line
 }
 
+func parseLuaLongBracketDelimiter(line string, idx int) (string, int, bool) {
+	if idx >= len(line) || line[idx] != '[' {
+		return "", idx, false
+	}
+	endOpen := idx + 1
+	for endOpen < len(line) && line[endOpen] == '=' {
+		endOpen++
+	}
+	if endOpen >= len(line) || line[endOpen] != '[' {
+		return "", idx, false
+	}
+	return "]" + strings.Repeat("=", endOpen-idx-1) + "]", endOpen + 1, true
+}
+
 func parseLuaLiteralCall(line string, name string) []string {
-	line = strings.TrimSpace(line)
 	out := make([]string, 0, 1)
-	for {
-		idx := strings.Index(line, name)
-		if idx < 0 {
+	for i := 0; i < len(line); i++ {
+		if isLuaSpace(line[i]) || line[i] == ';' {
+			continue
+		}
+		if line[i] == '\'' || line[i] == '"' {
+			if next, ok := skipLuaShortString(line, i); ok {
+				i = next - 1
+				continue
+			}
+		}
+		if _, next, ok := parseLuaLongBracket(line, i); ok {
+			i = next - 1
+			continue
+		}
+		if i+1 < len(line) && line[i] == '-' && line[i+1] == '-' {
 			return out
 		}
-		beforeOK := idx == 0 || !isLuaIdentifierByte(line[idx-1])
-		line = line[idx+len(name):]
-		if !beforeOK {
+		if !isLuaNameAt(line, i, name) {
 			continue
 		}
-		line = strings.TrimLeft(line, " \t")
-		if strings.HasPrefix(line, "(") {
-			line = strings.TrimLeft(line[1:], " \t")
-		}
-		if line == "" || (line[0] != '\'' && line[0] != '"') {
-			continue
-		}
-		quote := line[0]
-		line = line[1:]
-		end := strings.IndexByte(line, quote)
-		if end < 0 {
-			continue
-		}
-		value := line[:end]
-		line = line[end+1:]
-		if strings.TrimSpace(value) != "" {
+		value, next, ok := parseLuaLiteralCallArg(line, i+len(name))
+		if ok && strings.TrimSpace(value) != "" {
 			out = append(out, value)
+			i = next - 1
 		}
 	}
+	return out
+}
+
+func parseLuaLiteralCallArg(line string, idx int) (string, int, bool) {
+	idx = trimLuaSpaceLeft(line, idx)
+	needsCloseParen := false
+	if idx < len(line) && line[idx] == '(' {
+		needsCloseParen = true
+		idx = trimLuaSpaceLeft(line, idx+1)
+	}
+	if idx >= len(line) {
+		return "", idx, false
+	}
+	if value, next, ok := parseLuaLongBracket(line, idx); ok {
+		if needsCloseParen {
+			closeIdx := trimLuaSpaceLeft(line, next)
+			if closeIdx >= len(line) || line[closeIdx] != ')' {
+				return "", idx, false
+			}
+			return value, closeIdx + 1, true
+		}
+		return value, next, true
+	}
+	if line[idx] != '\'' && line[idx] != '"' {
+		return "", idx, false
+	}
+	quote := line[idx]
+	start := idx + 1
+	for idx = start; idx < len(line); idx++ {
+		if line[idx] == '\\' {
+			idx++
+			continue
+		}
+		if line[idx] == quote {
+			if needsCloseParen {
+				closeIdx := trimLuaSpaceLeft(line, idx+1)
+				if closeIdx >= len(line) || line[closeIdx] != ')' {
+					return "", idx, false
+				}
+				return line[start:idx], closeIdx + 1, true
+			}
+			return line[start:idx], idx + 1, true
+		}
+	}
+	return "", idx, false
+}
+
+func parseLuaLongBracket(line string, idx int) (string, int, bool) {
+	close, start, ok := parseLuaLongBracketDelimiter(line, idx)
+	if !ok {
+		return "", idx, false
+	}
+	end := strings.Index(line[start:], close)
+	if end < 0 {
+		return "", idx, false
+	}
+	return line[start : start+end], start + end + len(close), true
+}
+
+func skipLuaShortString(line string, idx int) (int, bool) {
+	quote := line[idx]
+	for idx++; idx < len(line); idx++ {
+		if line[idx] == '\\' {
+			idx++
+			continue
+		}
+		if line[idx] == quote {
+			return idx + 1, true
+		}
+	}
+	return idx, false
+}
+
+func isLuaNameAt(line string, idx int, name string) bool {
+	if idx > 0 && (isLuaIdentifierByte(line[idx-1]) || line[idx-1] == '.' || line[idx-1] == ':') {
+		return false
+	}
+	if !strings.HasPrefix(line[idx:], name) {
+		return false
+	}
+	next := idx + len(name)
+	return next == len(line) || !isLuaIdentifierByte(line[next])
+}
+
+func trimLuaSpaceLeft(line string, idx int) int {
+	for idx < len(line) && isLuaSpace(line[idx]) {
+		idx++
+	}
+	return idx
+}
+
+func isLuaSpace(b byte) bool {
+	return b == ' ' || b == '\f' || b == '\n' || b == '\r' || b == '\t' || b == '\v'
 }
 
 func isLuaIdentifierByte(b byte) bool {
