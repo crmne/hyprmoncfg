@@ -37,7 +37,7 @@ hyprmoncfg is a terminal layout editor, CLI, profile store, and hotplug/lid-awar
 - **Hotplug and lid-aware daemon** -- apply the right profile automatically when monitors change or the laptop lid closes
 - **Workspace planner** -- assign workspaces across monitors with sequential, interleave, or manual strategies
 - **Safe apply with revert** -- reload Hyprland, verify the result, and revert unless you confirm
-- **Source-chain verification** -- refuse to write a `monitors.conf` that Hyprland is not reading
+- **Include-chain verification** -- refuse to write generated monitor config that Hyprland is not reading
 - **Hyprland 0.55 Lua config support** -- use `monitors.lua` automatically when `hyprland.lua` is active, while preserving legacy `monitors.conf` setups
 - **One hard runtime dependency** -- Hyprland; UPower is optional for immediate lid events
 
