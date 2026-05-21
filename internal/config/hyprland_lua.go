@@ -167,9 +167,10 @@ func parseLuaPackagePathPatterns(content string) []string {
 			activePackagePathEnv = ""
 			continue
 		}
-		if strings.Contains(line, "package.path") && strings.Contains(line, "=") {
+		if rhs, ok := parseLuaPackagePathAssignmentRHS(line); ok {
 			inPackagePath = true
 			activePackagePathEnv = ""
+			line = rhs
 		}
 		if !inPackagePath {
 			continue
@@ -190,6 +191,28 @@ func parseLuaPackagePathPatterns(content string) []string {
 		}
 	}
 	return patterns
+}
+
+func parseLuaPackagePathAssignmentRHS(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	for strings.HasPrefix(line, ";") {
+		line = strings.TrimSpace(line[1:])
+	}
+	const lhs = "package.path"
+	if !strings.HasPrefix(line, lhs) {
+		return "", false
+	}
+	if len(line) > len(lhs) && isLuaIdentifierByte(line[len(lhs)]) {
+		return "", false
+	}
+	line = strings.TrimLeft(line[len(lhs):], " \f\n\r\t\v")
+	if line == "" || line[0] != '=' {
+		return "", false
+	}
+	if len(line) > 1 && (line[1] == '=' || line[1] == '~' || line[1] == '<' || line[1] == '>') {
+		return "", false
+	}
+	return strings.TrimSpace(line[1:]), true
 }
 
 func isLuaPackagePathContinuation(line string) bool {

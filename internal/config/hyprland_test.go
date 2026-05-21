@@ -400,6 +400,71 @@ require('hypr.monitors')
 	}
 }
 
+func TestVerifyLuaSourceChainFindsPackagePathAssignmentForms(t *testing.T) {
+	tests := []struct {
+		name    string
+		content func(configHome string) string
+	}{
+		{
+			name: "semicolon prefix",
+			content: func(configHome string) string {
+				return `; package.path = "` + filepath.ToSlash(filepath.Join(configHome, "?.lua")) + `;" .. package.path
+require('hypr.monitors')
+`
+			},
+		},
+		{
+			name: "no spaces",
+			content: func(configHome string) string {
+				return `package.path="` + filepath.ToSlash(filepath.Join(configHome, "?.lua")) + `;"..package.path
+require('hypr.monitors')
+`
+			},
+		},
+		{
+			name: "single quoted getenv",
+			content: func(configHome string) string {
+				return `package.path = os.getenv('XDG_CONFIG_HOME') .. "/?.lua;" .. package.path
+require('hypr.monitors')
+`
+			},
+		},
+		{
+			name: "no existing package append",
+			content: func(configHome string) string {
+				return `package.path = "` + filepath.ToSlash(filepath.Join(configHome, "?.lua")) + `;"
+require('hypr.monitors')
+`
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			configHome := filepath.Join(root, "config")
+			hypr := filepath.Join(configHome, "hypr")
+			if err := os.MkdirAll(hypr, 0o755); err != nil {
+				t.Fatalf("mkdir hypr dir: %v", err)
+			}
+			rootConfig := filepath.Join(hypr, "hyprland.lua")
+			target := filepath.Join(hypr, "monitors.lua")
+
+			t.Setenv("XDG_CONFIG_HOME", configHome)
+			if err := os.WriteFile(rootConfig, []byte(tt.content(configHome)), 0o644); err != nil {
+				t.Fatalf("write root config: %v", err)
+			}
+			if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+				t.Fatalf("write target config: %v", err)
+			}
+
+			if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+				t.Fatalf("expected package.path assignment form to verify, got %v", err)
+			}
+		})
+	}
+}
+
 func TestVerifyLuaSourceChainDoesNotUseImplicitParentFallback(t *testing.T) {
 	root := t.TempDir()
 	hypr := filepath.Join(root, "hypr")
@@ -455,6 +520,144 @@ require("monitors")
 
 	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
 		t.Fatal("expected package-path-shaped string after os.getenv to be ignored")
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresNonPackagePathAssignments(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "local concat", content: `local maybe = package.path .. "/tmp/?.lua"
+require("monitors")
+`},
+		{name: "local compare", content: `local same = package.path == "/tmp/?.lua"
+require("monitors")
+`},
+		{name: "if compare", content: `if package.path == "/tmp/?.lua" then end
+require("monitors")
+`},
+		{name: "field assignment", content: `some.package.path = "/tmp/?.lua"
+require("monitors")
+`},
+		{name: "longer field name", content: `package.pathname = "/tmp/?.lua"
+require("monitors")
+`},
+		{name: "prefixed field name", content: `package.path_extra = "/tmp/?.lua"
+require("monitors")
+`},
+		{name: "local similar name", content: `local package_path = "/tmp/?.lua"
+require("monitors")
+`},
+		{name: "not equals", content: `package.path ~= "/tmp/?.lua"
+require("monitors")
+`},
+		{name: "less equal", content: `package.path <= "/tmp/?.lua"
+require("monitors")
+`},
+		{name: "quoted assignment", content: `local note = "package.path = '/tmp/?.lua;'"
+require("monitors")
+`},
+		{name: "short comment assignment", content: `-- package.path = "/tmp/?.lua;"
+require("monitors")
+`},
+		{name: "long comment assignment", content: `--[[
+package.path = "/tmp/?.lua;"
+]]
+require("monitors")
+`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			rootConfig := filepath.Join(root, "hyprland.lua")
+			target := filepath.Join(os.TempDir(), "monitors.lua")
+
+			if err := os.WriteFile(rootConfig, []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("write root config: %v", err)
+			}
+
+			if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+				t.Fatal("expected non-package.path assignment to be ignored")
+			}
+		})
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresInvalidPackagePathContinuations(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "blank line", content: `package.path = os.getenv("HOME") ..
+
+"/tmp/?.lua"
+require("monitors")
+`},
+		{name: "no continuation", content: `package.path = os.getenv("HOME")
+"/tmp/?.lua"
+require("monitors")
+`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			rootConfig := filepath.Join(root, "hyprland.lua")
+			target := filepath.Join(os.TempDir(), "monitors.lua")
+
+			t.Setenv("HOME", root)
+			if err := os.WriteFile(rootConfig, []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("write root config: %v", err)
+			}
+
+			if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+				t.Fatal("expected invalid package.path continuation to be ignored")
+			}
+		})
+	}
+}
+
+func TestVerifyLuaSourceChainHandlesPackagePathCommentMarkerInsideString(t *testing.T) {
+	root := t.TempDir()
+	hypr := filepath.Join(root, "tmp--config")
+	if err := os.MkdirAll(hypr, 0o755); err != nil {
+		t.Fatalf("mkdir hypr dir: %v", err)
+	}
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(hypr, "monitors.lua")
+
+	content := `package.path = "` + filepath.ToSlash(filepath.Join(hypr, "?.lua")) + `;" -- generated path
+require("monitors")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected -- inside package.path string to stay part of pattern, got %v", err)
+	}
+}
+
+func TestVerifyLuaSourceChainIgnoresUnsetEnvPackagePath(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	target := filepath.Join(os.TempDir(), "monitors.lua")
+
+	t.Setenv("MISSING_LUA_PATH", "")
+	content := `package.path = os.getenv("MISSING_LUA_PATH") .. "/?.lua;"
+require("monitors")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err == nil {
+		t.Fatal("expected unset env package.path to be ignored")
 	}
 }
 
