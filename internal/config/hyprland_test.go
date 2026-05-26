@@ -400,6 +400,34 @@ require('hypr.monitors')
 	}
 }
 
+func TestVerifyLuaSourceChainFindsOmarchyPackagePathRequire(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	hypr := filepath.Join(home, ".config", "hypr")
+	if err := os.MkdirAll(hypr, 0o755); err != nil {
+		t.Fatalf("mkdir hypr dir: %v", err)
+	}
+	rootConfig := filepath.Join(hypr, "hyprland.lua")
+	target := filepath.Join(hypr, "monitors.lua")
+
+	t.Setenv("HOME", home)
+	content := `package.path = os.getenv("HOME")
+  .. "/.config/?.lua;"
+  .. package.path
+require("hypr.monitors")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected Omarchy package.path style lua include to verify, got %v", err)
+	}
+}
+
 func TestVerifyLuaSourceChainFindsPackagePathAssignmentForms(t *testing.T) {
 	tests := []struct {
 		name    string

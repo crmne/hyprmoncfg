@@ -158,23 +158,37 @@ func parseLuaPackagePathPatterns(content string) []string {
 	patterns := make([]string, 0)
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	inPackagePath := false
+	pendingPackagePathContinuation := false
 	activePackagePathEnv := ""
 	longCommentClose := ""
 	for scanner.Scan() {
 		line := strings.TrimSpace(stripLuaCommentsState(scanner.Text(), &longCommentClose))
 		if line == "" {
 			inPackagePath = false
+			pendingPackagePathContinuation = false
 			activePackagePathEnv = ""
 			continue
 		}
+
+		assignmentLine := false
+		leadingConcatLine := strings.HasPrefix(line, "..")
 		if rhs, ok := parseLuaPackagePathAssignmentRHS(line); ok {
+			assignmentLine = true
 			inPackagePath = true
+			pendingPackagePathContinuation = true
 			activePackagePathEnv = ""
 			line = rhs
-		}
-		if !inPackagePath {
+		} else if pendingPackagePathContinuation && leadingConcatLine {
+			inPackagePath = true
+		} else if !inPackagePath {
+			continue
+		} else if !leadingConcatLine && pendingPackagePathContinuation {
+			inPackagePath = false
+			pendingPackagePathContinuation = false
+			activePackagePathEnv = ""
 			continue
 		}
+
 		if envName, ok := parseLuaGetenvName(line); ok {
 			activePackagePathEnv = envName
 		}
@@ -185,7 +199,9 @@ func parseLuaPackagePathPatterns(content string) []string {
 			patterns = append(patterns, expandLuaPackagePathLiteral(literal)...)
 			patterns = append(patterns, expandLuaPackagePathEnvLiteral(literal, activePackagePathEnv)...)
 		}
-		if !isLuaPackagePathContinuation(line) {
+
+		pendingPackagePathContinuation = assignmentLine || leadingConcatLine || isLuaPackagePathContinuation(line)
+		if !pendingPackagePathContinuation {
 			inPackagePath = false
 			activePackagePathEnv = ""
 		}
