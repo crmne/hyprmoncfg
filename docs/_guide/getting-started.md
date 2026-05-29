@@ -31,7 +31,7 @@ The package installs:
 Add [Blackhole-vl](https://github.com/Event-Horizon-VL/blackhole-vl) (Unofficial Repo) to your package manager:
 
 ```bash
-echo repository=https://raw.githubusercontent.com/Event-Horizon-VL/blackhole-vl/repository-x86_64 | sudo tee /etc/xbps.d/20-repository-extra.conf
+echo "repository=https://mirror.black-hole.dev/$(uname -m)/" | sudo tee /etc/xbps.d/20-repository-extra.conf
 ```
 
 Install package with:
