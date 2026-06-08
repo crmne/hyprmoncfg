@@ -14,16 +14,17 @@
     flake-utils.lib.eachDefaultSystem (
       system: let
         pkgs = import nixpkgs {inherit system;};
+        version = "1.7.0";
       in {
         packages = rec {
           default = hyprmoncfg;
           hyprmoncfg = pkgs.buildGoModule {
             pname = "hyprmoncfg";
-            version = "v1.7.0";
+            version = "v${version}";
             src = pkgs.fetchFromGitHub {
               owner = "crmne";
               repo = "hyprmoncfg";
-              rev = "v1.7.0";
+              rev = "v${version}";
               hash = "sha256-6qupQ7/Uax6giaWC9o25EptyJNx6JdqrQX+w4WDBPTw=";
             };
 
