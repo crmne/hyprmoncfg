@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -2369,10 +2368,6 @@ func (m *Model) notifyUser(msg string, isErr bool) tea.Cmd {
 		token:   token,
 	}
 	return clearToastCmd(token)
-}
-
-func isDaemonRunning() bool {
-	return exec.Command("pgrep", "-x", "hyprmoncfgd").Run() == nil
 }
 
 func (m *Model) markDirty() {
