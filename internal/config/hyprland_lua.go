@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -19,9 +20,21 @@ func VerifyLuaIncludeChain(rootConfigPath string, targetPath string) error {
 		return err
 	}
 
-	ok, err := isLuaPathIncluded(rootConfigPath, targetPath, map[string]bool{})
+	state := &luaScanState{visited: map[string]bool{}}
+	ok, err := isLuaPathIncluded(rootConfigPath, targetPath, state)
 	if err != nil {
 		return err
+	}
+	// package.path can be assigned in a file that is loaded after the require()
+	// depending on it, or in a bootstrap file pulled in by the root config. Retry
+	// once seeded with everything the first pass learned so that the order the
+	// assignments appear in does not decide the outcome.
+	if !ok && len(state.patterns) > 0 {
+		retry := &luaScanState{visited: map[string]bool{}, patterns: state.patterns}
+		ok, err = isLuaPathIncluded(rootConfigPath, targetPath, retry)
+		if err != nil {
+			return err
+		}
 	}
 	if ok {
 		return nil
@@ -48,16 +61,32 @@ func quoteLuaArg(value string) string {
 	return fmt.Sprintf("%q", value)
 }
 
-func isLuaPathIncluded(rootConfigPath string, targetPath string, visited map[string]bool) (bool, error) {
+// luaScanState carries what the traversal has learned so far. package.path is
+// process-global in Lua, so a pattern assigned in one file applies to require()
+// calls in every other file the config loads, not just its own.
+type luaScanState struct {
+	visited  map[string]bool
+	patterns []string
+}
+
+func (s *luaScanState) addPatterns(patterns []string) {
+	for _, pattern := range patterns {
+		if !slices.Contains(s.patterns, pattern) {
+			s.patterns = append(s.patterns, pattern)
+		}
+	}
+}
+
+func isLuaPathIncluded(rootConfigPath string, targetPath string, state *luaScanState) (bool, error) {
 	rootConfigPath = filepath.Clean(rootConfigPath)
 	targetPath = filepath.Clean(targetPath)
 	if rootConfigPath == targetPath {
 		return true, nil
 	}
-	if visited[rootConfigPath] {
+	if state.visited[rootConfigPath] {
 		return false, nil
 	}
-	visited[rootConfigPath] = true
+	state.visited[rootConfigPath] = true
 
 	content, err := os.ReadFile(rootConfigPath)
 	if err != nil {
@@ -68,8 +97,9 @@ func isLuaPathIncluded(rootConfigPath string, targetPath string, visited map[str
 	}
 
 	contentString := string(content)
+	state.addPatterns(parseLuaPackagePathPatterns(contentString))
 	for _, include := range parseLuaIncludeCalls(contentString) {
-		includePaths, err := resolveLuaIncludePaths(include, filepath.Dir(rootConfigPath), contentString)
+		includePaths, err := resolveLuaIncludePaths(include, filepath.Dir(rootConfigPath), contentString, state.patterns)
 		if err != nil {
 			return false, err
 		}
@@ -87,7 +117,7 @@ func isLuaPathIncluded(rootConfigPath string, targetPath string, visited map[str
 			if info.IsDir() {
 				continue
 			}
-			ok, err := isLuaPathIncluded(includePath, targetPath, visited)
+			ok, err := isLuaPathIncluded(includePath, targetPath, state)
 			if err != nil {
 				return false, err
 			}
@@ -104,6 +134,10 @@ type luaIncludeKind int
 const (
 	luaIncludeRequire luaIncludeKind = iota
 	luaIncludeDofile
+	// luaIncludeDofileExpr is a dofile() whose argument is a concatenation
+	// rather than a plain literal, e.g.
+	//   dofile((os.getenv("BASE") or "/usr/share/x") .. "/bootstrap.lua")
+	luaIncludeDofileExpr
 )
 
 type luaIncludeCall struct {
@@ -111,7 +145,7 @@ type luaIncludeCall struct {
 	Value string
 }
 
-func resolveLuaIncludePaths(include luaIncludeCall, baseDir string, content string) ([]string, error) {
+func resolveLuaIncludePaths(include luaIncludeCall, baseDir string, content string, extraPatterns []string) ([]string, error) {
 	if include.Kind == luaIncludeDofile {
 		resolved, err := resolvePath(include.Value, baseDir)
 		if err != nil {
@@ -120,10 +154,23 @@ func resolveLuaIncludePaths(include luaIncludeCall, baseDir string, content stri
 		return []string{resolved}, nil
 	}
 
+	if include.Kind == luaIncludeDofileExpr {
+		out := make([]string, 0, 2)
+		for _, candidate := range evalLuaStringExpression(include.Value) {
+			resolved, err := resolvePath(candidate, baseDir)
+			if err != nil {
+				continue
+			}
+			out = append(out, resolved)
+		}
+		return out, nil
+	}
+
 	modulePath := luaModulePath(include.Value)
 	candidates := []string{filepath.Join(baseDir, modulePath)}
 	moduleName := strings.TrimSuffix(modulePath, ".lua")
-	for _, pattern := range parseLuaPackagePathPatterns(content) {
+	patterns := append(parseLuaPackagePathPatterns(content), extraPatterns...)
+	for _, pattern := range patterns {
 		if strings.Contains(pattern, "?") {
 			candidates = append(candidates, strings.ReplaceAll(pattern, "?", moduleName))
 		}
@@ -348,6 +395,9 @@ func parseLuaIncludeCalls(content string) []luaIncludeCall {
 		}
 		for _, value := range parseLuaLiteralCall(line, "dofile") {
 			out = append(out, luaIncludeCall{Kind: luaIncludeDofile, Value: value})
+		}
+		for _, expr := range parseLuaExpressionCallArgs(line, "dofile") {
+			out = append(out, luaIncludeCall{Kind: luaIncludeDofileExpr, Value: expr})
 		}
 	}
 	return out
@@ -586,4 +636,215 @@ func isLuaIdentifierByte(b byte) bool {
 
 func isParentRelativePath(value string) bool {
 	return value == ".." || strings.HasPrefix(value, ".."+string(os.PathSeparator))
+}
+
+// luaExprMaxCandidates bounds the fan-out from `or` branches so a pathological
+// expression cannot blow up the candidate list.
+const luaExprMaxCandidates = 16
+
+// parseLuaExpressionCallArgs returns the raw argument text of every call to name
+// on the line whose argument is not a plain string literal. Literal arguments are
+// left to parseLuaLiteralCall, which already handles them (including the
+// parenthesis-free `dofile "path"` form).
+func parseLuaExpressionCallArgs(line string, name string) []string {
+	out := make([]string, 0, 1)
+	for i := 0; i < len(line); i++ {
+		if line[i] == '\'' || line[i] == '"' {
+			if next, ok := skipLuaShortString(line, i); ok {
+				i = next - 1
+				continue
+			}
+		}
+		if i+1 < len(line) && line[i] == '-' && line[i+1] == '-' {
+			return out
+		}
+		if !isLuaNameAt(line, i, name) {
+			continue
+		}
+		open := trimLuaSpaceLeft(line, i+len(name))
+		if open >= len(line) || line[open] != '(' {
+			continue
+		}
+		closeIdx, ok := luaMatchingParen(line, open)
+		if !ok {
+			continue
+		}
+		arg := strings.TrimSpace(line[open+1 : closeIdx])
+		i = closeIdx
+		if arg == "" {
+			continue
+		}
+		if _, isLiteral := parseLuaSingleStringLiteral(arg); isLiteral {
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
+// evalLuaStringExpression evaluates the small subset of Lua that configs use to
+// build a path: string literals, os.getenv("NAME"), parentheses, concatenation
+// and `or` fallbacks. Each `or` branch becomes its own candidate so the caller
+// can stat every one. Anything outside that subset yields no candidates, so an
+// unsupported expression is skipped rather than guessed at.
+func evalLuaStringExpression(expr string) []string {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return nil
+	}
+
+	if branches := splitLuaTopLevel(expr, "or"); len(branches) > 1 {
+		out := make([]string, 0, len(branches))
+		for _, branch := range branches {
+			out = append(out, evalLuaStringExpression(branch)...)
+			if len(out) >= luaExprMaxCandidates {
+				return out[:luaExprMaxCandidates]
+			}
+		}
+		return out
+	}
+
+	if parts := splitLuaTopLevel(expr, ".."); len(parts) > 1 {
+		combos := []string{""}
+		for _, part := range parts {
+			values := evalLuaStringExpression(part)
+			if len(values) == 0 {
+				return nil
+			}
+			next := make([]string, 0, len(combos)*len(values))
+			for _, prefix := range combos {
+				for _, value := range values {
+					if len(next) >= luaExprMaxCandidates {
+						break
+					}
+					next = append(next, prefix+value)
+				}
+			}
+			combos = next
+		}
+		return combos
+	}
+
+	if inner, ok := luaBalancedInner(expr); ok {
+		return evalLuaStringExpression(inner)
+	}
+
+	if literal, ok := parseLuaSingleStringLiteral(expr); ok {
+		return []string{literal}
+	}
+
+	if strings.HasPrefix(expr, "os.getenv") {
+		if name, ok := parseLuaGetenvName(expr); ok {
+			if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+				return []string{value}
+			}
+		}
+	}
+
+	return nil
+}
+
+// splitLuaTopLevel splits expr on sep, ignoring separators inside string
+// literals or bracketed groups. When sep is a word (like "or") it only matches
+// on identifier boundaries, so "for" is not mistaken for a fallback.
+func splitLuaTopLevel(expr string, sep string) []string {
+	parts := make([]string, 0, 2)
+	depth := 0
+	start := 0
+	wordSep := isLuaIdentifierByte(sep[0])
+	for i := 0; i < len(expr); i++ {
+		c := expr[i]
+		if c == '\'' || c == '"' {
+			if next, ok := skipLuaShortString(expr, i); ok {
+				i = next - 1
+				continue
+			}
+		}
+		switch c {
+		case '(', '[', '{':
+			depth++
+			continue
+		case ')', ']', '}':
+			depth--
+			continue
+		}
+		if depth != 0 || !strings.HasPrefix(expr[i:], sep) {
+			continue
+		}
+		if wordSep {
+			if i > 0 && isLuaIdentifierByte(expr[i-1]) {
+				continue
+			}
+			if i+len(sep) < len(expr) && isLuaIdentifierByte(expr[i+len(sep)]) {
+				continue
+			}
+		}
+		parts = append(parts, expr[start:i])
+		start = i + len(sep)
+		i += len(sep) - 1
+	}
+	if len(parts) == 0 {
+		return []string{expr}
+	}
+	return append(parts, expr[start:])
+}
+
+// luaBalancedInner unwraps expr when it is a single parenthesised group.
+func luaBalancedInner(expr string) (string, bool) {
+	if expr == "" || expr[0] != '(' {
+		return "", false
+	}
+	closeIdx, ok := luaMatchingParen(expr, 0)
+	if !ok || closeIdx != len(expr)-1 {
+		return "", false
+	}
+	return expr[1:closeIdx], true
+}
+
+// luaMatchingParen returns the index of the ')' closing the '(' at open.
+func luaMatchingParen(s string, open int) (int, bool) {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		c := s[i]
+		if c == '\'' || c == '"' {
+			if next, ok := skipLuaShortString(s, i); ok {
+				i = next - 1
+				continue
+			}
+		}
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// parseLuaSingleStringLiteral reports whether expr is exactly one string literal.
+func parseLuaSingleStringLiteral(expr string) (string, bool) {
+	if value, next, ok := parseLuaLongBracket(expr, 0); ok && strings.TrimSpace(expr[next:]) == "" {
+		return value, true
+	}
+	if expr == "" || (expr[0] != '\'' && expr[0] != '"') {
+		return "", false
+	}
+	quote := expr[0]
+	for i := 1; i < len(expr); i++ {
+		if expr[i] == '\\' {
+			i++
+			continue
+		}
+		if expr[i] == quote {
+			if strings.TrimSpace(expr[i+1:]) != "" {
+				return "", false
+			}
+			return expr[1:i], true
+		}
+	}
+	return "", false
 }

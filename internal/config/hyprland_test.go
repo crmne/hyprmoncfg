@@ -992,3 +992,149 @@ func TestVerifyLuaSourceChainSuggestsAbsoluteDofileForCustomTarget(t *testing.T)
 		t.Fatalf("expected absolute dofile suggestion %s, got %v", want, err)
 	}
 }
+
+func TestVerifyLuaSourceChainFollowsComputedDofilePackagePath(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	hypr := filepath.Join(home, ".config", "hypr")
+	omarchy := filepath.Join(root, "share", "omarchy")
+	share := filepath.Join(omarchy, "default", "hypr")
+	for _, dir := range []string{hypr, share} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	t.Setenv("HOME", home)
+	t.Setenv("OMARCHY_PATH", omarchy)
+
+	bootstrap := `package.path = os.getenv("HOME")
+  .. "/.config/?.lua;"
+  .. package.path
+`
+	if err := os.WriteFile(filepath.Join(share, "bootstrap.lua"), []byte(bootstrap), 0o644); err != nil {
+		t.Fatalf("write bootstrap: %v", err)
+	}
+
+	rootConfig := filepath.Join(hypr, "hyprland.lua")
+	content := `dofile((os.getenv("OMARCHY_PATH") or "/usr/share/omarchy") .. "/default/hypr/bootstrap.lua")
+require("hypr.monitors")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	target := filepath.Join(hypr, "monitors.lua")
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected package.path from a computed dofile to verify, got %v", err)
+	}
+}
+
+func TestVerifyLuaSourceChainFollowsComputedDofileFallbackBranch(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	hypr := filepath.Join(home, ".config", "hypr")
+	omarchy := filepath.Join(root, "share", "omarchy")
+	share := filepath.Join(omarchy, "default", "hypr")
+	for _, dir := range []string{hypr, share} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	t.Setenv("HOME", home)
+	os.Unsetenv("HYPRMONCFG_TEST_UNSET_BASE")
+
+	bootstrap := `package.path = os.getenv("HOME") .. "/.config/?.lua;" .. package.path
+`
+	if err := os.WriteFile(filepath.Join(share, "bootstrap.lua"), []byte(bootstrap), 0o644); err != nil {
+		t.Fatalf("write bootstrap: %v", err)
+	}
+
+	rootConfig := filepath.Join(hypr, "hyprland.lua")
+	content := `dofile((os.getenv("HYPRMONCFG_TEST_UNSET_BASE") or "` +
+		filepath.ToSlash(omarchy) + `") .. "/default/hypr/bootstrap.lua")
+require("hypr.monitors")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	target := filepath.Join(hypr, "monitors.lua")
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected the literal `or` fallback branch to verify, got %v", err)
+	}
+}
+
+func TestVerifyLuaSourceChainAppliesPackagePathAssignedAfterRequire(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	hypr := filepath.Join(home, ".config", "hypr")
+	if err := os.MkdirAll(hypr, 0o755); err != nil {
+		t.Fatalf("mkdir hypr dir: %v", err)
+	}
+
+	t.Setenv("HOME", home)
+	rootConfig := filepath.Join(hypr, "hyprland.lua")
+	content := `require("hypr.monitors")
+package.path = os.getenv("HOME") .. "/.config/?.lua;" .. package.path
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	target := filepath.Join(hypr, "monitors.lua")
+	if err := os.WriteFile(target, []byte("-- generated\n"), 0o644); err != nil {
+		t.Fatalf("write target config: %v", err)
+	}
+
+	if err := VerifyIncludeChain(HyprConfigLua, rootConfig, target); err != nil {
+		t.Fatalf("expected package.path assigned after the require to verify, got %v", err)
+	}
+}
+
+func TestEvalLuaStringExpression(t *testing.T) {
+	t.Setenv("HYPRMONCFG_TEST_BASE", "/opt/base")
+	os.Unsetenv("HYPRMONCFG_TEST_ABSENT")
+
+	tests := []struct {
+		name string
+		expr string
+		want []string
+	}{
+		{name: "plain literal", expr: `"/etc/x.lua"`, want: []string{"/etc/x.lua"}},
+		{name: "concatenation", expr: `"/etc" .. "/x.lua"`, want: []string{"/etc/x.lua"}},
+		{name: "getenv", expr: `os.getenv("HYPRMONCFG_TEST_BASE") .. "/x.lua"`, want: []string{"/opt/base/x.lua"}},
+		{
+			name: "or keeps both branches",
+			expr: `(os.getenv("HYPRMONCFG_TEST_BASE") or "/fallback") .. "/x.lua"`,
+			want: []string{"/opt/base/x.lua", "/fallback/x.lua"},
+		},
+		{
+			name: "or falls back when unset",
+			expr: `(os.getenv("HYPRMONCFG_TEST_ABSENT") or "/fallback") .. "/x.lua"`,
+			want: []string{"/fallback/x.lua"},
+		},
+		{name: "unsupported call yields nothing", expr: `some_helper("x") .. "/x.lua"`, want: nil},
+		{name: "identifier containing or is not split", expr: `"for" .. "k.lua"`, want: []string{"fork.lua"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evalLuaStringExpression(tt.expr)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("got %q, want %q", got, tt.want)
+				}
+			}
+		})
+	}
+}
