@@ -1138,3 +1138,80 @@ func TestEvalLuaStringExpression(t *testing.T) {
 		})
 	}
 }
+
+func TestLuaIncludeSuggestionUsesPackagePathModuleName(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	hypr := filepath.Join(home, ".config", "hypr")
+	if err := os.MkdirAll(hypr, 0o755); err != nil {
+		t.Fatalf("mkdir hypr dir: %v", err)
+	}
+
+	t.Setenv("HOME", home)
+	rootConfig := filepath.Join(hypr, "hyprland.lua")
+	content := `package.path = os.getenv("HOME") .. "/.config/?.lua;" .. package.path
+require("hypr.something-else")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	target := filepath.Join(hypr, "generated.lua")
+
+	err := VerifyIncludeChain(HyprConfigLua, rootConfig, target)
+	if err == nil {
+		t.Fatal("expected verification to fail for an unincluded target")
+	}
+	// Must match the convention the config already uses, not a bare "generated"
+	// which package.path cannot load.
+	if !strings.Contains(err.Error(), "require(\"hypr.generated\")") {
+		t.Fatalf("expected package.path-aware require suggestion, got %v", err)
+	}
+}
+
+func TestLuaIncludeSuggestionFallsBackToDofileOutsidePackagePath(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	hypr := filepath.Join(home, ".config", "hypr")
+	if err := os.MkdirAll(hypr, 0o755); err != nil {
+		t.Fatalf("mkdir hypr dir: %v", err)
+	}
+
+	t.Setenv("HOME", home)
+	rootConfig := filepath.Join(hypr, "hyprland.lua")
+	content := `package.path = os.getenv("HOME") .. "/.config/?.lua;" .. package.path
+require("hypr.something-else")
+`
+	if err := os.WriteFile(rootConfig, []byte(content), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	// Outside every declared package.path prefix, so no require() can load it.
+	target := filepath.Join(root, "elsewhere", "generated.lua")
+
+	err := VerifyIncludeChain(HyprConfigLua, rootConfig, target)
+	if err == nil {
+		t.Fatal("expected verification to fail for an unincluded target")
+	}
+	if !strings.Contains(err.Error(), "dofile(") {
+		t.Fatalf("expected dofile fallback suggestion, got %v", err)
+	}
+	if strings.Contains(err.Error(), "require(") {
+		t.Fatalf("expected no unresolvable require suggestion, got %v", err)
+	}
+}
+
+func TestLuaIncludeSuggestionKeepsRelativeRequireWithoutPackagePath(t *testing.T) {
+	root := t.TempDir()
+	rootConfig := filepath.Join(root, "hyprland.lua")
+	if err := os.WriteFile(rootConfig, []byte("-- nothing included\n"), 0o644); err != nil {
+		t.Fatalf("write root config: %v", err)
+	}
+	target := filepath.Join(root, "monitors.lua")
+
+	err := VerifyIncludeChain(HyprConfigLua, rootConfig, target)
+	if err == nil {
+		t.Fatal("expected verification to fail for an unincluded target")
+	}
+	if !strings.Contains(err.Error(), "require(\"monitors\")") {
+		t.Fatalf("expected historical relative require suggestion, got %v", err)
+	}
+}

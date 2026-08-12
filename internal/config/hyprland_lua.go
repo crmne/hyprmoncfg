@@ -35,26 +35,63 @@ func VerifyLuaIncludeChain(rootConfigPath string, targetPath string) error {
 		if err != nil {
 			return err
 		}
+		state = retry
 	}
 	if ok {
 		return nil
 	}
 
-	return fmt.Errorf("%s is not included by %s; add `%s` to your Hyprland Lua config or pass a different --monitors-conf target", targetPath, rootConfigPath, luaIncludeSuggestion(rootConfigPath, targetPath))
+	return fmt.Errorf("%s is not included by %s; add `%s` to your Hyprland Lua config or pass a different --monitors-conf target", targetPath, rootConfigPath, luaIncludeSuggestion(rootConfigPath, targetPath, state.patterns))
 }
 
-func luaIncludeSuggestion(rootConfigPath string, targetPath string) string {
-	rootDir := filepath.Dir(rootConfigPath)
-	targetDir := filepath.Dir(targetPath)
-	if targetDir == rootDir {
-		moduleName := strings.TrimSuffix(filepath.Base(targetPath), filepath.Ext(targetPath))
+// luaIncludeSuggestion proposes a line the user can paste into their config.
+// It only suggests a require() it can show will actually resolve: when the
+// config drives module lookup through package.path, a directory-relative module
+// name is not loadable, and suggesting one sends the user to a "module not
+// found" error. In that case fall back to dofile(), which is position
+// independent and always resolves.
+func luaIncludeSuggestion(rootConfigPath string, targetPath string, patterns []string) string {
+	if moduleName, ok := luaModuleNameFromPatterns(targetPath, patterns); ok {
 		return "require(" + quoteLuaArg(moduleName) + ")"
 	}
-	if rel, err := filepath.Rel(rootDir, targetPath); err == nil && !isParentRelativePath(rel) {
-		moduleName := strings.TrimSuffix(rel, filepath.Ext(rel))
-		return "require(" + quoteLuaArg(filepath.ToSlash(moduleName)) + ")"
+
+	// No package.path in play: keep the historical directory-relative guess.
+	if len(patterns) == 0 {
+		rootDir := filepath.Dir(rootConfigPath)
+		targetDir := filepath.Dir(targetPath)
+		if targetDir == rootDir {
+			moduleName := strings.TrimSuffix(filepath.Base(targetPath), filepath.Ext(targetPath))
+			return "require(" + quoteLuaArg(moduleName) + ")"
+		}
+		if rel, err := filepath.Rel(rootDir, targetPath); err == nil && !isParentRelativePath(rel) {
+			moduleName := strings.TrimSuffix(rel, filepath.Ext(rel))
+			return "require(" + quoteLuaArg(filepath.ToSlash(moduleName)) + ")"
+		}
 	}
+
 	return "dofile(" + quoteLuaArg(targetPath) + ")"
+}
+
+// luaModuleNameFromPatterns inverts a package.path pattern to recover the module
+// name that would load targetPath, so the suggestion matches the convention the
+// config already uses (e.g. "hypr.monitors" rather than a bare "monitors").
+func luaModuleNameFromPatterns(targetPath string, patterns []string) (string, bool) {
+	for _, pattern := range patterns {
+		idx := strings.Index(pattern, "?")
+		if idx < 0 {
+			continue
+		}
+		prefix, suffix := pattern[:idx], pattern[idx+1:]
+		if !strings.HasPrefix(targetPath, prefix) || !strings.HasSuffix(targetPath, suffix) {
+			continue
+		}
+		name := targetPath[len(prefix) : len(targetPath)-len(suffix)]
+		if name == "" {
+			continue
+		}
+		return strings.ReplaceAll(filepath.ToSlash(name), "/", "."), true
+	}
+	return "", false
 }
 
 func quoteLuaArg(value string) string {
