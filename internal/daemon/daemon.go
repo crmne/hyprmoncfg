@@ -13,6 +13,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/config"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/lid"
+	"github.com/crmne/hyprmoncfg/internal/omarchywatch"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 	"github.com/crmne/hyprmoncfg/internal/suspend"
 )
@@ -538,6 +539,8 @@ func (s *Service) applyBest(ctx context.Context) error {
 		}
 	}
 
+	target = s.absorbOmarchyDisplayScale(target, monitors, monitorSet, manualHold)
+
 	effective := target
 	if s.lidState == lid.Closed {
 		adjusted, adjustment := profile.ApplyClosedLidPolicy(target, monitors)
@@ -585,6 +588,33 @@ func (s *Service) applyBest(ctx context.Context) error {
 	s.cfg.Logf("applied profile: %s", target.Name)
 	s.signalChange()
 	return nil
+}
+
+// absorbOmarchyDisplayScale keeps a scale the Omarchy Display panel just
+// set. That panel talks to Hyprland directly, so without this the next
+// poll would put the saved profile back and undo the click. Clamshell
+// resets do not write Omarchy's scaling log, so they still get reverted.
+func (s *Service) absorbOmarchyDisplayScale(target profile.Profile, monitors []hypr.Monitor, monitorSet string, manualHold bool) profile.Profile {
+	if target.Name == "" {
+		return target
+	}
+	if _, err := s.store.Load(target.Name); err != nil {
+		return target
+	}
+
+	updated, changed := profile.AbsorbRequestedScales(target, monitors, omarchywatch.RecentRequestedScales(time.Now()))
+	if len(changed) == 0 {
+		return target
+	}
+	if err := s.store.Save(updated); err != nil {
+		s.cfg.Logf("could not persist Omarchy display scale into %q: %v", target.Name, err)
+		return target
+	}
+	if manualHold {
+		s.setManualOverride(monitorSet, updated)
+	}
+	s.cfg.Logf("persisted Omarchy display scale for %s into profile %q", strings.Join(changed, ","), updated.Name)
+	return updated
 }
 
 func (s *Service) SetNotifier(notify func()) {

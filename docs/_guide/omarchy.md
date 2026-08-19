@@ -44,6 +44,8 @@ Omarchy manages monitors too, and two managers can disagree. Three things keep h
 
 Omarchy's clamshell script also drives Hyprland directly with `hyprctl`, which no load order can outrank. The daemon covers that by putting the whole profile back when something outside hyprmoncfg moves the displays, including a profile you picked by hand.
 
+The Omarchy **Display** panel (and Super+/) is the exception. It records each scale change in `~/.local/state/omarchy/monitor-scaling.log` and does not go through hyprmoncfg. When the daemon sees a live scale that matches a recent line in that log, it writes the new scale into the active profile and then re-applies the saved layout. Clamshell and the monitor watcher do not write that log, so they are still reverted.
+
 Check the load order at any time:
 
 ```bash

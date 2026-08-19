@@ -281,6 +281,55 @@ func TestRoundedScaleReadbackRequiresSharpSavedScale(t *testing.T) {
 	}
 }
 
+func TestAbsorbRequestedScalesKeepsLayoutAndUpdatesMatchingOutput(t *testing.T) {
+	laptop := hypr.Monitor{
+		Name: "eDP-1", Make: "BOE", Model: "Panel", Serial: "C3",
+		Width: 1920, Height: 1080, RefreshRate: 144, X: 0, Y: 0, Scale: 1.25,
+	}
+	external := hypr.Monitor{
+		Name: "HDMI-A-1", Make: "LG", Model: "FHD", Serial: "D4",
+		Width: 1920, Height: 1080, RefreshRate: 60, X: 1920, Y: 76, Scale: 1,
+	}
+	saved := New("desk", []OutputConfig{
+		{Key: laptop.HardwareKey(), Name: laptop.Name, Enabled: true, Width: 1920, Height: 1080, Refresh: 144, X: 1920, Y: 76, Scale: 2},
+		{Key: external.HardwareKey(), Name: external.Name, Enabled: true, Width: 1920, Height: 1080, Refresh: 60, X: 0, Y: -700, Scale: 1},
+	})
+
+	updated, changed := AbsorbRequestedScales(saved, []hypr.Monitor{laptop, external}, map[string]float64{"eDP-1": 1.25})
+	if len(changed) != 1 || changed[0] != "eDP-1" {
+		t.Fatalf("changed = %v, want [eDP-1]", changed)
+	}
+	laptopOut, ok := updated.OutputByKey(laptop.HardwareKey())
+	if !ok || laptopOut.Scale != 1.25 || laptopOut.X != 1920 || laptopOut.Y != 76 {
+		t.Fatalf("laptop output = %+v", laptopOut)
+	}
+	externalOut, ok := updated.OutputByKey(external.HardwareKey())
+	if !ok || externalOut.Scale != 1 || externalOut.X != 0 {
+		t.Fatalf("external output = %+v", externalOut)
+	}
+}
+
+func TestAbsorbRequestedScalesIgnoresUnlandedAndDisabledOutputs(t *testing.T) {
+	laptop := hypr.Monitor{
+		Name: "eDP-1", Make: "BOE", Model: "Panel", Serial: "C3",
+		Width: 1920, Height: 1080, Scale: 2,
+	}
+	saved := New("desk", []OutputConfig{
+		{Key: laptop.HardwareKey(), Name: laptop.Name, Enabled: true, Width: 1920, Height: 1080, Scale: 2},
+	})
+
+	if _, changed := AbsorbRequestedScales(saved, []hypr.Monitor{laptop}, map[string]float64{"eDP-1": 1.25}); changed != nil {
+		t.Fatalf("live scale did not land, changed = %v", changed)
+	}
+
+	disabled := laptop
+	disabled.Disabled = true
+	disabled.Scale = 1.25
+	if _, changed := AbsorbRequestedScales(saved, []hypr.Monitor{disabled}, map[string]float64{"eDP-1": 1.25}); changed != nil {
+		t.Fatalf("disabled output, changed = %v", changed)
+	}
+}
+
 func TestExactStateMatchTreatsOmittedDefaultsAsLiveDefaults(t *testing.T) {
 	monitors := []hypr.Monitor{{
 		Name: "DP-1", Make: "Microstep", Model: "MPG321UR-QD", Serial: "A1",

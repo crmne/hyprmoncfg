@@ -461,6 +461,7 @@ func newRunTestEnv(t *testing.T, monitors []hypr.Monitor) runTestEnv {
 	t.Helper()
 
 	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
 	logPath := filepath.Join(dir, "hyprctl.log")
 	monitorStatePath := filepath.Join(dir, "monitors.json")
 	monitorsConfPath := filepath.Join(dir, "monitors.conf")
@@ -743,6 +744,7 @@ func newApplyBestTestEnvWithMonitors(t *testing.T, beforeApplyMonitorsJSON, afte
 	t.Helper()
 
 	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
 	logPath := filepath.Join(dir, "hyprctl.log")
 	statePath := filepath.Join(dir, "applied")
 	monitorsConfPath := filepath.Join(dir, "monitors.conf")
@@ -883,6 +885,72 @@ func TestApplyBestRestoresTheManuallyChosenProfileAfterAnExternalChange(t *testi
 	}
 	if strings.Contains(rendered, "scale = 3") {
 		t.Fatalf("expected the manual choice to outrank automatic matching:\n%s", rendered)
+	}
+}
+
+func TestApplyBestPersistsOmarchyDisplayPanelScale(t *testing.T) {
+	// Omarchy's Display panel changed scale via hyprctl and left position=auto.
+	// Keep the new scale, put the saved layout back.
+	drifted := `[{"id":1,"name":"eDP-1","description":"Framework Panel","make":"Framework","model":"Panel","serial":"A1","width":2880,"height":1800,"refreshRate":120,"x":0,"y":0,"scale":1.25,"transform":0,"disabled":false,"dpmsStatus":true,"mirrorOf":""}]`
+	restored := `[{"id":1,"name":"eDP-1","description":"Framework Panel","make":"Framework","model":"Panel","serial":"A1","width":2880,"height":1800,"refreshRate":120,"x":100,"y":200,"scale":1.25,"transform":0,"disabled":false,"dpmsStatus":true,"mirrorOf":""}]`
+	env := newApplyBestTestEnvWithMonitors(t, drifted, restored)
+	mon := hypr.Monitor{Name: "eDP-1", Description: "Framework Panel", Make: "Framework", Model: "Panel", Serial: "A1"}
+
+	if err := os.MkdirAll(filepath.Join(os.Getenv("XDG_STATE_HOME"), "omarchy"), 0o755); err != nil {
+		t.Fatalf("mkdir omarchy state: %v", err)
+	}
+	line := fmt.Sprintf("at=%s\trequested=1.25\tcurrent=1.5\tnew=1.25\tmonitor=eDP-1\n", time.Now().Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "omarchy", "monitor-scaling.log"), []byte(line), 0o644); err != nil {
+		t.Fatalf("write scaling log: %v", err)
+	}
+
+	chosen := profile.New("hand-picked", []profile.OutputConfig{{
+		Key:     mon.HardwareKey(),
+		Name:    mon.Name,
+		Enabled: true,
+		Width:   2880,
+		Height:  1800,
+		Refresh: 120,
+		X:       100,
+		Y:       200,
+		Scale:   1.5,
+	}})
+	if err := env.store.Save(chosen); err != nil {
+		t.Fatalf("save profile: %v", err)
+	}
+
+	logs := &logRecorder{}
+	svc := New(env.client, env.store, Config{
+		MonitorsConf: env.monitorsConfPath,
+		HyprConfig:   env.hyprlandConfigPath,
+		Logf:         logs.logf,
+	})
+	svc.setManualOverride(profile.MonitorSetHash([]hypr.Monitor{mon}), chosen)
+
+	if err := svc.applyBest(context.Background()); err != nil {
+		t.Fatalf("applyBest returned error: %v", err)
+	}
+
+	rendered := readMonitorsConf(t, env)
+	for _, want := range []string{"position = 100x200", "scale = 1.25"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("expected saved layout with Omarchy scale, missing %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "scale = 1.5") {
+		t.Fatalf("Omarchy display scale was reverted:\n%s", rendered)
+	}
+	if !logs.contains("persisted Omarchy display scale for eDP-1 into profile \"hand-picked\"") {
+		t.Fatalf("expected persist log, got:\n%s", logs.all())
+	}
+
+	saved, err := env.store.Load("hand-picked")
+	if err != nil {
+		t.Fatalf("reload profile: %v", err)
+	}
+	got, ok := saved.OutputByKey(mon.HardwareKey())
+	if !ok || got.Scale != 1.25 || got.X != 100 || got.Y != 200 {
+		t.Fatalf("saved output = %+v", got)
 	}
 }
 

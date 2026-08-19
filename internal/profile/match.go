@@ -342,3 +342,44 @@ func ScaleMatchesRoundedReadback(width, height int, savedScale, reportedScale fl
 func roundScaleForHyprlandReadback(scale float64) float64 {
 	return math.Round(scale*100) / 100
 }
+
+// AbsorbRequestedScales copies connector scales from requested into the
+// matching enabled outputs when Hyprland has already landed on that value.
+// Position, mode, and enablement stay as the profile saved them.
+func AbsorbRequestedScales(p Profile, monitors []hypr.Monitor, requested map[string]float64) (Profile, []string) {
+	p.Normalize()
+	if len(requested) == 0 || len(p.Outputs) == 0 || len(monitors) == 0 {
+		return p, nil
+	}
+
+	resolver := NewMonitorResolver(monitors)
+	updated := p
+	updated.Outputs = append([]OutputConfig(nil), p.Outputs...)
+	var changed []string
+
+	for i, output := range updated.Outputs {
+		if !output.Enabled {
+			continue
+		}
+		monitor, ok := resolver.ResolveOutput(output)
+		if !ok || monitor.Disabled {
+			continue
+		}
+		want, ok := requested[monitor.Name]
+		if !ok || want <= 0 {
+			continue
+		}
+		if !stateScalesEqual(monitor.Width, monitor.Height, monitor.Scale, want) {
+			continue
+		}
+		if stateScalesEqual(monitor.Width, monitor.Height, output.Scale, want) {
+			continue
+		}
+		updated.Outputs[i].Scale = want
+		changed = append(changed, monitor.Name)
+	}
+	if len(changed) == 0 {
+		return p, nil
+	}
+	return updated, changed
+}
