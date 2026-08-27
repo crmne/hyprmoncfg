@@ -1754,3 +1754,41 @@ func TestApplyNeverLeavesTheConfigWithoutMonitorRules(t *testing.T) {
 		t.Fatalf("expected a note pointing at the new file, got:\n%s", retired)
 	}
 }
+
+func TestEngineRevertRemovesIncludeWhenPreviewCreatedFile(t *testing.T) {
+	engine, _, err := initTestEngine(t)
+	if err != nil {
+		t.Fatalf("init test engine: %v", err)
+	}
+
+	// Simulate a first-time preview: neither the generated monitor config nor
+	// the include line exists yet. The path must carry the "hyprmoncfg"
+	// marker, since RemoveInclude recognizes its own lines by it.
+	engine.MonitorsConfPath = filepath.Join(filepath.Dir(engine.MonitorsConfPath), "hyprmoncfg-monitors.conf")
+	if err := os.WriteFile(engine.HyprlandConfigPath, nil, 0o644); err != nil {
+		t.Fatalf("truncate hyprland.conf: %v", err)
+	}
+
+	ctx := context.Background()
+	snapshot, err := engine.Apply(ctx, newTestProfile(), monitors)
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	if !snapshot.IncludeAdded {
+		t.Fatalf("expected the new include to be recorded in the revert state")
+	}
+	if err := engine.Revert(ctx, snapshot); err != nil {
+		t.Fatalf("revert failed: %v", err)
+	}
+
+	if _, err := os.Stat(engine.MonitorsConfPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected the generated monitor config to be removed, stat err: %v", err)
+	}
+	root, err := os.ReadFile(engine.HyprlandConfigPath)
+	if err != nil {
+		t.Fatalf("read hyprland.conf: %v", err)
+	}
+	if strings.Contains(string(root), "hyprmoncfg") {
+		t.Fatalf("expected the include line to be removed with the file, got:\n%s", root)
+	}
+}

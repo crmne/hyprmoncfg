@@ -45,6 +45,8 @@ type Engine struct {
 type RevertState struct {
 	MonitorsConf config.FileSnapshot
 	Commands     []string
+	IncludeAdded bool
+	Resolved     config.ResolvedHyprConfig
 }
 
 type RenderOptions = render.Options
@@ -220,7 +222,8 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 	// include has to be in place for it. The file it names is written just
 	// after this, and never before: an include pointing at a file that does not
 	// exist yet is a config error on any reload that lands in between.
-	e.ensureConfigInclude(resolvedConfig)
+	revertState.Resolved = resolvedConfig
+	revertState.IncludeAdded = e.ensureConfigInclude(resolvedConfig).Added
 	renderedForReload := rendered
 	luaProbe := ""
 	if resolvedConfig.Format == config.HyprConfigLua {
@@ -293,13 +296,13 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 
 // ensureConfigInclude keeps the generated monitor config loaded last by the
 // root Hyprland config.
-func (e Engine) ensureConfigInclude(resolved config.ResolvedHyprConfig) {
+func (e Engine) ensureConfigInclude(resolved config.ResolvedHyprConfig) config.IncludeResult {
 	result, err := config.EnsureIncluded(resolved.RootPath, resolved.Format, resolved.MonitorsPath)
 	if err != nil {
 		if e.Logf != nil {
 			e.Logf("could not load %s from %s: %v", resolved.MonitorsPath, resolved.RootPath, err)
 		}
-		return
+		return config.IncludeResult{}
 	}
 	if result.Changed() && e.Logf != nil {
 		action := "moved to the end of"
@@ -308,7 +311,7 @@ func (e Engine) ensureConfigInclude(resolved config.ResolvedHyprConfig) {
 		}
 		e.Logf("%s %s: %s", action, result.RootPath, result.Line)
 	}
-
+	return result
 }
 
 // retireLegacyMonitorsFile empties the monitors file an older hyprmoncfg owned,
@@ -531,6 +534,11 @@ func (e Engine) Revert(ctx context.Context, state RevertState) error {
 	if state.MonitorsConf.Path != "" {
 		if err := state.MonitorsConf.Restore(); err != nil {
 			return err
+		}
+		if !state.MonitorsConf.Exists && state.IncludeAdded {
+			if _, err := config.RemoveInclude(state.Resolved.RootPath, state.Resolved.Format); err != nil {
+				return err
+			}
 		}
 		if err := e.Client.Reload(ctx); err != nil {
 			return err
