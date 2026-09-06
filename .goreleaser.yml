@@ -7,7 +7,7 @@ release:
     owner: crmne
     name: hyprmoncfg
   extra_files:
-    - glob: "{{ .Env.RUNNER_TEMP }}/hyprmoncfg-{{ .Version }}-deps.tar.xz"
+    - glob: ".release-assets/hyprmoncfg-{{ .Version }}-deps.tar.xz"
 
 before:
   hooks:
@@ -59,7 +59,7 @@ archives:
 checksum:
   name_template: checksums.txt
   extra_files:
-    - glob: "{{ .Env.RUNNER_TEMP }}/hyprmoncfg-{{ .Version }}-deps.tar.xz"
+    - glob: ".release-assets/hyprmoncfg-{{ .Version }}-deps.tar.xz"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

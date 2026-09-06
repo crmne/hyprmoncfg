@@ -29,7 +29,7 @@ jobs:
       - name: Package offline Go dependencies
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: bash scripts/package-deps.sh "${RELEASE_TAG#v}" "$RUNNER_TEMP"
+        run: bash scripts/package-deps.sh "${RELEASE_TAG#v}" .release-assets
 
       - name: Goreleaser
         uses: goreleaser/goreleaser-action@v6
