@@ -105,3 +105,35 @@ func TestMonitorSubscriptionStopsWhileSocketIsIdle(t *testing.T) {
 		t.Fatalf("cancellation reported as an IPC failure: %v", err)
 	}
 }
+
+func TestMonitorSubscriptionCancellationDuringSetupIsQuiet(t *testing.T) {
+	for _, stage := range []string{"discovery", "connect"} {
+		for _, canceled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/canceled=%t", stage, canceled), func(t *testing.T) {
+				runtime := ""
+				if stage == "connect" {
+					runtime = t.TempDir()
+				}
+				t.Setenv("XDG_RUNTIME_DIR", runtime)
+				t.Setenv("HYPRLAND_INSTANCE_SIGNATURE", "test")
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				if canceled {
+					cancel()
+				}
+				events, failures := (&Client{}).SubscribeMonitorEvents(ctx)
+				select {
+				case _, ok := <-events:
+					if ok {
+						t.Fatal("unexpected monitor event")
+					}
+				case <-time.After(time.Second):
+					t.Fatal("subscription did not stop")
+				}
+				if err := <-failures; (err == nil) != canceled {
+					t.Fatalf("canceled=%t, error=%v: only cancellation should be quiet", canceled, err)
+				}
+			})
+		}
+	}
+}

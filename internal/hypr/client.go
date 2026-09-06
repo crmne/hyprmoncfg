@@ -416,14 +416,18 @@ func (c *Client) SubscribeMonitorEvents(ctx context.Context) (<-chan Event, <-ch
 
 		socketPath, err := c.socket2Path(ctx)
 		if err != nil {
-			errorsCh <- err
+			if ctx.Err() == nil {
+				errorsCh <- err
+			}
 			return
 		}
 
 		dialer := net.Dialer{Timeout: 5 * time.Second}
 		conn, err := dialer.DialContext(ctx, "unix", socketPath)
 		if err != nil {
-			errorsCh <- fmt.Errorf("failed to connect to hyprland socket2: %w", err)
+			if ctx.Err() == nil {
+				errorsCh <- fmt.Errorf("failed to connect to hyprland socket2: %w", err)
+			}
 			return
 		}
 		defer conn.Close()
