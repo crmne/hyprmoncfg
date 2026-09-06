@@ -24,6 +24,14 @@ type pickerItem string
 func (i pickerItem) FilterValue() string { return string(i) }
 func (i pickerItem) Title() string       { return string(i) }
 func (i pickerItem) Description() string { return "" }
+func (i pickerItem) Value() string       { return string(i) }
+
+type fieldPickerItem struct {
+	pickerItem
+	label string
+}
+
+func (i fieldPickerItem) Title() string { return i.label }
 
 type modePickerState struct {
 	OutputIndex int
@@ -288,10 +296,10 @@ func (m *Model) activateInspectorField() tea.Cmd {
 		}
 		return m.openNumericInput(kind, m.selectedOutput, title, hint, value)
 	case 3:
-		m.openFieldPicker("Bit Depth", m.inspectorField, []string{"8", "10"})
+		m.openFieldPicker(layoutFields[3], m.inspectorField, []string{"8", "10"})
 		return nil
 	case 4:
-		m.openFieldPicker("Color Management", m.inspectorField, []string{"srgb", "auto", "wide", "hdr", "hdredid", "dcip3", "dp3", "adobe", "edid"})
+		m.openFieldPicker(layoutFields[4], m.inspectorField, []string{"srgb", "auto", "wide", "hdr", "hdredid", "dcip3", "dp3", "adobe", "edid"})
 		return nil
 	case 5:
 		m.openFieldPicker("VRR", m.inspectorField, []string{"off", "on", "fullscreen"})
@@ -310,41 +318,41 @@ func (m *Model) activateInspectorField() tea.Cmd {
 		return nil
 	case 10:
 		output := m.editOutputs[m.selectedOutput]
-		return m.openNumericInput(numericInputFloat, m.selectedOutput, "SDR Brightness", "Value between 0 and 3. Enter applies. Esc cancels.", fmt.Sprintf("%.2f", output.SDRBrightness))
+		return m.openNumericInput(numericInputFloat, m.selectedOutput, layoutFields[10], "SDR-to-HDR luminance multiplier, 0–3 (0 uses 1). Enter applies. Esc cancels.", fmt.Sprintf("%.2f", sdrMultiplier(output.SDRBrightness)))
 	case 11:
 		output := m.editOutputs[m.selectedOutput]
-		return m.openNumericInput(numericInputFloat, m.selectedOutput, "SDR Saturation", "Value between 0 and 3. Enter applies. Esc cancels.", fmt.Sprintf("%.2f", output.SDRSaturation))
+		return m.openNumericInput(numericInputFloat, m.selectedOutput, layoutFields[11], "SDR-to-HDR saturation multiplier, 0–3 (0 uses 1). Enter applies. Esc cancels.", fmt.Sprintf("%.2f", sdrMultiplier(output.SDRSaturation)))
 	case 12:
 		output := m.editOutputs[m.selectedOutput]
-		return m.openNumericInput(numericInputFloat, m.selectedOutput, "SDR Min Luminance", "Value between 0 and 1. Enter applies. Esc cancels.", fmt.Sprintf("%.3f", output.SDRMinLuminance))
+		return m.openNumericInput(numericInputFloat, m.selectedOutput, layoutFields[12], "SDR-to-HDR black level, 0–1 cd/m². Enter applies. Esc cancels.", fmt.Sprintf("%.3f", output.SDRMinLuminance))
 	case 13:
 		output := m.editOutputs[m.selectedOutput]
-		return m.openNumericInput(numericInputInt, m.selectedOutput, "SDR Max Luminance", "Integer between 0 and 1000. Enter applies. Esc cancels.", fmt.Sprintf("%d", output.SDRMaxLuminance))
+		return m.openNumericInput(numericInputInt, m.selectedOutput, layoutFields[13], "SDR-to-HDR white level, 0–1000 cd/m². Enter applies. Esc cancels.", fmt.Sprintf("%d", output.SDRMaxLuminance))
 	case 14:
-		m.openFieldPicker("SDR Transfer Curve", m.inspectorField, []string{"default", "gamma22", "srgb"})
+		m.openFieldPicker(layoutFields[14], m.inspectorField, []string{"default", "gamma22", "srgb"})
 		return nil
 	case 15:
 		output := m.editOutputs[m.selectedOutput]
-		return m.openNumericInput(numericInputFloat, m.selectedOutput, "Min Luminance", "Monitor minimum luminance. Enter applies. Esc cancels.", fmt.Sprintf("%.3f", output.MinLuminance))
+		return m.openNumericInput(numericInputFloat, m.selectedOutput, layoutFields[15], "Display black-level metadata in cd/m². All-zero overrides use EDID.", fmt.Sprintf("%.3f", output.MinLuminance))
 	case 16:
 		output := m.editOutputs[m.selectedOutput]
-		return m.openNumericInput(numericInputInt, m.selectedOutput, "Max Luminance", "Monitor maximum luminance. Enter applies. Esc cancels.", fmt.Sprintf("%d", output.MaxLuminance))
+		return m.openNumericInput(numericInputInt, m.selectedOutput, layoutFields[16], "Display peak-luminance metadata in cd/m². All-zero overrides use EDID.", fmt.Sprintf("%d", output.MaxLuminance))
 	case 17:
 		output := m.editOutputs[m.selectedOutput]
-		return m.openNumericInput(numericInputInt, m.selectedOutput, "Max Avg Luminance", "Monitor average luminance. Enter applies. Esc cancels.", fmt.Sprintf("%d", output.MaxAvgLuminance))
+		return m.openNumericInput(numericInputInt, m.selectedOutput, layoutFields[17], "Maximum frame-average luminance metadata in cd/m². Zero uses EDID.", fmt.Sprintf("%d", output.MaxAvgLuminance))
 	case 18:
-		m.openFieldPicker("Force Wide Color", m.inspectorField, []string{"off", "auto", "on"})
+		m.openFieldPicker(layoutFields[18], m.inspectorField, []string{"off", "auto", "on"})
 		return nil
 	case 19:
-		m.openFieldPicker("Force HDR", m.inspectorField, []string{"off", "auto", "on"})
+		m.openFieldPicker(layoutFields[19], m.inspectorField, []string{"off", "auto", "on"})
 		return nil
 	case 20:
 		output := m.editOutputs[m.selectedOutput]
 		return m.openNumericInput(
 			numericInputICC,
 			m.selectedOutput,
-			fmt.Sprintf("Set ICC Profile for %s", output.Name),
-			"Absolute path to ICC profile. Leave empty to clear. Enter applies. Esc cancels.",
+			fmt.Sprintf("%s for %s", layoutFields[20], output.Name),
+			"Absolute path to an ICC device profile. Leave empty to clear. Enter applies. Esc cancels.",
 			output.ICC,
 		)
 	default:
@@ -360,7 +368,7 @@ func (m *Model) openFieldPicker(title string, fieldIndex int, options []string) 
 	items := make([]list.Item, 0, len(options))
 	selected := 0
 	for i, opt := range options {
-		items = append(items, pickerItem(opt))
+		items = append(items, fieldPickerItem{pickerItem(opt), fieldOptionLabel(fieldIndex, opt)})
 		if opt == currentValue {
 			selected = i
 		}
@@ -953,7 +961,7 @@ func (m *Model) commitModePicker() tea.Cmd {
 		m.mode = modeMain
 		return nil
 	}
-	selected, ok := m.picker.List.SelectedItem().(pickerItem)
+	selected, ok := m.picker.List.SelectedItem().(interface{ Value() string })
 	if !ok {
 		m.picker = nil
 		m.mode = modeMain
@@ -961,14 +969,14 @@ func (m *Model) commitModePicker() tea.Cmd {
 	}
 
 	output := &m.editOutputs[m.picker.OutputIndex]
-	value := string(selected)
+	value := selected.Value()
 	oldWidth, oldHeight := output.logicalSize()
 
 	if m.picker.FieldIndex >= 0 {
 		m.applyFieldPickerValue(output, m.picker.FieldIndex, value)
 		m.reflowAfterResize(m.picker.OutputIndex, oldWidth, oldHeight)
 		m.layoutChanged()
-		m.setStatusOK(fmt.Sprintf("Set %s to %s for %s", layoutFields[m.picker.FieldIndex], value, output.Name))
+		m.setStatusOK(fmt.Sprintf("Set %s to %s for %s", layoutFields[m.picker.FieldIndex], fieldOptionLabel(m.picker.FieldIndex, value), output.Name))
 		m.picker = nil
 		m.mode = modeMain
 		return nil

@@ -1233,10 +1233,14 @@ type inspectorLayout struct {
 func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compact bool) inspectorLayout {
 	lines := make([]string, 0, len(layoutFields)+2)
 
-	labelWidth := 12
-	shortLabels := compact || innerWidth < 34
-	if shortLabels {
-		labelWidth = 11
+	labelWidth := 0
+	shortLabels := compact || innerWidth < 34 || (m.inspectorTab == inspectorTabColor && innerWidth < 50)
+	for _, field := range inspectorFieldsForTab(m.inspectorTab) {
+		label := layoutFields[field]
+		if shortLabels {
+			label = layoutFieldShortLabel(field)
+		}
+		labelWidth = max(labelWidth, lipgloss.Width(label))
 	}
 
 	fieldRows := make(map[int]int, len(layoutFields))
@@ -1248,7 +1252,7 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 		if shortLabels {
 			labelText = layoutFieldShortLabel(idx)
 		}
-		valueText := m.layoutFieldValue(output, idx)
+		valueText := fieldOptionLabel(idx, m.layoutFieldValue(output, idx))
 		issue, hasIssue := m.layoutFieldIssue(output, idx)
 		valueStyle := m.styles.value
 		if hasIssue {
@@ -2382,9 +2386,9 @@ func (m *Model) adjustInspectorField(delta int) {
 		}
 		output.MirrorOf = targets[wrapIndex(current+delta, len(targets))]
 	case 10:
-		output.SDRBrightness = clampFloat(output.SDRBrightness+float64(delta)*0.05, 0, 3.0)
+		output.SDRBrightness = clampFloat(sdrMultiplier(output.SDRBrightness)+float64(delta)*0.05, 0, 3.0)
 	case 11:
-		output.SDRSaturation = clampFloat(output.SDRSaturation+float64(delta)*0.05, 0, 3.0)
+		output.SDRSaturation = clampFloat(sdrMultiplier(output.SDRSaturation)+float64(delta)*0.05, 0, 3.0)
 	case 12:
 		output.SDRMinLuminance = clampFloat(output.SDRMinLuminance+float64(delta)*0.005, 0, 1.0)
 	case 13:
@@ -3243,6 +3247,9 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 	case 2:
 		return scaling.Format(output.Scale)
 	case 3:
+		if output.Bitdepth == 0 {
+			return "8"
+		}
 		return fmt.Sprintf("%d", output.Bitdepth)
 	case 4:
 		if output.CM == "" {
@@ -3268,9 +3275,9 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 		}
 		return output.MirrorOf
 	case 10:
-		return fmt.Sprintf("%.2f", output.SDRBrightness)
+		return fmt.Sprintf("%.2f", sdrMultiplier(output.SDRBrightness))
 	case 11:
-		return fmt.Sprintf("%.2f", output.SDRSaturation)
+		return fmt.Sprintf("%.2f", sdrMultiplier(output.SDRSaturation))
 	case 12:
 		return fmt.Sprintf("%.3f", output.SDRMinLuminance)
 	case 13:
@@ -4451,24 +4458,24 @@ var layoutFields = []string{
 	"Enabled",
 	"Mode",
 	"Scale",
-	"Bit Depth",
-	"Color Mgmt",
+	"Color depth (bpc)",
+	"Color space / EOTF",
 	"VRR",
 	"Rotation",
 	"Position X",
 	"Position Y",
 	"Mirror",
-	"SDR Bright",
-	"SDR Sat",
-	"SDR Min Lum",
-	"SDR Max Lum",
-	"SDR Curve",
-	"Min Lum",
-	"Max Lum",
-	"Max Avg Lum",
-	"Force Wide",
-	"Force HDR",
-	"ICC Path",
+	"SDR luminance scale",
+	"SDR saturation scale",
+	"SDR black level (cd/m²)",
+	"SDR white level (cd/m²)",
+	"SDR EOTF",
+	"Display black (cd/m²)",
+	"Display peak (cd/m²)",
+	"Max frame-average (cd/m²)",
+	"WCG capability",
+	"HDR capability",
+	"ICC device profile",
 }
 
 const advancedFieldStart = 10
@@ -4477,6 +4484,30 @@ func layoutFieldShortLabel(field int) string {
 	switch field {
 	case 0:
 		return "On"
+	case 3:
+		return "Depth (bpc)"
+	case 4:
+		return "Space/EOTF"
+	case 10:
+		return "SDR lum. x"
+	case 11:
+		return "SDR sat. x"
+	case 12:
+		return "SDR black"
+	case 13:
+		return "SDR white"
+	case 15:
+		return "Disp. black"
+	case 16:
+		return "Disp. peak"
+	case 17:
+		return "Frame avg."
+	case 18:
+		return "WCG cap."
+	case 19:
+		return "HDR cap."
+	case 20:
+		return "ICC profile"
 	case 6:
 		return "Rot"
 	case 7:

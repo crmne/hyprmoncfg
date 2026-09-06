@@ -55,6 +55,10 @@ Press `Enter` on any **Display** or **Color** field to edit it:
 - **Rotation**, **VRR** cycle through their options with Enter or scroll
 - **Mirror** lets you mirror the selected monitor to any other connected display. For a crisp image, set the mirrored monitor's Mode to match the source resolution. If the resolutions don't match, Hyprland upscales the image, which looks blurry
 
+The **Color** tab uses the same terminology as the Omarchy panel. **Color space / EOTF** combines the primaries and transfer function (for example, **BT.2020 + PQ (HDR)**). The picker shows descriptive labels but saves Hyprland's original values, such as `hdr`.
+
+**SDR luminance scale** and **SDR saturation scale** are unitless SDR-to-HDR multipliers, not physical brightness controls. An omitted or zero multiplier uses the neutral value `1`. Black, white, peak, and frame-average luminance are measured in **cd/m²**. Display luminance and WCG/HDR capability fields override display metadata; leave them at their defaults to use EDID. Narrow terminals shorten the labels without changing their meaning.
+
 ## Save dialog
 
 Press `s` from the layout tab. You'll see a text input and the list of existing profiles.
