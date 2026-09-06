@@ -47,7 +47,7 @@ Build time:
 Packagers should set build metadata through `internal/buildinfo`:
 
 ```sh
-version=1.17.1
+version=1.18.0
 commit="$(git rev-parse --short HEAD)"
 build_date="$(date -u +%FT%TZ)"
 ldflags="-s -w"
@@ -63,7 +63,7 @@ go test ./...
 For offline builds with a Go module cache tarball:
 
 ```sh
-tar -xf hyprmoncfg-1.17.1-deps.tar.xz
+tar -xf hyprmoncfg-1.18.0-deps.tar.xz
 GOMODCACHE="$PWD/go-mod" GOPROXY=off CGO_ENABLED=0 go build -trimpath -mod=readonly ./cmd/hyprmoncfg
 ```
 
