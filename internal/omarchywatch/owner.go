@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/crmne/hyprmoncfg/internal/hypr"
 )
 
 const (
@@ -29,6 +31,7 @@ type systemdUnit struct {
 // Owner prevents Omarchy's monitor watcher from changing monitor state while
 // hyprmoncfgd is responsible for applying monitor profiles.
 type Owner struct {
+	lifecycle    sync.Mutex
 	systemctl    string
 	launcher     string
 	watcher      string
@@ -68,13 +71,19 @@ func New(logf func(format string, args ...any)) *Owner {
 // in the background. The background check covers the common startup ordering
 // where hyprmoncfgd starts just before Omarchy launches its watcher.
 func (o *Owner) Start(ctx context.Context) {
+	o.lifecycle.Lock()
+	defer o.lifecycle.Unlock()
 	if !o.enabled() {
+		return
+	}
+	if o.cancel != nil {
 		return
 	}
 
 	o.recordSuppressResult(o.suppress(ctx))
 
-	watchCtx, cancel := context.WithCancel(ctx)
+	// A manage request has a short-lived context; ownership lasts until Release.
+	watchCtx, cancel := context.WithCancel(context.Background())
 	o.mu.Lock()
 	o.cancel = cancel
 	o.mu.Unlock()
@@ -105,6 +114,8 @@ func (o *Owner) Start(ctx context.Context) {
 // Release stops background suppression and restores the Omarchy watcher when
 // this owner actually stopped it and the Hyprland session is still running.
 func (o *Owner) Release(ctx context.Context) error {
+	o.lifecycle.Lock()
+	defer o.lifecycle.Unlock()
 	o.mu.Lock()
 	cancel := o.cancel
 	o.cancel = nil
@@ -155,6 +166,9 @@ func (o *Owner) Release(ctx context.Context) error {
 				return fmt.Errorf("release %s launcher: %w", watcherCommand, err)
 			}
 			o.logf("restarted Omarchy monitor watcher")
+			o.mu.Lock()
+			o.claimed = false
+			o.mu.Unlock()
 			return nil
 		}
 
@@ -278,8 +292,20 @@ func (o *Owner) wasClaimed() bool {
 func hyprlandSessionAlive() bool {
 	runtimeDir := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR"))
 	signature := strings.TrimSpace(os.Getenv("HYPRLAND_INSTANCE_SIGNATURE"))
-	if runtimeDir == "" || signature == "" {
+	if runtimeDir == "" {
 		return false
+	}
+	if signature == "" {
+		client, err := hypr.NewClient()
+		if err != nil {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		signature, err = client.InstanceSignature(ctx)
+		if err != nil {
+			return false
+		}
 	}
 	_, err := os.Stat(filepath.Join(runtimeDir, "hypr", signature, ".socket.sock"))
 	return err == nil

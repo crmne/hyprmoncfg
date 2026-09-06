@@ -980,6 +980,10 @@ fi
 
 if [[ "${1-}" == "-j" && "${2-}" == "monitors" && "${3-}" == "all" ]]; then
   if [[ -f "$HYPRCTL_STATE" ]]; then
+    if [[ -n "${HYPRCTL_MONITORS_OVERRIDE-}" ]]; then
+      cat "$HYPRCTL_MONITORS_OVERRIDE"
+      exit 0
+    fi
     printf '%s' '` + afterApplyMonitorsJSON + `'
   else
     printf '%s' '` + beforeApplyMonitorsJSON + `'
@@ -999,6 +1003,10 @@ fi
 
 if [[ "${1-}" == "reload" ]]; then
   touch "$HYPRCTL_STATE"
+  exit 0
+fi
+
+if [[ "${1-}" == "--batch" ]]; then
   exit 0
 fi
 
@@ -1127,10 +1135,10 @@ func TestApplyBestLeavesTheManualChoiceAloneWhenNothingMoved(t *testing.T) {
 		HyprConfig:   env.hyprlandConfigPath,
 	})
 	svc.setManualOverride(profile.MonitorSetHash([]hypr.Monitor{mon}), chosen)
-	svc.applied = chosen.Name + "|" + profile.MonitorStateHash([]hypr.Monitor{{
+	svc.applied = rememberApplied(chosen, []hypr.Monitor{{
 		Name: "eDP-1", Description: "Framework Panel", Make: "Framework", Model: "Panel", Serial: "A1",
 		Width: 2880, Height: 1800, RefreshRate: 120, X: 100, Y: 200, Scale: 1.5,
-	}}) + "|lid=" + string(svc.lidState)
+	}})
 
 	if err := svc.applyBest(context.Background()); err != nil {
 		t.Fatalf("applyBest returned error: %v", err)

@@ -85,6 +85,7 @@ func newRootCmd() *cobra.Command {
 				ConfigDir:       base,
 				ClaimWatcher:    watcherOwner.Start,
 				ReleaseWatcher:  watcherOwner.Release,
+				LaptopToggle:    omarchywatch.NewLaptopToggle(),
 				Logf:            logf,
 			})
 			socketPath, err := ipc.SocketPath()

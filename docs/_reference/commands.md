@@ -74,6 +74,16 @@ The daemon. Runs in the foreground by default.
 | `--lid-poll-interval <duration>` | Polling frequency for lid-state fallback checks (default: 1s) |
 | `--quiet` | Suppress log output |
 
+## Automatic reconciliation
+
+Automatic matching preserves a complete saved layout already on screen before
+falling back to hardware scores. It keeps that choice until the hardware or lid
+changes. After applying, it tracks the requested configuration and its resolved
+state: VRR activity, equivalent buffer
+formats, and rounded scale readbacks do not cause another reload. Changes to the
+saved configuration (including config-only settings), layout, or workspace rules
+still require reconciliation. These checks do not extend the wake delay.
+
 ## Exit behavior
 
 - CLI commands exit non-zero on Hyprland query failures, invalid layouts, missing profiles, or generated-config verification failures.

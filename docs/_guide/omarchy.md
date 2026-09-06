@@ -42,7 +42,31 @@ Omarchy manages monitors too, and two managers can disagree. Three things keep h
 - the daemon stops Omarchy's monitor watcher while it owns your displays
 - every apply records the internal panel's scale where Omarchy's clamshell script looks for it, so a lid or wake event brings the panel back at your scale rather than its default
 
-Omarchy's clamshell script also drives Hyprland directly with `hyprctl`, which no load order can outrank. The daemon covers that by putting the whole profile back when something outside hyprmoncfg moves the displays, including a profile you picked by hand.
+The daemon also shares Omarchy's native **Laptop Display** toggle. When a profile
+disables the internal display while an external display is active, it records
+that choice in Omarchy's manual-disable flag before reloading. Omarchy's wake
+and clamshell paths already respect this flag, so they leave the disabled panel
+alone instead of repeatedly enabling it on the lock screen.
+
+Changing **Hardware → Laptop Display** or its keybinding updates the active
+profile's internal-display setting. The daemon uses the saved profile as its
+base, preserving the display's position, scale, and mode when turning it back on.
+If an older external-only profile omits the laptop display entirely, enabling it
+adds the panel to the right of the existing layout, using its reported mode or
+an advertised mode when the disabled panel has no live geometry.
+The change is saved after a successful apply and keeps automatic profile
+selection in its current mode. A toggle can take up to the daemon's polling and
+debounce interval to appear. Preview rollback restores the previous native flag
+as well as the generated configuration.
+
+Flag changes during sleep, lid changes, and external-monitor reconnection are
+treated as recovery activity, not as edits to your saved profile.
+
+This integration uses Omarchy's existing user state; it does not modify packaged
+scripts or require the proposed monitor-management switch. The flag continues
+to reflect the last applied layout when management is handed back. Other tools
+can still send conflicting monitor commands directly, and future Omarchy
+changes may require adapting this integration.
 
 Check the load order at any time:
 

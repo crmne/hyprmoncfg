@@ -170,6 +170,9 @@ esac
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	owner.Start(ctx)
+	// Repeating manage and ending its request must not leak or stop the owner.
+	cancel()
+	owner.Start(context.Background())
 	if err := os.WriteFile(statePath, nil, 0o644); err != nil {
 		t.Fatalf("start late watcher: %v", err)
 	}

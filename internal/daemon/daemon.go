@@ -13,7 +13,9 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/config"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/lid"
+	"github.com/crmne/hyprmoncfg/internal/omarchywatch"
 	"github.com/crmne/hyprmoncfg/internal/profile"
+	"github.com/crmne/hyprmoncfg/internal/profileio"
 	"github.com/crmne/hyprmoncfg/internal/suspend"
 )
 
@@ -30,30 +32,33 @@ type Config struct {
 	// outlives a daemon restart. Empty means always managed.
 	ConfigDir string
 	// ClaimWatcher and ReleaseWatcher move Omarchy's monitor watcher out of the
-	// way and hand it back. They live in the daemon command rather than here so
-	// this package stays free of Omarchy specifics.
+	// way and hand it back. The command wires these integrations only on Omarchy.
 	ClaimWatcher   func(context.Context)
 	ReleaseWatcher func(context.Context) error
+	LaptopToggle   *omarchywatch.LaptopToggle
 	Logf           func(format string, args ...any)
 }
 
 type Service struct {
-	client        *hypr.Client
-	store         *profile.Store
-	engine        apply.Engine
-	cfg           Config
-	writeMu       sync.Mutex
-	pendingMu     sync.Mutex
-	pending       *pendingTransaction
-	manualMu      sync.Mutex
-	manualSet     string
-	manualProfile profile.Profile
-	notifyMu      sync.RWMutex
-	notify        func()
-	applied       string
-	lastSeenHash  string
-	lidState      lid.State
-	lidSupported  bool
+	client         *hypr.Client
+	store          *profile.Store
+	engine         apply.Engine
+	cfg            Config
+	writeMu        sync.Mutex
+	pendingMu      sync.Mutex
+	pending        *pendingTransaction
+	manualMu       sync.Mutex
+	manualSet      string
+	manualProfile  profile.Profile
+	notifyMu       sync.RWMutex
+	notify         func()
+	applied        *appliedState
+	lastSeenHash   string
+	lastProfile    profile.Profile
+	lastMonitorSet string
+	lastLidState   lid.State
+	lidState       lid.State
+	lidSupported   bool
 
 	readLid      func(context.Context) (lid.State, error)
 	watchLid     func(context.Context, time.Duration) (<-chan lid.State, <-chan error)
@@ -147,6 +152,7 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 		store:  store,
 		engine: apply.Engine{
 			Client:             client,
+			LaptopToggle:       cfg.LaptopToggle,
 			MonitorsConfPath:   cfg.MonitorsConf,
 			HyprlandConfigPath: cfg.HyprConfig,
 			Logf:               cfg.Logf,
@@ -223,6 +229,7 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}
 	deferForDisplaySleep := func(reason string) {
+		s.cfg.LaptopToggle.Reset()
 		pending = true
 		settlingAfterWake = false
 		stopDebounce()
@@ -262,6 +269,13 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			reason := string(ev.Type) + ":" + ev.Value
+			name := ev.Value
+			if parts := strings.SplitN(name, ",", 3); len(parts) > 1 {
+				name = parts[1]
+			}
+			if !(hypr.Monitor{Name: name}).IsInternal() {
+				s.cfg.LaptopToggle.Reset()
+			}
 			monitors, err := s.client.Monitors(ctx)
 			if err != nil {
 				if displayGuard.sleeping {
@@ -297,6 +311,7 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			if sleeping {
+				s.cfg.LaptopToggle.Reset()
 				// A lid close that suspends the machine must not be applied on
 				// resume: by then the lid is usually open again, and honoring
 				// the stale close would turn the panel off in the user's face.
@@ -309,6 +324,7 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			s.cfg.Logf("resumed from sleep; waking displays")
+			s.cfg.LaptopToggle.Reset()
 			s.refreshLidState(ctx)
 			s.wakeDisplays(ctx)
 			displayGuard.sleeping = false
@@ -320,6 +336,7 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			if state != s.lidState {
+				s.cfg.LaptopToggle.Reset()
 				s.lidState = state
 				s.clearManualOverride()
 				reason := "lid:" + string(state)
@@ -358,6 +375,7 @@ func (s *Service) Run(ctx context.Context) error {
 				deferForDisplaySleep("")
 				continue
 			case displaySleepExited:
+				s.cfg.LaptopToggle.Reset()
 				settlingAfterWake = true
 				s.cfg.Logf("display wake detected; waiting %s for monitors to settle", s.cfg.WakeSettle)
 				scheduleMonitorTrigger("display-wake")
@@ -368,8 +386,15 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 
 			h := profile.MonitorStateHash(monitors)
-			if h != s.lastSeenHash {
-				s.lastSeenHash = h
+			_, toggleChanged, toggleErr := s.cfg.LaptopToggle.Changed()
+			if toggleErr != nil {
+				s.cfg.Logf("read Omarchy laptop toggle: %v", toggleErr)
+			}
+			s.writeMu.Lock()
+			stateChanged := h != s.lastSeenHash
+			s.lastSeenHash = h
+			s.writeMu.Unlock()
+			if stateChanged || toggleChanged {
 				scheduleMonitorTrigger("poll-change")
 			}
 		case next := <-triggerCh:
@@ -524,6 +549,10 @@ func (s *Service) applyBest(ctx context.Context) error {
 
 	hash := profile.MonitorStateHash(monitors)
 	monitorSet := profile.MonitorSetHash(monitors)
+	rules, err := s.client.WorkspaceRules(ctx)
+	if err != nil {
+		return err
+	}
 
 	var target profile.Profile
 	manualHold := false
@@ -544,6 +573,23 @@ func (s *Service) applyBest(ctx context.Context) error {
 			return err
 		}
 		best, score, ok := profile.BestMatch(profiles, monitors)
+		// Keep a recognized setup stable until its hardware or lid changes.
+		// A transient wake layout must not select a different saved profile.
+		if s.lastMonitorSet == monitorSet && s.lastLidState == s.lidState {
+			for _, saved := range profiles {
+				if saved.Name == s.lastProfile.Name && profile.EvaluateMatch(saved, monitors).ExactDisplayMatch() {
+					best, score, ok = saved, profile.MatchScore(saved, monitors), true
+					break
+				}
+			}
+		} else if s.applied == nil {
+			// On startup, prefer a complete saved layout already on screen
+			// to a guess based only on hardware scores.
+			if active, matched := profile.ExactStateMatch(profiles, monitors, rules); matched &&
+				profile.EvaluateMatch(active, monitors).ExactDisplayMatch() {
+				best, score, ok = active, profile.MatchScore(active, monitors), true
+			}
+		}
 		if !ok {
 			fallback, fallbackOK := allDisabledFallbackProfile(monitors)
 			if fallbackOK {
@@ -560,6 +606,24 @@ func (s *Service) applyBest(ctx context.Context) error {
 				s.cfg.Logf("best profile %q score=%d", best.Name, score)
 			}
 			target = best
+		}
+	}
+
+	disabled, toggleChanged, err := s.cfg.LaptopToggle.Changed()
+	if err != nil {
+		return err
+	}
+	toggleChanged = toggleChanged && s.lastMonitorSet == monitorSet && s.lastProfile.Name != ""
+	if toggleChanged {
+		// Use the saved layout, not a disabled monitor's live (and often zero)
+		// geometry. Changing Enabled must not lose its place on the desk.
+		target = s.lastProfile
+		if saved, loadErr := s.store.Load(target.Name); loadErr == nil {
+			target = saved
+		}
+		target, err = setLaptopDisplay(target, monitors, !disabled)
+		if err != nil {
+			return fmt.Errorf("laptop display toggle: %w", err)
 		}
 	}
 
@@ -585,27 +649,43 @@ func (s *Service) applyBest(ctx context.Context) error {
 		}
 	}
 
-	applyKey := target.Name + "|" + hash + "|lid=" + string(s.lidState)
-	if applyKey == s.applied {
-		return nil
+	if !toggleChanged && s.applied.matches(effective, monitors, rules) {
+		s.lastSeenHash = hash
+		_, err := s.cfg.LaptopToggle.Sync(effective, monitors)
+		return err
 	}
 	if manualHold {
 		s.cfg.Logf("restoring manually selected profile %q after an external change", target.Name)
 	}
 
-	if _, err := s.engine.Apply(ctx, effective, monitors); err != nil {
+	snapshot, err := s.engine.Apply(ctx, effective, monitors)
+	if err != nil {
 		return err
 	}
+	if toggleChanged {
+		if err := profileio.SaveWithSidecars(s.store, target); err != nil {
+			restoreCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return errors.Join(err, s.engine.Revert(restoreCtx, snapshot))
+		}
+		if manualHold {
+			s.setManualOverride(monitorSet, target)
+		}
+		s.cfg.Logf("saved Laptop Display toggle in profile %q", target.Name)
+	}
+	s.lastProfile, s.lastMonitorSet = target, monitorSet
+	s.lastLidState = s.lidState
 
 	appliedHash := hash
 	appliedMonitors, err := s.client.Monitors(ctx)
 	if err != nil {
+		s.applied = nil
 		s.cfg.Logf("refresh monitors after apply failed: %v", err)
 	} else {
 		appliedHash = profile.MonitorStateHash(appliedMonitors)
+		s.applied = rememberApplied(effective, appliedMonitors)
 	}
 
-	s.applied = target.Name + "|" + appliedHash + "|lid=" + string(s.lidState)
 	s.lastSeenHash = appliedHash
 	s.cfg.Logf("applied profile: %s", target.Name)
 	s.signalChange()

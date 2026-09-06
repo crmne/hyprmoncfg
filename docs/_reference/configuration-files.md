@@ -34,6 +34,35 @@ Each profile stores:
 
 Monitors are identified by hardware key (`make|model|serial`), not connector name. This means your profiles survive connector swaps between boots.
 
+### Commands after applying a profile
+
+The profile's **Exec** field runs a command after Hyprland has applied the layout,
+and after confirmation for an interactive preview. It receives
+`HYPRLAND_INSTANCE_SIGNATURE` for the compositor that applied the profile, even
+when the daemon started without a session environment. Put multiple commands in
+an executable script and point Exec at that script.
+
+For commands which also need the graphical session's environment, ask Hyprland
+to launch them. For example, on Lua-based Hyprland, this Exec value selects the
+TV as XWayland's primary output:
+
+```text
+hyprctl dispatch 'hl.dsp.exec_cmd("xrandr --output HDMI-A-1 --primary")'
+```
+
+On legacy Hyprland, use `hyprctl dispatch exec 'xrandr --output HDMI-A-1 --primary'`.
+Install `xrandr` and replace `HDMI-A-1` with the output you want from
+`xrandr --query`. Choose it explicitly for each relevant profile; the leftmost,
+largest, or first output is not necessarily the one you want to game on.
+The recipe uses a connector name, so update it if you move the cable to another
+port. It affects XWayland applications which consult the primary flag, not
+native Wayland window placement. Some applications need to be restarted.
+
+Hyprland supplies `DISPLAY` to the launched command. Its dispatch acknowledges
+the launch, not the eventual `xrandr` result; run the command in a terminal first
+to check the output name. This avoids scanning X sockets, and leaves the profile
+schema and existing Exec editor unchanged.
+
 ## Profile hygiene
 
 If you want predictable daemon behavior, keep this directory curated:

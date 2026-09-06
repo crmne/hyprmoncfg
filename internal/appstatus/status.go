@@ -40,6 +40,7 @@ type Daemon struct {
 
 type PreviewReference struct {
 	TransactionID string          `json:"transaction_id"`
+	Reclaimable   bool            `json:"reclaimable"`
 	ProfileName   string          `json:"profile_name"`
 	Deadline      time.Time       `json:"deadline"`
 	SaveOnCommit  bool            `json:"save_on_commit,omitempty"`

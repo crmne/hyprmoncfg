@@ -54,11 +54,25 @@ A transaction contains an opaque `id`, the effective profile, and an RFC 3339 `d
 
 Only one preview can be active at a time. It belongs to the connection that created it. If that connection disappears—for example, because changing the monitor layout rebuilt a screen-bound panel—the preview stays armed until its original deadline. Its transaction metadata remains available as `daemon.preview` in status, and a replacement client can reclaim it by sending the same transaction ID to `confirm`, `commit`, or `revert`.
 
+`daemon.preview.reclaimable` is true only after the owning connection disappears.
+A subscriber must not present a modal confirmation for another live client's
+preview: observing a transaction ID does not grant ownership. Present controls
+for transactions created by your connection, or for a reclaimable transaction.
+Treat a missing `reclaimable` field from an older daemon as false. The daemon's
+deadline remains authoritative after reclamation, and an expired preview cannot
+be kept by a late commit.
+
 A preview is reverted when any of these happens:
 
 - the client calls `revert`
 - the deadline expires
 - the daemon shuts down
+- monitor management is turned off
+
+Rollback restores both the generated monitor rules and any root-config include
+added or moved by that preview. If the root config was edited in the meantime,
+rollback reports the conflict and preserves the edited config and its target
+instead of overwriting those edits or creating a dangling include.
 
 After `confirm`, the selected profile becomes a session-scoped override for the current connected monitor set. The daemon still owns monitor management, but automatic best-match selection is paused until the hardware set changes, the daemon restarts, or `set_profile_auto` is called with `enabled: true`. A late `confirm` or `revert` returns the `transaction_unavailable` error code.
 

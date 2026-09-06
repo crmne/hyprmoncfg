@@ -19,6 +19,10 @@ const includeMarker = "hyprmoncfg"
 // IncludeResult reports what EnsureIncluded did to a root config.
 type IncludeResult struct {
 	RootPath string
+	// Previous and Written describe the exact edit for preview rollback.
+	// They are populated only when this call changed the root config.
+	Previous FileSnapshot
+	Written  []byte
 	// Line is the include as it now appears, so callers can tell a user whose
 	// dotfiles are managed elsewhere which line to keep.
 	Line      string
@@ -81,6 +85,8 @@ func EnsureIncluded(rootPath string, format HyprConfigFormat, targetPath string)
 	}
 	result.Added = !hadInclude
 	result.MovedLast = hadInclude
+	result.Previous = FileSnapshot{Path: rootPath, Exists: true, Content: content}
+	result.Written = []byte(desired)
 	return result, nil
 }
 

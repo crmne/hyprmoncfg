@@ -57,6 +57,7 @@ func (s *Service) Status() (appstatus.Document, error) {
 	if pending := s.pending; pending != nil {
 		document.Daemon.Preview = &appstatus.PreviewReference{
 			TransactionID: pending.id,
+			Reclaimable:   pending.owner == "",
 			ProfileName:   pending.profile.Name,
 			Deadline:      pending.deadline,
 			SaveOnCommit:  pending.saveOnCommit,
@@ -134,6 +135,17 @@ func (s *Service) Unmanage() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	s.pendingMu.Lock()
+	pending := s.pending
+	s.pendingMu.Unlock()
+	if pending != nil {
+		if err := s.restorePending(pending); err != nil {
+			return err
+		}
+	}
+	s.applied = nil
+	s.lastProfile = profile.Profile{}
+	s.lastMonitorSet = ""
 
 	if resolved, err := s.resolveHyprConfig(ctx); err != nil {
 		s.cfg.Logf("could not resolve the Hyprland config: %v", err)
@@ -180,7 +192,7 @@ func (s *Service) SetProfileAuto(params ipc.ProfileAutoParams) error {
 	if params.Enabled {
 		s.writeMu.Lock()
 		s.clearManualOverride()
-		s.applied = ""
+		s.applied = nil
 		s.writeMu.Unlock()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -214,7 +226,9 @@ func (s *Service) SetProfileAuto(params ipc.ProfileAutoParams) error {
 		return errors.New("save or select a profile before turning automatic selection off")
 	}
 	s.setManualOverride(profile.MonitorSetHash(monitors), active)
-	s.applied = active.Name + "|" + profile.MonitorStateHash(monitors) + "|lid=" + string(s.lidState)
+	s.applied = rememberApplied(active, monitors)
+	s.lastProfile, s.lastMonitorSet = active, profile.MonitorSetHash(monitors)
+	s.lastLidState = s.lidState
 	s.cfg.Logf("automatic profile selection off; pinned %q for this monitor set", active.Name)
 	s.signalChange()
 	return nil
@@ -282,7 +296,7 @@ func (s *Service) Preview(owner string, params ipc.PreviewParams) (ipc.Transacti
 	}
 	s.pendingMu.Lock()
 	s.pending = pending
-	pending.timer = time.AfterFunc(timeout, func() { s.expirePreview(id, owner) })
+	pending.timer = time.AfterFunc(timeout, func() { s.expirePreview(id) })
 	s.pendingMu.Unlock()
 
 	s.cfg.Logf("previewing profile %q for %s", effective.Name, timeout)
@@ -305,6 +319,9 @@ func (s *Service) commitPreview(owner string, transactionID string, save bool) e
 	pending, err := s.ownedPending(owner, transactionID)
 	if err != nil {
 		return err
+	}
+	if !time.Now().Before(pending.deadline) {
+		return errors.Join(ipc.ErrTransactionUnavailable, s.restorePending(pending))
 	}
 	if save || pending.saveOnCommit {
 		if err := profileio.SaveWithSidecars(s.store, pending.requested); err != nil {
@@ -331,11 +348,14 @@ func (s *Service) commitPreview(owner string, transactionID string, save bool) e
 	// Record what the confirmed profile left on screen, so the next automatic
 	// pass recognizes the current state instead of applying it a second time.
 	if monitors, err := s.client.Monitors(ctx); err != nil {
+		s.applied = nil
 		s.cfg.Logf("refresh monitors after confirm failed: %v", err)
 	} else {
-		s.applied = pending.profile.Name + "|" + profile.MonitorStateHash(monitors) + "|lid=" + string(s.lidState)
+		s.applied = rememberApplied(pending.profile, monitors)
 	}
 	s.cfg.Logf("kept profile preview %q", pending.profile.Name)
+	s.lastProfile, s.lastMonitorSet = pending.requested, pending.monitorSet
+	s.lastLidState = s.lidState
 	s.signalChange()
 	return nil
 }
@@ -388,22 +408,7 @@ func (s *Service) Disconnect(owner string) {
 // client disconnects can be a harmless bar rebuild, but once the daemon itself
 // is going away there will be neither a replacement panel nor a safety timer.
 func (s *Service) Shutdown() error {
-	s.pendingMu.Lock()
-	pending := s.pending
-	owner := ""
-	id := ""
-	if pending != nil {
-		owner = pending.owner
-		id = pending.id
-		if owner == "" {
-			owner = "daemon-shutdown"
-		}
-	}
-	s.pendingMu.Unlock()
-	if id == "" {
-		return nil
-	}
-	if err := s.revertOwned(owner, id); err != nil {
+	if err := s.revertPending(""); err != nil {
 		return fmt.Errorf("restore unconfirmed profile during shutdown: %w", err)
 	}
 	s.cfg.Logf("restored unconfirmed profile during shutdown")
@@ -462,18 +467,36 @@ func (s *Service) revertOwned(owner string, id string) error {
 	if err != nil {
 		return err
 	}
+	return s.restorePending(pending)
+}
+
+// The safety timer and shutdown belong to the daemon, not to a connection
+// which may have been replaced since the preview started.
+func (s *Service) revertPending(id string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.pendingMu.Lock()
+	pending := s.pending
+	s.pendingMu.Unlock()
+	if pending == nil || (id != "" && pending.id != id) {
+		return nil
+	}
+	return s.restorePending(pending)
+}
+
+func (s *Service) restorePending(pending *pendingTransaction) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.engine.Revert(ctx, pending.snapshot); err != nil {
 		return err
 	}
-	s.clearPending(id)
+	s.clearPending(pending.id)
 	s.signalChange()
 	return nil
 }
 
-func (s *Service) expirePreview(id string, owner string) {
-	if err := s.revertOwned(owner, id); err != nil && !errors.Is(err, ipc.ErrTransactionUnavailable) {
+func (s *Service) expirePreview(id string) {
+	if err := s.revertPending(id); err != nil {
 		s.cfg.Logf("auto-revert IPC preview: %v", err)
 	} else if err == nil {
 		s.cfg.Logf("profile preview expired and was reverted")

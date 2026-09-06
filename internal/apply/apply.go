@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -37,6 +38,7 @@ const (
 
 type Engine struct {
 	Client             *hypr.Client
+	LaptopToggle       *omarchywatch.LaptopToggle
 	MonitorsConfPath   string
 	HyprlandConfigPath string
 	Logf               func(format string, args ...any)
@@ -44,6 +46,9 @@ type Engine struct {
 
 type RevertState struct {
 	MonitorsConf config.FileSnapshot
+	LaptopToggle config.FileSnapshot
+	RootConf     config.FileSnapshot
+	RootWritten  []byte
 	Commands     []string
 }
 
@@ -216,11 +221,6 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		return RevertState{}, err
 	}
 
-	// The reload below is the moment load order decides whose rules win, so the
-	// include has to be in place for it. The file it names is written just
-	// after this, and never before: an include pointing at a file that does not
-	// exist yet is a config error on any reload that lands in between.
-	e.ensureConfigInclude(resolvedConfig)
 	renderedForReload := rendered
 	luaProbe := ""
 	if resolvedConfig.Format == config.HyprConfigLua {
@@ -232,55 +232,53 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 	if err := config.WriteFileAtomic(resolvedConfig.MonitorsPath, []byte(renderedForReload), 0o644); err != nil {
 		return RevertState{}, err
 	}
+	// Write the target before the include, and roll both back on every failure.
+	// A cancelled apply still needs its own time to restore the previous layout.
+	rollback := func(cause error) (RevertState, error) {
+		restoreCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return RevertState{}, errors.Join(cause, wrapRollbackError("restore previous layout", e.Revert(restoreCtx, revertState)))
+	}
+	revertState.LaptopToggle, err = e.LaptopToggle.Sync(p, monitors)
+	if err != nil {
+		return rollback(fmt.Errorf("sync Omarchy laptop display: %w", err))
+	}
+	include, err := config.EnsureIncluded(resolvedConfig.RootPath, resolvedConfig.Format, resolvedConfig.MonitorsPath)
+	if err != nil {
+		return rollback(err)
+	}
+	if include.Changed() {
+		revertState.RootConf = include.Previous
+		revertState.RootWritten = include.Written
+	}
 	if err := e.Client.Reload(ctx); err != nil {
-		_ = backup.Restore()
-		return RevertState{}, err
+		return rollback(err)
 	}
 	if luaProbe != "" {
 		if err := e.verifyLuaExecutionProbe(ctx, luaProbe, resolvedConfig.RootPath, resolvedConfig.MonitorsPath); err != nil {
-			restoreErr := backup.Restore()
-			reloadErr := e.Client.Reload(ctx)
-			return RevertState{}, errors.Join(
-				err,
-				wrapRollbackError("restore generated monitor config", restoreErr),
-				wrapRollbackError("reload restored Hyprland config", reloadErr),
-			)
+			return rollback(err)
 		}
 		// The probe only needs to exist for the reload above. Keep the generated
 		// file clean without causing a second monitor reload; each future apply
 		// uses a fresh probe, so the current Lua global cannot satisfy it.
 		if err := config.WriteFileAtomic(resolvedConfig.MonitorsPath, []byte(rendered), 0o644); err != nil {
-			restoreErr := backup.Restore()
-			reloadErr := e.Client.Reload(ctx)
-			return RevertState{}, errors.Join(
-				fmt.Errorf("remove Lua execution probe: %w", err),
-				wrapRollbackError("restore generated monitor config", restoreErr),
-				wrapRollbackError("reload restored Hyprland config", reloadErr),
-			)
+			return rollback(fmt.Errorf("remove Lua execution probe: %w", err))
 		}
 	}
 
 	applied, err := e.waitForAppliedProfile(ctx, p, monitors)
 	if err != nil {
-		_ = backup.Restore()
-		_ = e.Client.Reload(ctx)
-		return RevertState{}, err
+		return rollback(err)
 	}
 
-	// Only once the new file is proven to load do the old file's rules stop
-	// being the safety net.
-	e.retireLegacyMonitorsFile(resolvedConfig)
-
 	if err := e.applyLiveCommands(ctx, workspaceCommandsForProfile(p, applied, luaDispatch)); err != nil {
-		_ = backup.Restore()
-		_ = e.Client.Reload(ctx)
-		_ = e.applyLiveCommands(ctx, revertState.Commands)
-		return RevertState{}, err
+		return rollback(err)
 	}
 
 	e.recordInternalScaleForOmarchy(p, monitors)
 
 	if mode == ApplyModeNonInteractive {
+		e.retireLegacyMonitorsFile(resolvedConfig)
 		if err = e.PostApply(ctx, p); err != nil {
 			if e.Logf != nil {
 				e.Logf("post apply: %v", err)
@@ -289,26 +287,6 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 	}
 
 	return revertState, nil
-}
-
-// ensureConfigInclude keeps the generated monitor config loaded last by the
-// root Hyprland config.
-func (e Engine) ensureConfigInclude(resolved config.ResolvedHyprConfig) {
-	result, err := config.EnsureIncluded(resolved.RootPath, resolved.Format, resolved.MonitorsPath)
-	if err != nil {
-		if e.Logf != nil {
-			e.Logf("could not load %s from %s: %v", resolved.MonitorsPath, resolved.RootPath, err)
-		}
-		return
-	}
-	if result.Changed() && e.Logf != nil {
-		action := "moved to the end of"
-		if result.Added {
-			action = "added to"
-		}
-		e.Logf("%s %s: %s", action, result.RootPath, result.Line)
-	}
-
 }
 
 // retireLegacyMonitorsFile empties the monitors file an older hyprmoncfg owned,
@@ -451,6 +429,13 @@ func (e Engine) PostApply(ctx context.Context, target profile.Profile) error {
 	args := parts[1:]
 
 	cmd := exec.CommandContext(ctx, command, args...)
+	if e.Client != nil {
+		instance, err := e.Client.InstanceSignature(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve post-apply session: %w", err)
+		}
+		cmd.Env = append(os.Environ(), "HYPRLAND_INSTANCE_SIGNATURE="+instance)
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to exec script: %w (%s)", err, strings.TrimSpace(string(out)))
@@ -528,8 +513,26 @@ func (e Engine) Revert(ctx context.Context, state RevertState) error {
 	if e.Client == nil {
 		return fmt.Errorf("nil hypr client")
 	}
+	if state.RootConf.Path != "" {
+		current, err := os.ReadFile(state.RootConf.Path)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(current, state.RootWritten) && !bytes.Equal(current, state.RootConf.Content) {
+			return fmt.Errorf("%s changed during the preview; keeping the generated file to avoid overwriting your edits", state.RootConf.Path)
+		}
+		// Remove the new include before removing a newly generated target.
+		if !bytes.Equal(current, state.RootConf.Content) {
+			if err := state.RootConf.Restore(); err != nil {
+				return err
+			}
+		}
+	}
 	if state.MonitorsConf.Path != "" {
 		if err := state.MonitorsConf.Restore(); err != nil {
+			return err
+		}
+		if err := e.LaptopToggle.Restore(state.LaptopToggle); err != nil {
 			return err
 		}
 		if err := e.Client.Reload(ctx); err != nil {
