@@ -16,8 +16,14 @@ fi
 
 cache_dir=$(mktemp -d)
 trap 'chmod -R u+w "$cache_dir"; rm -rf -- "$cache_dir"' EXIT
-GOMODCACHE="$cache_dir/go-mod" go mod download all
-GOMODCACHE="$cache_dir/go-mod" GOPROXY=off go mod verify
+# Downloading the complete graph may add indirect checksums. Keep those changes
+# out of the release checkout, which GoReleaser requires to remain clean.
+cp go.mod go.sum "$cache_dir/"
+(
+  cd "$cache_dir"
+  GOMODCACHE="$cache_dir/go-mod" go mod download all
+  GOMODCACHE="$cache_dir/go-mod" GOPROXY=off go mod verify
+)
 mkdir -p "$destination"
 tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
   --exclude='*.lock' -C "$cache_dir" -c go-mod | xz -T2 > "$archive"
