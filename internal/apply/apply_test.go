@@ -1755,6 +1755,38 @@ func TestApplyNeverLeavesTheConfigWithoutMonitorRules(t *testing.T) {
 	}
 }
 
+func TestApplyFailureRemovesIncludeWhenPreviewNeverWroteFile(t *testing.T) {
+	engine, _, err := initTestEngine(t)
+	if err != nil {
+		t.Fatalf("init test engine: %v", err)
+	}
+
+	// First-time preview whose generated file cannot be written: the parent
+	// directory is read-only, so Apply fails right after adding the include.
+	// The path carries the "hyprmoncfg" marker, since RemoveInclude recognizes
+	// its own lines by it.
+	readonly := t.TempDir()
+	engine.MonitorsConfPath = filepath.Join(readonly, "hyprmoncfg-monitors.conf")
+	if err := os.WriteFile(engine.HyprlandConfigPath, nil, 0o644); err != nil {
+		t.Fatalf("truncate hyprland.conf: %v", err)
+	}
+	if err := os.Chmod(readonly, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	if _, err := engine.Apply(context.Background(), newTestProfile(), monitors); err == nil {
+		t.Fatalf("expected apply to fail on unwritable monitors path")
+	}
+
+	root, err := os.ReadFile(engine.HyprlandConfigPath)
+	if err != nil {
+		t.Fatalf("read hyprland.conf: %v", err)
+	}
+	if strings.Contains(string(root), "hyprmoncfg") {
+		t.Fatalf("expected the added include to be removed, got:\n%s", root)
+	}
+}
+
 func TestEngineRevertRemovesIncludeWhenPreviewCreatedFile(t *testing.T) {
 	engine, _, err := initTestEngine(t)
 	if err != nil {

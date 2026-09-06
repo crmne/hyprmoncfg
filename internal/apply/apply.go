@@ -224,24 +224,40 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 	// exist yet is a config error on any reload that lands in between.
 	revertState.Resolved = resolvedConfig
 	revertState.IncludeAdded = e.ensureConfigInclude(resolvedConfig).Added
+	// Every failure path below either never writes the monitors file or deletes
+	// it via backup.Restore(). An include this apply added must not outlive that
+	// file, or the root config errors on every later reload until the user
+	// removes the line by hand.
+	removeAddedInclude := func() {
+		if !revertState.IncludeAdded || backup.Exists {
+			return
+		}
+		if _, err := config.RemoveInclude(resolvedConfig.RootPath, resolvedConfig.Format); err != nil && e.Logf != nil {
+			e.Logf("could not remove include from %s: %v", resolvedConfig.RootPath, err)
+		}
+	}
 	renderedForReload := rendered
 	luaProbe := ""
 	if resolvedConfig.Format == config.HyprConfigLua {
 		renderedForReload, luaProbe, err = addLuaExecutionProbe(rendered)
 		if err != nil {
+			removeAddedInclude()
 			return RevertState{}, err
 		}
 	}
 	if err := config.WriteFileAtomic(resolvedConfig.MonitorsPath, []byte(renderedForReload), 0o644); err != nil {
+		removeAddedInclude()
 		return RevertState{}, err
 	}
 	if err := e.Client.Reload(ctx); err != nil {
 		_ = backup.Restore()
+		removeAddedInclude()
 		return RevertState{}, err
 	}
 	if luaProbe != "" {
 		if err := e.verifyLuaExecutionProbe(ctx, luaProbe, resolvedConfig.RootPath, resolvedConfig.MonitorsPath); err != nil {
 			restoreErr := backup.Restore()
+			removeAddedInclude()
 			reloadErr := e.Client.Reload(ctx)
 			return RevertState{}, errors.Join(
 				err,
@@ -254,6 +270,7 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		// uses a fresh probe, so the current Lua global cannot satisfy it.
 		if err := config.WriteFileAtomic(resolvedConfig.MonitorsPath, []byte(rendered), 0o644); err != nil {
 			restoreErr := backup.Restore()
+			removeAddedInclude()
 			reloadErr := e.Client.Reload(ctx)
 			return RevertState{}, errors.Join(
 				fmt.Errorf("remove Lua execution probe: %w", err),
@@ -266,6 +283,7 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 	applied, err := e.waitForAppliedProfile(ctx, p, monitors)
 	if err != nil {
 		_ = backup.Restore()
+		removeAddedInclude()
 		_ = e.Client.Reload(ctx)
 		return RevertState{}, err
 	}
@@ -276,6 +294,7 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 
 	if err := e.applyLiveCommands(ctx, workspaceCommandsForProfile(p, applied, luaDispatch)); err != nil {
 		_ = backup.Restore()
+		removeAddedInclude()
 		_ = e.Client.Reload(ctx)
 		_ = e.applyLiveCommands(ctx, revertState.Commands)
 		return RevertState{}, err
