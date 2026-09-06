@@ -311,7 +311,7 @@ func outputConfigsShareEffectiveState(a, b OutputConfig) bool {
 		stateScalesEqual(a.Width, a.Height, a.Scale, b.Scale) &&
 		a.Transform == b.Transform &&
 		effectiveBitdepth(a.Bitdepth) == effectiveBitdepth(b.Bitdepth) &&
-		effectiveCM(a.CM) == effectiveCM(b.CM) &&
+		colorPresetsAgree(a.CM, b.CM) &&
 		effectiveSDRMultiplier(a.SDRBrightness) == effectiveSDRMultiplier(b.SDRBrightness) &&
 		effectiveSDRMultiplier(a.SDRSaturation) == effectiveSDRMultiplier(b.SDRSaturation) &&
 		a.SDRMinLuminance == b.SDRMinLuminance &&
@@ -326,11 +326,18 @@ func effectiveBitdepth(value int) int {
 }
 
 func effectiveCM(value string) string {
-	value = strings.TrimSpace(value)
+	value = strings.ToLower(strings.TrimSpace(value))
 	if value == "" {
 		return "srgb"
 	}
 	return value
+}
+
+// Auto resolves to sRGB or wide gamut, not an arbitrary preset. Only the
+// requested side is flexible: a live "auto" cannot prove HDR is active.
+func colorPresetsAgree(requested, live string) bool {
+	requested, live = effectiveCM(requested), effectiveCM(live)
+	return requested == live || requested == "auto" && (live == "srgb" || live == "wide")
 }
 
 func effectiveSDRMultiplier(value float64) float64 {
