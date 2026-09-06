@@ -289,7 +289,7 @@ func (c *Client) Batch(ctx context.Context, commands []string) error {
 }
 
 func (c *Client) commandContext(ctx context.Context, args ...string) (*exec.Cmd, error) {
-	instance, err := c.resolveInstance(ctx)
+	instance, err := c.InstanceSignature(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,8 @@ func (c *Client) commandContext(ctx context.Context, args ...string) (*exec.Cmd,
 	return exec.CommandContext(ctx, c.hyprctl, cmdArgs...), nil
 }
 
-func (c *Client) resolveInstance(ctx context.Context) (string, error) {
+// InstanceSignature identifies the same compositor for queries and profile hooks.
+func (c *Client) InstanceSignature(ctx context.Context) (string, error) {
 	if sig := strings.TrimSpace(os.Getenv("HYPRLAND_INSTANCE_SIGNATURE")); sig != "" {
 		return sig, nil
 	}
@@ -307,14 +308,65 @@ func (c *Client) resolveInstance(ctx context.Context) (string, error) {
 func (c *Client) discoverInstance(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, c.hyprctl, "-j", "instances")
 	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to query Hyprland instances: %w", err)
-	}
 	var instances []instanceInfo
-	if err := json.Unmarshal(out, &instances); err != nil {
-		return "", fmt.Errorf("failed to decode hyprctl instances JSON: %w", err)
+	if err == nil {
+		err = json.Unmarshal(out, &instances)
+	}
+	if err != nil || len(instances) == 0 {
+		// Some hyprctl builds emit a bare ']' for an empty instance list.
+		// Read the same lock files directly and require a live command socket.
+		// Never repair malformed JSON by guessing which session it meant.
+		instances, err = runningInstances(ctx)
+		if err != nil {
+			return "", err
+		}
 	}
 	return selectInstance(instances, strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")))
+}
+
+func runningInstances(ctx context.Context) ([]instanceInfo, error) {
+	runtimeDir := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR"))
+	if runtimeDir == "" {
+		return nil, errors.New("XDG_RUNTIME_DIR is not set; cannot discover Hyprland instances")
+	}
+	dir := filepath.Join(runtimeDir, "hypr")
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read Hyprland instances: %w", err)
+	}
+	var instances []instanceInfo
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		lock, err := os.ReadFile(filepath.Join(path, "hyprland.lock"))
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(strings.TrimSpace(string(lock)), "\n")
+		if len(lines) != 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(lines[0])
+		if err != nil || pid <= 0 || strings.TrimSpace(lines[1]) == "" {
+			continue
+		}
+		dialer := net.Dialer{Timeout: 250 * time.Millisecond}
+		conn, err := dialer.DialContext(ctx, "unix", filepath.Join(path, ".socket.sock"))
+		if err != nil {
+			continue
+		}
+		_ = conn.Close()
+		instances = append(instances, instanceInfo{Instance: entry.Name(), WLSocket: strings.TrimSpace(lines[1])})
+	}
+	return instances, nil
 }
 
 func selectInstance(instances []instanceInfo, waylandDisplay string) (string, error) {
@@ -334,6 +386,7 @@ func selectInstance(instances []instanceInfo, waylandDisplay string) (string, er
 		if len(matches) > 1 {
 			return "", fmt.Errorf("multiple Hyprland instances match WAYLAND_DISPLAY=%q", waylandDisplay)
 		}
+		return "", fmt.Errorf("no Hyprland instance matches WAYLAND_DISPLAY=%q", waylandDisplay)
 	}
 	if len(instances) == 1 {
 		return instances[0].Instance, nil
@@ -346,7 +399,7 @@ func (c *Client) socket2Path(ctx context.Context) (string, error) {
 	if runtimeDir == "" {
 		return "", errors.New("XDG_RUNTIME_DIR is not set")
 	}
-	sig, err := c.resolveInstance(ctx)
+	sig, err := c.InstanceSignature(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -374,6 +427,8 @@ func (c *Client) SubscribeMonitorEvents(ctx context.Context) (<-chan Event, <-ch
 			return
 		}
 		defer conn.Close()
+		stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+		defer stopClose()
 
 		scanner := bufio.NewScanner(conn)
 		for scanner.Scan() {
@@ -392,7 +447,7 @@ func (c *Client) SubscribeMonitorEvents(ctx context.Context) (<-chan Event, <-ch
 			}
 		}
 
-		if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
+		if err := scanner.Err(); err != nil && ctx.Err() == nil {
 			errorsCh <- err
 		}
 	}()
