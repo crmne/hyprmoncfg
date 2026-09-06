@@ -39,6 +39,7 @@ const (
 type Engine struct {
 	Client             *hypr.Client
 	LaptopToggle       *omarchywatch.LaptopToggle
+	WakeConfig         *omarchywatch.WakeConfig
 	MonitorsConfPath   string
 	HyprlandConfigPath string
 	Logf               func(format string, args ...any)
@@ -47,6 +48,7 @@ type Engine struct {
 type RevertState struct {
 	MonitorsConf config.FileSnapshot
 	LaptopToggle config.FileSnapshot
+	WakeConfig   omarchywatch.WakeSnapshot
 	RootConf     config.FileSnapshot
 	RootWritten  []byte
 	Commands     []string
@@ -275,10 +277,15 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		return rollback(err)
 	}
 
-	e.recordInternalScaleForOmarchy(p, monitors)
-
 	if mode == ApplyModeNonInteractive {
 		e.retireLegacyMonitorsFile(resolvedConfig)
+	}
+	revertState.WakeConfig, err = e.WakeConfig.Sync(p, monitors)
+	if err != nil && e.Logf != nil {
+		e.Logf("could not sync Omarchy wake settings: %v", err)
+	}
+
+	if mode == ApplyModeNonInteractive {
 		if err = e.PostApply(ctx, p); err != nil {
 			if e.Logf != nil {
 				e.Logf("post apply: %v", err)
@@ -302,42 +309,6 @@ func (e Engine) retireLegacyMonitorsFile(resolved config.ResolvedHyprConfig) {
 	if retired != "" && e.Logf != nil {
 		e.Logf("hyprmoncfg no longer writes %s; its rules now live in %s", retired, resolved.MonitorsPath)
 	}
-}
-
-// recordInternalScaleForOmarchy keeps Omarchy's remembered internal-panel scale
-// in step with what we just applied, so its clamshell script restores the panel
-// at our scale instead of its own default. Best effort: on any other system,
-// and for any profile without an internal panel, it does nothing.
-func (e Engine) recordInternalScaleForOmarchy(p profile.Profile, monitors []hypr.Monitor) {
-	scale, ok := internalOutputScale(p, monitors)
-	if !ok {
-		return
-	}
-	if err := omarchywatch.StoreInternalScale(scale); err != nil && e.Logf != nil {
-		e.Logf("could not record the internal panel scale for Omarchy: %v", err)
-	}
-}
-
-// internalOutputScale returns the scale a profile wants on the laptop panel,
-// including when the profile turns that panel off: that is exactly the value
-// Omarchy needs when it turns the panel back on.
-func internalOutputScale(p profile.Profile, monitors []hypr.Monitor) (float64, bool) {
-	resolver := profile.NewMonitorResolver(monitors)
-	for _, output := range p.Outputs {
-		if output.Scale <= 0 {
-			continue
-		}
-		if monitor, ok := resolver.ResolveOutput(output); ok {
-			if monitor.IsInternal() {
-				return output.Scale, true
-			}
-			continue
-		}
-		if hypr.IsInternalConnector(output.Name) {
-			return output.Scale, true
-		}
-	}
-	return 0, false
 }
 
 func addLuaExecutionProbe(rendered string) (string, string, error) {
@@ -528,6 +499,7 @@ func (e Engine) Revert(ctx context.Context, state RevertState) error {
 			}
 		}
 	}
+	var wakeErr error
 	if state.MonitorsConf.Path != "" {
 		if err := state.MonitorsConf.Restore(); err != nil {
 			return err
@@ -535,11 +507,14 @@ func (e Engine) Revert(ctx context.Context, state RevertState) error {
 		if err := e.LaptopToggle.Restore(state.LaptopToggle); err != nil {
 			return err
 		}
+		// A concurrent edit to the wake bridge must not prevent restoring the
+		// actual displays. Report the conflict after reloading the old layout.
+		wakeErr = state.WakeConfig.Restore()
 		if err := e.Client.Reload(ctx); err != nil {
-			return err
+			return errors.Join(wakeErr, err)
 		}
 	}
-	return e.applyLiveCommands(ctx, state.Commands)
+	return errors.Join(wakeErr, e.applyLiveCommands(ctx, state.Commands))
 }
 
 func keywordifyMonitorCommands(commands []string) []string {

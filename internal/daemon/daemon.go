@@ -36,6 +36,7 @@ type Config struct {
 	ClaimWatcher   func(context.Context)
 	ReleaseWatcher func(context.Context) error
 	LaptopToggle   *omarchywatch.LaptopToggle
+	WakeConfig     *omarchywatch.WakeConfig
 	Logf           func(format string, args ...any)
 }
 
@@ -153,6 +154,7 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 		engine: apply.Engine{
 			Client:             client,
 			LaptopToggle:       cfg.LaptopToggle,
+			WakeConfig:         cfg.WakeConfig,
 			MonitorsConfPath:   cfg.MonitorsConf,
 			HyprlandConfigPath: cfg.HyprConfig,
 			Logf:               cfg.Logf,

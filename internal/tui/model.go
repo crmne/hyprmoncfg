@@ -23,6 +23,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/ipc"
 	"github.com/crmne/hyprmoncfg/internal/lid"
+	"github.com/crmne/hyprmoncfg/internal/omarchywatch"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 	"github.com/crmne/hyprmoncfg/internal/profileio"
 	"github.com/crmne/hyprmoncfg/internal/scaling"
@@ -338,6 +339,7 @@ func NewModel(client *hypr.Client, store *profile.Store, monitorsConfPath string
 		store:  store,
 		engine: apply.Engine{
 			Client:             client,
+			WakeConfig:         omarchywatch.NewWakeConfig(),
 			MonitorsConfPath:   monitorsConfPath,
 			HyprlandConfigPath: hyprlandConfigPath,
 			Logf: func(format string, args ...any) {

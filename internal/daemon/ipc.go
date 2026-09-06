@@ -161,6 +161,9 @@ func (s *Service) Unmanage() error {
 		}
 	}
 
+	if err := s.cfg.WakeConfig.Release(); err != nil {
+		s.cfg.Logf("could not remove hyprmoncfg's Omarchy wake settings: %v", err)
+	}
 	if s.cfg.ReleaseWatcher != nil {
 		if err := s.cfg.ReleaseWatcher(ctx); err != nil {
 			s.cfg.Logf("could not restore Omarchy monitor watcher: %v", err)

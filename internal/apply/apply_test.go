@@ -1670,37 +1670,6 @@ func TestRenderMonitorV2MinLuminanceFloat(t *testing.T) {
 	}
 }
 
-func TestInternalOutputScaleFindsTheLaptopPanelEvenWhenTurnedOff(t *testing.T) {
-	laptop := hypr.Monitor{Name: "eDP-1", Description: "BOE Panel", Make: "BOE", Model: "Panel", Serial: "A1"}
-	desk := hypr.Monitor{Name: "DP-1", Description: "Dell U2720Q", Make: "Dell", Model: "U2720Q", Serial: "B1"}
-	monitors := []hypr.Monitor{laptop, desk}
-
-	// A clamshell profile turns the panel off, and its scale is exactly what
-	// Omarchy needs when it turns the panel back on.
-	clamshell := profile.New("clamshell", []profile.OutputConfig{
-		{Key: desk.HardwareKey(), Name: desk.Name, Enabled: true, Scale: 1},
-		{Key: laptop.HardwareKey(), Name: laptop.Name, Enabled: false, Scale: 1.6},
-	})
-	if scale, ok := internalOutputScale(clamshell, monitors); !ok || scale != 1.6 {
-		t.Fatalf("internalOutputScale = %v (ok=%v), want 1.6", scale, ok)
-	}
-
-	// A profile for a display that is not connected still names its connector.
-	unplugged := profile.New("away", []profile.OutputConfig{
-		{Key: "some-other-laptop", Name: "eDP-1", Enabled: true, Scale: 2},
-	})
-	if scale, ok := internalOutputScale(unplugged, monitors); !ok || scale != 2 {
-		t.Fatalf("internalOutputScale = %v (ok=%v), want 2", scale, ok)
-	}
-
-	deskOnly := profile.New("desk", []profile.OutputConfig{
-		{Key: desk.HardwareKey(), Name: desk.Name, Enabled: true, Scale: 1},
-	})
-	if scale, ok := internalOutputScale(deskOnly, monitors); ok {
-		t.Fatalf("expected no internal panel scale, got %v", scale)
-	}
-}
-
 func TestApplyNeverLeavesTheConfigWithoutMonitorRules(t *testing.T) {
 	// The upgrade path: the old generated file still holds the live rules, and
 	// the new one does not exist yet. Nothing in between may leave the config
