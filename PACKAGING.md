@@ -45,13 +45,13 @@ After the GitHub release has finished publishing:
 
 ```sh
 git fetch origin --tags
-gem install native-packages --version 0.2.0
+gem install native-packages --version 0.4.0
 native-packages validate
 native-packages build --release v1.18.3
 ruby scripts/package_sources.rb prepare 1.18.3
 ```
 
-Requirements: Ruby 3.2+, native-packages 0.2.0, nFPM 2.47.0, Git, curl, `bsdtar`, `readelf`, Go at least
+Requirements: Ruby 3.2+, native-packages 0.4.0, nFPM 2.47.0, Git, curl, `bsdtar`, `readelf`, Go at least
 as new as the release's `go.mod`, and Nix (`nix hash path`, without a Nix daemon). Arch's `makepkg` is
 optional locally and adds native `.SRCINFO` validation. The Packaging GitHub
 Actions workflow provides the required tools if you prefer to run this in CI.
