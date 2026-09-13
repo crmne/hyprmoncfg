@@ -1,0 +1,59 @@
+%global debug_package %{nil}
+%global commit @COMMIT@
+%{!?_userunitdir:%global _userunitdir %{_prefix}/lib/systemd/user}
+
+Name:           hyprmoncfg
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        Terminal-first monitor configurator and daemon for Hyprland
+
+License:        MIT
+URL:            https://github.com/crmne/hyprmoncfg
+Source0:        https://github.com/crmne/hyprmoncfg/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+Source1:        https://github.com/crmne/hyprmoncfg/releases/download/v%{version}/%{name}-%{version}-deps.tar.xz
+
+BuildRequires:  go >= @GO_VERSION@
+BuildRequires:  hicolor-icon-theme
+Requires:       hyprland
+Requires:       hicolor-icon-theme
+Recommends:     systemd
+ExclusiveArch:  x86_64 aarch64
+
+%description
+hyprmoncfg provides a terminal UI for arranging Hyprland monitors and a
+background daemon that reapplies saved layouts when monitor topology changes.
+
+%prep
+%autosetup -n %{name}-%{version}
+tar -xf %{SOURCE1} -C %{_builddir}
+
+%build
+build_date="$(date -u +%FT%TZ)"
+ldflags="-s -w -X github.com/crmne/hyprmoncfg/internal/buildinfo.Version=%{version} -X github.com/crmne/hyprmoncfg/internal/buildinfo.Commit=%{commit} -X github.com/crmne/hyprmoncfg/internal/buildinfo.Date=${build_date}"
+GOMODCACHE="%{_builddir}/go-mod" GOPROXY=off CGO_ENABLED=0 go build -buildvcs=false -trimpath -buildmode=pie -mod=readonly -ldflags "${ldflags}" -o hyprmoncfg ./cmd/hyprmoncfg
+GOMODCACHE="%{_builddir}/go-mod" GOPROXY=off CGO_ENABLED=0 go build -buildvcs=false -trimpath -buildmode=pie -mod=readonly -ldflags "${ldflags}" -o hyprmoncfgd ./cmd/hyprmoncfgd
+
+%check
+GOMODCACHE="%{_builddir}/go-mod" GOPROXY=off go test -buildvcs=false ./...
+
+%install
+install -Dpm0755 hyprmoncfg %{buildroot}%{_bindir}/hyprmoncfg
+install -Dpm0755 hyprmoncfgd %{buildroot}%{_bindir}/hyprmoncfgd
+install -Dpm0644 packaging/applications/hyprmoncfg.desktop %{buildroot}%{_datadir}/applications/hyprmoncfg.desktop
+install -Dpm0644 packaging/applications/hyprmoncfg-omarchy.desktop %{buildroot}%{_datadir}/applications/hyprmoncfg-omarchy.desktop
+install -Dpm0644 packaging/icons/hyprmoncfg.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/hyprmoncfg.svg
+install -Dpm0644 packaging/systemd/hyprmoncfgd.service %{buildroot}%{_userunitdir}/hyprmoncfgd.service
+
+%files
+%license LICENSE
+%doc README.md
+%{_bindir}/hyprmoncfg
+%{_bindir}/hyprmoncfgd
+%{_datadir}/applications/hyprmoncfg.desktop
+%{_datadir}/applications/hyprmoncfg-omarchy.desktop
+%{_datadir}/icons/hicolor/scalable/apps/hyprmoncfg.svg
+%{_userunitdir}/hyprmoncfgd.service
+
+%changelog
+* @RPM_DATE@ Carmine Paolino <carmine@paolino.me> - @VERSION@-1
+- Update to @VERSION@

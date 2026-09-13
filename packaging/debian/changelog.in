@@ -1,0 +1,168 @@
+hyprmoncfg (@VERSION@-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Carmine Paolino <carmine@paolino.me>  @DEBIAN_DATE@
+
+hyprmoncfg (1.18.2-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Stabilize display wake and restore complete preview transactions.
+  * Coordinate Omarchy laptop display state and preview ownership.
+  * Align TUI color terminology with Hyprland and the Omarchy panel.
+
+ -- Carmine Paolino <carmine@paolino.me>  Sun, 06 Sep 2026 17:35:00 +0200
+
+hyprmoncfg (1.17.1-1) unstable; urgency=medium
+
+  * New upstream patch release.
+  * Offer only monitor scales Hyprland can apply reliably.
+  * Preserve valid existing custom scales in the editor.
+
+ -- Carmine Paolino <carmine@paolino.me>  Thu, 03 Sep 2026 11:45:00 +0200
+
+hyprmoncfg (1.17.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Make manual workspace assignment direct in the TUI.
+  * Remove fixed workspace limits and keep large plans navigable.
+
+ -- Carmine Paolino <carmine@paolino.me>  Wed, 02 Sep 2026 12:35:00 +0200
+
+hyprmoncfg (1.16.1-1) unstable; urgency=medium
+
+  * New upstream patch release.
+  * Preserve automatic profile matching when saving layout previews.
+
+ -- Carmine Paolino <carmine@paolino.me>  Wed, 26 Aug 2026 23:55:00 +0200
+
+hyprmoncfg (1.16.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Add the shared display editor API and automatic profile controls.
+  * Add exact connected-display matching for desktop integrations.
+
+ -- Carmine Paolino <carmine@paolino.me>  Wed, 26 Aug 2026 22:35:00 +0200
+
+hyprmoncfg (1.15.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Stop offering 16-bit monitor depth, which Hyprland does not support.
+  * Include the upstream fix for root-run container tests.
+
+ -- Carmine Paolino <carmine@paolino.me>  Tue, 25 Aug 2026 10:06:04 +0200
+
+hyprmoncfg (1.15.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Add explicit manage and unmanage commands for generated monitor config.
+  * Preserve symlinked Hyprland configuration files when writing changes.
+  * Keep IPC compatibility across client protocol versions.
+  * Handle suspend, lid changes, and all-displays-off monitor state reliably.
+  * Refresh the command-line manual pages and desktop launcher dependency.
+  * Honor explicit read-only mode bits during root-run container builds.
+
+ -- Carmine Paolino <carmine@paolino.me>  Sat, 22 Aug 2026 18:05:00 +0200
+
+hyprmoncfg (1.13.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Redesign the TUI around focused, border-labelled panes.
+  * Improve mouse navigation and use more of the terminal canvas.
+  * Refresh the screenshots and demo capture workflow.
+
+ -- Carmine Paolino <carmine@paolino.me>  Fri, 14 Aug 2026 00:20:00 +0200
+
+hyprmoncfg (1.12.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Expose monitor details over IPC for desktop integrations.
+  * Fix workspace placement with Hyprland's Lua configuration.
+  * Add an Omarchy-centered desktop launcher.
+
+ -- Carmine Paolino <carmine@paolino.me>  Thu, 13 Aug 2026 18:30:00 +0200
+
+hyprmoncfg (1.11.1-1) unstable; urgency=high
+
+  * New upstream patch release.
+  * Ignore transient monitor churn while displays are sleeping.
+  * Use IPC status exclusively for daemon detection.
+
+ -- Carmine Paolino <carmine@paolino.me>  Thu, 13 Aug 2026 13:30:39 +0200
+
+hyprmoncfg (1.10.1-1) unstable; urgency=high
+
+  * New upstream patch release.
+  * Prevent Omarchy's monitor watcher from racing the hyprmoncfg daemon.
+  * Restore Omarchy's watcher when the daemon exits.
+
+ -- Carmine Paolino <carmine@paolino.me>  Thu, 13 Aug 2026 11:30:13 +0200
+
+hyprmoncfg (1.10.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Verify generated Lua monitor configurations through Hyprland's active Lua
+    state.
+  * Improve keyboard navigation in save confirmation dialogs.
+
+ -- Carmine Paolino <carmine@paolino.me>  Wed, 12 Aug 2026 12:31:07 +0200
+
+hyprmoncfg (1.9.1-1) unstable; urgency=high
+
+  * New upstream patch release.
+  * Protect user-managed monitor config files from unintended replacement.
+  * Restore unconfirmed changes on all interactive exit paths.
+
+ -- Carmine Paolino <carmine@paolino.me>  Sat, 08 Aug 2026 19:40:00 +0200
+
+hyprmoncfg (1.9.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Add directional monitor snapping and shared config path environment variables.
+  * Refresh external packaging workspace for v1.9.0.
+
+ -- Carmine Paolino <carmine@paolino.me>  Wed, 05 Aug 2026 18:28:20 +0200
+
+hyprmoncfg (1.8.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Refresh external packaging workspace for v1.8.0.
+
+ -- Carmine Paolino <carmine@paolino.me>  Tue, 16 Jun 2026 18:05:00 +0200
+
+hyprmoncfg (1.7.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Escape monitor selectors safely in generated Hyprland configs.
+  * Refresh external packaging workspace for v1.7.1.
+
+ -- Carmine Paolino <carmine@paolino.me>  Sun, 14 Jun 2026 23:18:00 +0200
+
+hyprmoncfg (1.6.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Refresh external packaging workspace for v1.6.0.
+  * Disable Go VCS stamping for source archive builds.
+
+ -- Carmine Paolino <carmine@paolino.me>  Sat, 06 Jun 2026 17:02:00 +0200
+
+hyprmoncfg (1.5.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Refresh external packaging workspace for v1.5.1.
+  * Build with an offline Go module cache when available.
+
+ -- Carmine Paolino <carmine@paolino.me>  Tue, 26 May 2026 12:00:00 +0200
+
+hyprmoncfg (1.0.3-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Refresh external packaging workspace for v1.0.3.
+
+ -- Carmine Paolino <carmine@paolino.me>  Wed, 01 Apr 2026 12:55:00 +0200
+
+hyprmoncfg (1.0.2-1) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- Carmine Paolino <carmine@paolino.me>  Wed, 01 Apr 2026 12:30:00 +0200

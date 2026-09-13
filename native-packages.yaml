@@ -1,0 +1,219 @@
+# Binary packages and downstream repositories.
+# Go/Nix source recipes are prepared by scripts/package_sources.rb.
+---
+schema: 1
+tool:
+  version: 0.2.0
+  nfpm: 2.47.0
+nfpm:
+  maintainer: Carmine Paolino <carmine@paolino.me>
+  homepage: https://github.com/crmne/hyprmoncfg
+  description: Visual monitor configurator and automatic profile switcher for Hyprland
+  license: MIT
+  recommends:
+  - systemd
+  name: hyprmoncfg
+  depends:
+  - hyprland
+  overrides:
+    deb:
+      depends:
+      - hyprland
+      - xdg-terminal-exec
+  contents:
+  - src: "@PAYLOAD@/hyprmoncfg"
+    dst: "/usr/bin/hyprmoncfg"
+    file_info:
+      mode: 493
+  - src: "@PAYLOAD@/hyprmoncfgd"
+    dst: "/usr/bin/hyprmoncfgd"
+    file_info:
+      mode: 493
+  - src: "@PAYLOAD@/packaging/applications/hyprmoncfg.desktop"
+    dst: "/usr/share/applications/hyprmoncfg.desktop"
+    file_info:
+      mode: 420
+  - src: "@PAYLOAD@/packaging/applications/hyprmoncfg-omarchy.desktop"
+    dst: "/usr/share/applications/hyprmoncfg-omarchy.desktop"
+    file_info:
+      mode: 420
+  - src: "@PAYLOAD@/packaging/icons/hyprmoncfg.svg"
+    dst: "/usr/share/icons/hicolor/scalable/apps/hyprmoncfg.svg"
+    file_info:
+      mode: 420
+  - src: "@PAYLOAD@/packaging/systemd/hyprmoncfgd.service"
+    dst: "/usr/lib/systemd/user/hyprmoncfgd.service"
+    file_info:
+      mode: 420
+  - src: "@PAYLOAD@/LICENSE"
+    dst: "/usr/share/licenses/hyprmoncfg/LICENSE"
+    file_info:
+      mode: 420
+  - src: "@PAYLOAD@/README.md"
+    dst: "/usr/share/doc/hyprmoncfg/README.md"
+    file_info:
+      mode: 420
+targets:
+  linux-amd64:
+    platform: linux
+    arch: amd64
+    libc: static
+    formats:
+    - deb
+    - rpm
+    input:
+      local: dist/hyprmoncfg_@VERSION@_linux_amd64.tar.gz
+      release_asset: hyprmoncfg_@VERSION@_linux_amd64.tar.gz
+  linux-arm64:
+    platform: linux
+    arch: arm64
+    libc: static
+    formats:
+    - deb
+    - rpm
+    input:
+      local: dist/hyprmoncfg_@VERSION@_linux_arm64.tar.gz
+      release_asset: hyprmoncfg_@VERSION@_linux_arm64.tar.gz
+release:
+  repository: crmne/hyprmoncfg
+  checksums: checksums.txt
+repositories:
+  aur-source:
+    group: aur
+    url: https://aur.archlinux.org/hyprmoncfg.git
+    push_url: ssh://aur@aur.archlinux.org/hyprmoncfg.git
+    branch: master
+    package_path: "."
+    files:
+      arch/hyprmoncfg: "."
+    version_file: ".SRCINFO"
+    version_pattern: "^\\s*pkgver = (\\S+)"
+    publish: push
+  aur-bin:
+    group: aur
+    url: https://aur.archlinux.org/hyprmoncfg-bin.git
+    push_url: ssh://aur@aur.archlinux.org/hyprmoncfg-bin.git
+    branch: master
+    package_path: "."
+    files:
+      arch/hyprmoncfg-bin: "."
+    version_file: ".SRCINFO"
+    version_pattern: "^\\s*pkgver = (\\S+)"
+    publish: push
+  aur-git:
+    group: aur
+    url: https://aur.archlinux.org/hyprmoncfg-git.git
+    push_url: ssh://aur@aur.archlinux.org/hyprmoncfg-git.git
+    branch: master
+    package_path: "."
+    files:
+      arch/hyprmoncfg-git: "."
+    version_file: ".SRCINFO"
+    version_pattern: "^\\s*pkgver = (\\S+)"
+    publish: push
+  nixpkgs:
+    url: https://github.com/NixOS/nixpkgs.git
+    fork_url: https://github.com/crmne/nixpkgs.git
+    push_url: git@github.com:crmne/nixpkgs.git
+    branch: master
+    proposal_branch: hyprmoncfg-@VERSION@
+    package_path: pkgs/by-name/hy/hyprmoncfg
+    files:
+      nix/default.nix: pkgs/by-name/hy/hyprmoncfg/package.nix
+    version_file: pkgs/by-name/hy/hyprmoncfg/package.nix
+    version_pattern: version = "([^"]+)"
+    publish: github-pr
+    repository: NixOS/nixpkgs
+    fork_owner: crmne
+    title: 'hyprmoncfg: update to @VERSION@'
+    instructions: https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md
+  guru:
+    url: https://anongit.gentoo.org/git/repo/proj/guru.git
+    push_url: git@git.gentoo.org:repo/proj/guru.git
+    branch: dev
+    status_branch: master
+    package_path: gui-apps/hyprmoncfg
+    files:
+      gentoo/gui-apps/hyprmoncfg: gui-apps/hyprmoncfg
+    version_files: gui-apps/hyprmoncfg
+    version_pattern: hyprmoncfg-([0-9]+\.[0-9]+\.[0-9]+(?:-r[0-9]+)?)\.ebuild
+    publish: push
+    sign_commit: true
+    sign_push: true
+    signoff: true
+    title: 'gui-apps/hyprmoncfg: add @VERSION@'
+    instructions: https://wiki.gentoo.org/wiki/Project:GURU/Information_for_Contributors
+  alpine:
+    url: https://gitlab.alpinelinux.org/alpine/aports.git
+    fork_url: https://gitlab.alpinelinux.org/crmne/aports.git
+    push_url: git@gitlab.alpinelinux.org:crmne/aports.git
+    branch: master
+    proposal_branch: testing/hyprmoncfg-@VERSION@
+    package_path: testing/hyprmoncfg
+    files:
+      alpine/APKBUILD: testing/hyprmoncfg/APKBUILD
+    version_file: testing/hyprmoncfg/APKBUILD
+    version_pattern: "^pkgver=(\\S+)"
+    publish: gitlab-mr
+    host: gitlab.alpinelinux.org
+    repository: alpine/aports
+    fork_repository: crmne/aports
+    token_env: ALPINE_GITLAB_TOKEN
+    title: 'testing/hyprmoncfg: update to @VERSION@'
+    instructions: https://wiki.alpinelinux.org/wiki/Creating_an_Alpine_package
+  blackhole:
+    url: https://github.com/Event-Horizon-VL/blackhole-vl.git
+    fork_url: https://github.com/crmne/blackhole-vl.git
+    push_url: git@github.com:crmne/blackhole-vl.git
+    branch: main
+    proposal_branch: hyprmoncfg-@VERSION@
+    package_path: srcpkgs/hyprmoncfg
+    files:
+      void/template: srcpkgs/hyprmoncfg/template
+    version_file: srcpkgs/hyprmoncfg/template
+    version_pattern: "^version=(\\S+)"
+    publish: github-pr
+    repository: Event-Horizon-VL/blackhole-vl
+    fork_owner: crmne
+    title: 'hyprmoncfg: update to @VERSION@'
+  void:
+    url: https://github.com/void-linux/void-packages.git
+    fork_url: https://github.com/crmne/void-packages.git
+    push_url: git@github.com:crmne/void-packages.git
+    branch: master
+    package_path: srcpkgs/hyprmoncfg
+    files:
+      void/template: srcpkgs/hyprmoncfg/template
+    version_file: srcpkgs/hyprmoncfg/template
+    version_pattern: "^version=(\\S+)"
+    publish: manual
+    notes: Official submission depends on Hyprland being available in Void; Blackhole
+      is the active target.
+  debian:
+    url: https://salsa.debian.org/crmne/hyprmoncfg.git
+    push_url: git@salsa.debian.org:crmne/hyprmoncfg.git
+    branch: debian/sid
+    package_path: debian
+    files:
+      debian: debian
+    version_file: debian/changelog
+    version_pattern: "^hyprmoncfg \\(([^)]+)\\)"
+    publish: manual
+    notes: Import the upstream tag with git-buildpackage before updating debian/;
+      source uploads need signing and sponsorship.
+  copr:
+    url: https://copr.fedorainfracloud.org/coprs/paolino/hyprmoncfg/
+    publish: manual
+    payload: rpm/hyprmoncfg.spec
+    notes: Build an SRPM with the release source/dependency archives, then submit
+      with copr-cli.
+  obs:
+    url: https://build.opensuse.org/package/show/home:paolino/hyprmoncfg
+    publish: manual
+    payload: rpm/hyprmoncfg.spec
+    notes: Upload the spec and matching release source/dependency archives with osc.
+  slackbuilds:
+    url: https://slackbuilds.org/submit/
+    publish: manual
+    payload: slackware
+    notes: Validate on supported Slackware and submit the SlackBuild payload.

@@ -1,0 +1,32 @@
+#!/usr/bin/make -f
+
+export CGO_ENABLED := 0
+export GOFLAGS := -buildvcs=false -trimpath -mod=readonly
+export GOPROXY := off
+export GOMODCACHE := $(abspath $(CURDIR)/../go-mod)
+
+include /usr/share/dpkg/pkg-info.mk
+
+VERSION := $(DEB_VERSION_UPSTREAM)
+COMMIT := @COMMIT@
+PACKAGE := github.com/crmne/hyprmoncfg
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	if [ -d go-mod ] && [ ! -d ../go-mod ]; then mv go-mod ../go-mod; fi
+	mkdir -p build
+	set -e; build_date="$$(date -u -d "@$${SOURCE_DATE_EPOCH:-0}" +%FT%TZ)"; \
+	ldflags="-s -w -X $(PACKAGE)/internal/buildinfo.Version=$(VERSION) -X $(PACKAGE)/internal/buildinfo.Commit=$(COMMIT) -X $(PACKAGE)/internal/buildinfo.Date=$$build_date"; \
+	go build $(GOFLAGS) -ldflags "$$ldflags" -o build/hyprmoncfg ./cmd/hyprmoncfg; \
+	go build $(GOFLAGS) -ldflags "$$ldflags" -o build/hyprmoncfgd ./cmd/hyprmoncfgd
+
+override_dh_auto_test:
+	if [ -d go-mod ] && [ ! -d ../go-mod ]; then mv go-mod ../go-mod; fi
+	go test ./...
+
+override_dh_auto_install:
+	install -Dm755 build/hyprmoncfg $(CURDIR)/debian/hyprmoncfg/usr/bin/hyprmoncfg
+	install -Dm755 build/hyprmoncfgd $(CURDIR)/debian/hyprmoncfg/usr/bin/hyprmoncfgd
+	dh_auto_install

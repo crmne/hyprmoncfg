@@ -12,6 +12,7 @@ release:
 before:
   hooks:
     - go mod tidy
+    - bash scripts/package-deps.sh {{ .Version }} .release-assets
 
 builds:
   - id: hyprmoncfg

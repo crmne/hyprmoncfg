@@ -1,0 +1,8 @@
+# Go binaries are intentionally linked without libc. All source dependencies
+# are provided by the supplementary source component and tracked in go.sum.
+hyprmoncfg: statically-linked-binary [usr/bin/hyprmoncfg]
+hyprmoncfg: statically-linked-binary [usr/bin/hyprmoncfgd]
+
+# The hidden Omarchy launcher deliberately uses the xdg-terminal-exec package,
+# which is declared as a runtime dependency in debian/control.
+hyprmoncfg: desktop-command-not-in-package xdg-terminal-exec [usr/share/applications/hyprmoncfg-omarchy.desktop]

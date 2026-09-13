@@ -1,0 +1,61 @@
+.TH HYPRMONCFGD 1 "@MAN_DATE@" "hyprmoncfg @VERSION@" "User Commands"
+.SH NAME
+hyprmoncfgd \- automatically apply Hyprland monitor profiles
+.SH SYNOPSIS
+.B hyprmoncfgd
+.RI [ options ]
+.SH DESCRIPTION
+.B hyprmoncfgd
+monitors display topology and laptop lid changes, selects the best matching
+profile saved by
+.BR hyprmoncfg (1),
+and applies it through the same verified apply engine used by the interactive
+program.
+.SH OPTIONS
+.TP
+.BI "--config-dir " directory
+Use an alternative profile configuration directory.
+.TP
+.BI "--debounce " duration
+Wait this long before applying a profile after a change. The default is 1.2s.
+.TP
+.BI "--poll-interval " duration
+Poll for monitor changes at this interval. The default is 5s.
+.TP
+.BI "--lid-poll-interval " duration
+Poll the laptop lid state at this interval when event detection is unavailable.
+The default is 1s.
+.TP
+.BI "--wake-settle " duration
+Wait for display topology to settle after wake before applying a profile. The
+default is 2s.
+.TP
+.BI "--profile " name
+Always apply the named profile instead of automatically matching one.
+.TP
+.BI "--monitors-conf " file
+Write the generated monitor configuration to an alternative path.
+.TP
+.BI "--hypr-config " file
+Use an alternative Hyprland root configuration for include verification.
+.TP
+.B --quiet
+Suppress daemon log messages.
+.TP
+.BR -h ", " --help
+Show help.
+.TP
+.BR -v ", " --version
+Show the program version.
+.SH SERVICE
+The package installs a systemd user service. Enable it explicitly with:
+.PP
+.nf
+systemctl --user enable --now hyprmoncfgd
+.fi
+.SH SEE ALSO
+.BR hyprmoncfg (1),
+.BR hyprctl (1),
+.BR systemctl (1)
+.PP
+Full documentation is available at https://hyprmoncfg.dev.

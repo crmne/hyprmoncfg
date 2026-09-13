@@ -1,0 +1,48 @@
+# Copyright 2026 Gentoo Authors
+# Distributed under the terms of the GNU General Public License v2
+
+EAPI=8
+
+inherit desktop go-module systemd
+
+DESCRIPTION="Terminal-first monitor configurator and auto-switching daemon for Hyprland"
+HOMEPAGE="https://github.com/crmne/hyprmoncfg"
+SRC_URI="
+	https://github.com/crmne/hyprmoncfg/archive/refs/tags/v${PV}.tar.gz -> ${P}.tar.gz
+	https://github.com/crmne/hyprmoncfg/releases/download/v${PV}/${P}-deps.tar.xz
+"
+S="${WORKDIR}/${P}"
+
+LICENSE="Apache-2.0 BSD MIT"
+SLOT="0"
+KEYWORDS="-* ~amd64 ~arm64"
+
+BDEPEND=">=dev-lang/go-@GO_VERSION@"
+RDEPEND="gui-wm/hyprland
+	!gui-apps/hyprmoncfg-bin"
+
+src_compile() {
+	local build_date ldflags
+
+	build_date="$(date -u +%FT%TZ)"
+	ldflags="-X github.com/crmne/hyprmoncfg/internal/buildinfo.Version=${PV} -X github.com/crmne/hyprmoncfg/internal/buildinfo.Commit=@COMMIT@ -X github.com/crmne/hyprmoncfg/internal/buildinfo.Date=${build_date}"
+
+	GOPROXY=off ego build -buildvcs=false -trimpath -mod=readonly -ldflags "${ldflags}" -o hyprmoncfg ./cmd/hyprmoncfg
+	GOPROXY=off ego build -buildvcs=false -trimpath -mod=readonly -ldflags "${ldflags}" -o hyprmoncfgd ./cmd/hyprmoncfgd
+}
+
+src_test() {
+	GOPROXY=off ego test -buildvcs=false ./...
+}
+
+src_install() {
+	dobin hyprmoncfg
+	dobin hyprmoncfgd
+	dodoc README.md
+	insinto /usr/share/licenses/${PN}
+	doins LICENSE
+	domenu packaging/applications/hyprmoncfg.desktop
+	domenu packaging/applications/hyprmoncfg-omarchy.desktop
+	doicon packaging/icons/hyprmoncfg.svg
+	systemd_douserunit packaging/systemd/hyprmoncfgd.service
+}

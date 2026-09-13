@@ -1,0 +1,52 @@
+# Maintainer: Carmine Paolino <carmine@paolino.me>
+pkgname=hyprmoncfg
+pkgver=@VERSION@
+pkgrel=0
+pkgdesc="Terminal-first monitor configurator and auto-switching daemon for Hyprland"
+url="https://github.com/crmne/hyprmoncfg"
+arch="x86_64 aarch64"
+license="MIT"
+options="net" # go
+depends="hyprland"
+makedepends="go"
+checkdepends="bash"
+subpackages="$pkgname-doc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/crmne/hyprmoncfg/archive/refs/tags/v$pkgver.tar.gz
+	$pkgname-$pkgver-deps.tar.xz::https://github.com/crmne/hyprmoncfg/releases/download/v$pkgver/hyprmoncfg-$pkgver-deps.tar.xz
+	"
+_commit="@COMMIT@"
+
+build() {
+	local build_date ldflags
+
+	build_date="$(date -u +%FT%TZ)"
+	ldflags="-s -w -X github.com/crmne/hyprmoncfg/internal/buildinfo.Version=$pkgver -X github.com/crmne/hyprmoncfg/internal/buildinfo.Commit=$_commit -X github.com/crmne/hyprmoncfg/internal/buildinfo.Date=$build_date"
+
+	GOMODCACHE="$srcdir/go-mod" GOPROXY=off CGO_ENABLED=0 go build -buildvcs=false -trimpath -mod=readonly -ldflags "$ldflags" -o hyprmoncfg ./cmd/hyprmoncfg
+	GOMODCACHE="$srcdir/go-mod" GOPROXY=off CGO_ENABLED=0 go build -buildvcs=false -trimpath -mod=readonly -ldflags "$ldflags" -o hyprmoncfgd ./cmd/hyprmoncfgd
+}
+
+check() {
+	export GOTMPDIR=/tmp
+	export TMPDIR=/tmp
+	GOMODCACHE="$srcdir/go-mod" GOPROXY=off go test -buildvcs=false ./...
+}
+
+package() {
+	install -Dm755 "$builddir/hyprmoncfg" "$pkgdir/usr/bin/hyprmoncfg"
+	install -Dm755 "$builddir/hyprmoncfgd" "$pkgdir/usr/bin/hyprmoncfgd"
+	install -Dm644 "$builddir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	install -Dm644 "$builddir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+	install -Dm644 "$builddir/packaging/applications/hyprmoncfg.desktop" \
+		"$pkgdir/usr/share/applications/hyprmoncfg.desktop"
+	install -Dm644 "$builddir/packaging/applications/hyprmoncfg-omarchy.desktop" \
+		"$pkgdir/usr/share/applications/hyprmoncfg-omarchy.desktop"
+	install -Dm644 "$builddir/packaging/icons/hyprmoncfg.svg" \
+		"$pkgdir/usr/share/icons/hicolor/scalable/apps/hyprmoncfg.svg"
+}
+
+sha512sums="
+@SOURCE_SHA512@  hyprmoncfg-@VERSION@.tar.gz
+@DEPS_SHA512@  hyprmoncfg-@VERSION@-deps.tar.xz
+"

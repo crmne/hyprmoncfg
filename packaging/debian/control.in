@@ -1,0 +1,23 @@
+Source: hyprmoncfg
+Section: utils
+Maintainer: Carmine Paolino <carmine@paolino.me>
+Build-Depends:
+ debhelper-compat (= 13),
+ golang-any (>= 2:@GO_MINOR@~)
+Standards-Version: 4.7.4
+XS-Go-Import-Path: github.com/crmne/hyprmoncfg
+Homepage: https://github.com/crmne/hyprmoncfg
+Vcs-Browser: https://salsa.debian.org/crmne/hyprmoncfg
+Vcs-Git: https://salsa.debian.org/crmne/hyprmoncfg.git -b debian/sid
+
+Package: hyprmoncfg
+Architecture: any
+Depends:
+ ${misc:Depends},
+ hyprland,
+ xdg-terminal-exec
+Recommends:
+ systemd
+Description: terminal-first monitor configurator and daemon for Hyprland
+ hyprmoncfg provides a text UI for editing monitor layouts in Hyprland and a
+ daemon that reapplies saved profiles when monitor topology changes.

@@ -1,0 +1,11 @@
+hyprmoncfg: hyprmoncfg (Hyprland monitor configurator)
+hyprmoncfg:
+hyprmoncfg: hyprmoncfg is a terminal-first monitor configurator and
+hyprmoncfg: auto-switching daemon for Hyprland. It provides a text UI for
+hyprmoncfg: arranging monitors spatially, saving monitor profiles, and
+hyprmoncfg: restoring the best matching profile when displays are added or
+hyprmoncfg: removed.
+hyprmoncfg:
+hyprmoncfg: Homepage: https://github.com/crmne/hyprmoncfg
+hyprmoncfg:
+hyprmoncfg:

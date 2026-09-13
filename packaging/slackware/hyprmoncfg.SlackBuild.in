@@ -1,0 +1,62 @@
+#!/bin/sh
+
+set -eu
+
+PRGNAM=hyprmoncfg
+VERSION=${VERSION:-@VERSION@}
+BUILD=${BUILD:-1}
+TAG=${TAG:-_SBo}
+ARCH=${ARCH:-$(uname -m)}
+
+CWD=$(pwd)
+TMP=${TMP:-/tmp/SBo}
+PKG=$TMP/package-$PRGNAM
+OUTPUT=${OUTPUT:-/tmp}
+
+case "$ARCH" in
+  i686)
+    SLKCFLAGS="-O2 -march=i586 -mtune=i686"
+    ;;
+  x86_64)
+    SLKCFLAGS="-O2 -fPIC"
+    ;;
+  *)
+    SLKCFLAGS="-O2"
+    ;;
+esac
+
+export CFLAGS="$SLKCFLAGS"
+export CXXFLAGS="$SLKCFLAGS"
+
+rm -rf "$PKG"
+mkdir -p "$TMP" "$PKG" "$OUTPUT"
+cd "$TMP"
+rm -rf "$PRGNAM-$VERSION" go-mod
+tar xvf "$CWD/$PRGNAM-$VERSION.tar.gz"
+tar xvf "$CWD/$PRGNAM-$VERSION-deps.tar.xz"
+cd "$PRGNAM-$VERSION"
+
+COMMIT=@COMMIT@
+BUILD_DATE=$(date -u +%FT%TZ)
+LDFLAGS="-s -w -X github.com/crmne/hyprmoncfg/internal/buildinfo.Version=$VERSION -X github.com/crmne/hyprmoncfg/internal/buildinfo.Commit=$COMMIT -X github.com/crmne/hyprmoncfg/internal/buildinfo.Date=$BUILD_DATE"
+
+GOMODCACHE="$TMP/go-mod" GOPROXY=off CGO_ENABLED=0 go build -buildvcs=false -trimpath -mod=readonly -ldflags "$LDFLAGS" -o hyprmoncfg ./cmd/hyprmoncfg
+GOMODCACHE="$TMP/go-mod" GOPROXY=off CGO_ENABLED=0 go build -buildvcs=false -trimpath -mod=readonly -ldflags "$LDFLAGS" -o hyprmoncfgd ./cmd/hyprmoncfgd
+
+GOCACHE="$TMP/$PRGNAM-test-cache"
+mkdir -p "$GOCACHE"
+chown nobody "$GOCACHE"
+su -s /bin/sh nobody -c "cd '$PWD' && GOCACHE='$GOCACHE' GOMODCACHE='$TMP/go-mod' GOPROXY=off go test -buildvcs=false ./..."
+
+install -Dm755 hyprmoncfg "$PKG/usr/bin/hyprmoncfg"
+install -Dm755 hyprmoncfgd "$PKG/usr/bin/hyprmoncfgd"
+install -Dm644 LICENSE "$PKG/usr/doc/$PRGNAM-$VERSION/LICENSE"
+install -Dm644 README.md "$PKG/usr/doc/$PRGNAM-$VERSION/README.md"
+install -Dm644 packaging/applications/hyprmoncfg.desktop "$PKG/usr/share/applications/hyprmoncfg.desktop"
+install -Dm644 packaging/applications/hyprmoncfg-omarchy.desktop "$PKG/usr/share/applications/hyprmoncfg-omarchy.desktop"
+install -Dm644 packaging/icons/hyprmoncfg.svg "$PKG/usr/share/icons/hicolor/scalable/apps/hyprmoncfg.svg"
+
+mkdir -p "$PKG/install"
+install -Dm644 "$CWD/slack-desc" "$PKG/install/slack-desc"
+
+/sbin/makepkg -l y -c n "$OUTPUT/$PRGNAM-$VERSION-$ARCH-$BUILD$TAG.txz"

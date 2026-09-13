@@ -1,0 +1,13 @@
+PRGNAM="hyprmoncfg"
+VERSION="@VERSION@"
+HOMEPAGE="https://github.com/crmne/hyprmoncfg"
+DOWNLOAD="https://github.com/crmne/hyprmoncfg/archive/refs/tags/v@VERSION@.tar.gz \
+          https://github.com/crmne/hyprmoncfg/releases/download/v@VERSION@/hyprmoncfg-@VERSION@-deps.tar.xz"
+MD5SUM="@SOURCE_MD5@ \
+        @DEPS_MD5@"
+DOWNLOAD_x86_64=""
+MD5SUM_x86_64=""
+REQUIRES="google-go-lang hyprland-bin"
+MAINTAINER="Carmine Paolino"
+EMAIL="carmine@paolino.me"
+APPROVED=""

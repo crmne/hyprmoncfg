@@ -1,0 +1,16 @@
+The package builds offline with the `go-mod/` source component from the
+companion `hyprmoncfg-<version>-deps.tar.xz` release asset. During package
+builds, `debian/rules` moves that cache next to the unpacked source tree so
+`go test ./...` does not recurse into cached modules.
+
+Official Debian inclusion may require replacing this cache with packaged Go
+dependencies. Treat this packaging as a public, buildable starting point, not
+as a final Debian policy decision.
+
+To build the binary package from the `debian/sid` branch, download the matching
+dependency archive next to the checkout, unpack it into the checkout, and run:
+
+  tar -xf ../hyprmoncfg-@VERSION@-deps.tar.xz
+  dpkg-buildpackage -us -uc -b
+
+The resulting package is written to the parent directory.

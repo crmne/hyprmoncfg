@@ -1,0 +1,10 @@
+hyprmoncfg is a terminal-first monitor configurator and auto-switching
+daemon for Hyprland.
+
+It provides a text UI for arranging monitors spatially, saving monitor
+profiles, and restoring the best matching profile when displays are added
+or removed.
+
+This SlackBuild uses the upstream source tarball and a pre-fetched Go
+module cache tarball from the matching GitHub release so the build does not
+download Go modules during compilation.

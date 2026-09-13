@@ -1,0 +1,51 @@
+# Template file for 'hyprmoncfg'
+pkgname=hyprmoncfg
+version=@VERSION@
+revision=1
+archs="x86_64 aarch64"
+hostmakedepends="go"
+depends="hyprland"
+short_desc="Terminal-first monitor configurator and auto-switching daemon for Hyprland"
+maintainer="Carmine Paolino <carmine@paolino.me>"
+license="MIT"
+homepage="https://github.com/crmne/hyprmoncfg"
+distfiles="
+ https://github.com/crmne/hyprmoncfg/archive/refs/tags/v${version}.tar.gz>${pkgname}-${version}.tar.gz
+ https://github.com/crmne/hyprmoncfg/releases/download/v${version}/hyprmoncfg-${version}-deps.tar.xz>${pkgname}-${version}-deps.tar.xz
+"
+checksum="
+ @SOURCE_SHA256@
+ @DEPS_SHA256@
+"
+wrksrc="${pkgname}-${version}"
+_commit=@COMMIT@
+
+do_build() {
+	local build_date gomodcache ldflags
+
+	build_date="$(date -u +%FT%TZ)"
+	gomodcache="${XBPS_BUILDDIR}/go-mod"
+	[ -d "$PWD/go-mod" ] && gomodcache="$PWD/go-mod"
+	ldflags="-s -w -X github.com/crmne/hyprmoncfg/internal/buildinfo.Version=${version} -X github.com/crmne/hyprmoncfg/internal/buildinfo.Commit=${_commit} -X github.com/crmne/hyprmoncfg/internal/buildinfo.Date=${build_date}"
+
+	GOMODCACHE="$gomodcache" GOPROXY=off CGO_ENABLED=0 go build -buildvcs=false -trimpath -mod=readonly -ldflags "$ldflags" -o hyprmoncfg ./cmd/hyprmoncfg
+	GOMODCACHE="$gomodcache" GOPROXY=off CGO_ENABLED=0 go build -buildvcs=false -trimpath -mod=readonly -ldflags "$ldflags" -o hyprmoncfgd ./cmd/hyprmoncfgd
+}
+
+do_check() {
+	local gomodcache
+
+	gomodcache="${XBPS_BUILDDIR}/go-mod"
+	[ -d "$PWD/go-mod" ] && gomodcache="$PWD/go-mod"
+	GOMODCACHE="$gomodcache" GOPROXY=off go test -buildvcs=false ./...
+}
+
+do_install() {
+	vbin hyprmoncfg
+	vbin hyprmoncfgd
+	vlicense LICENSE
+	vdoc README.md
+	vinstall packaging/applications/hyprmoncfg.desktop 644 usr/share/applications
+	vinstall packaging/applications/hyprmoncfg-omarchy.desktop 644 usr/share/applications
+	vinstall packaging/icons/hyprmoncfg.svg 644 usr/share/icons/hicolor/scalable/apps
+}

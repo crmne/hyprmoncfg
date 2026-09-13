@@ -7,5 +7,5 @@ dist/
 *.swp
 .DS_Store
 .claude/
-hyprmoncfg
-hyprmoncfgd
+/hyprmoncfg
+/hyprmoncfgd

@@ -1,0 +1,4 @@
+packaging/applications/hyprmoncfg.desktop usr/share/applications/
+packaging/applications/hyprmoncfg-omarchy.desktop usr/share/applications/
+packaging/icons/hyprmoncfg.svg usr/share/icons/hicolor/scalable/apps/
+packaging/systemd/hyprmoncfgd.service usr/lib/systemd/user/

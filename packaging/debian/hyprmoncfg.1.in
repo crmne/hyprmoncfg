@@ -1,0 +1,83 @@
+.TH HYPRMONCFG 1 "@MAN_DATE@" "hyprmoncfg @VERSION@" "User Commands"
+.SH NAME
+hyprmoncfg \- manage monitor layouts and profiles for Hyprland
+.SH SYNOPSIS
+.B hyprmoncfg
+.RI [ options ]
+.RI [ command ]
+.SH DESCRIPTION
+.B hyprmoncfg
+is an interactive terminal layout editor and command-line profile manager for
+Hyprland. It can arrange monitors, save hardware-aware profiles, apply them
+safely, and manage workspace assignments.
+.PP
+Running the program without a command launches the interactive terminal UI.
+.SH COMMANDS
+.TP
+.B tui
+Launch the interactive terminal UI.
+.TP
+.B monitors
+List monitors reported by Hyprland.
+.TP
+.B profiles
+List saved monitor profiles.
+.TP
+.BI "save " name
+Save the current monitor state as a profile.
+.TP
+.BI "apply " name
+Apply a saved profile.
+.TP
+.BI "delete " name
+Delete a saved profile.
+.TP
+.B doctor
+Check that Hyprland reads the generated monitor configuration last.
+.TP
+.B manage
+Let hyprmoncfg manage the active monitor configuration.
+.TP
+.B status
+Show the current profile and daemon status.
+.TP
+.B unmanage
+Hand monitor configuration back to Hyprland.
+.TP
+.B version
+Show build version information.
+.TP
+.B completion
+Generate shell completion code.
+.SH OPTIONS
+.TP
+.BI "--config-dir " directory
+Use an alternative profile configuration directory.
+.TP
+.BI "--monitors-conf " file
+Write the generated monitor configuration to an alternative path.
+.TP
+.BI "--hypr-config " file
+Use an alternative Hyprland root configuration for include verification.
+.TP
+.BR -h ", " --help
+Show help.
+.TP
+.BR -v ", " --version
+Show the program version.
+.SH FILES
+.TP
+.I ~/.config/hyprmoncfg/profiles/
+Saved profiles and their generated Hyprland sidecars.
+.TP
+.I ~/.config/hypr/monitors.conf
+Default generated monitor configuration for legacy Hyprland configurations.
+.TP
+.I ~/.config/hypr/monitors.lua
+Default generated monitor configuration when Hyprland Lua configuration is
+active.
+.SH SEE ALSO
+.BR hyprmoncfgd (1),
+.BR hyprctl (1)
+.PP
+Full documentation is available at https://hyprmoncfg.dev.

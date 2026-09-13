@@ -1,0 +1,32 @@
+EAPI=8
+
+inherit desktop systemd
+
+DESCRIPTION="Terminal-first monitor configurator and auto-switching daemon for Hyprland"
+HOMEPAGE="https://github.com/crmne/hyprmoncfg"
+SRC_URI="
+	amd64? ( https://github.com/crmne/hyprmoncfg/releases/download/v${PV}/hyprmoncfg_${PV}_linux_amd64.tar.gz )
+	arm64? ( https://github.com/crmne/hyprmoncfg/releases/download/v${PV}/hyprmoncfg_${PV}_linux_arm64.tar.gz )
+"
+
+LICENSE="Apache-2.0 BSD MIT"
+SLOT="0"
+KEYWORDS="-* ~amd64 ~arm64"
+IUSE=""
+RESTRICT="strip"
+RDEPEND="gui-wm/hyprland
+	!gui-apps/hyprmoncfg"
+QA_PREBUILT="usr/bin/hyprmoncfg usr/bin/hyprmoncfgd"
+S="${WORKDIR}"
+
+src_install() {
+	dobin hyprmoncfg
+	dobin hyprmoncfgd
+	dodoc README.md
+	insinto /usr/share/licenses/${PN}
+	doins LICENSE
+	domenu packaging/applications/hyprmoncfg.desktop
+	domenu packaging/applications/hyprmoncfg-omarchy.desktop
+	doicon packaging/icons/hyprmoncfg.svg
+	systemd_douserunit packaging/systemd/hyprmoncfgd.service
+}

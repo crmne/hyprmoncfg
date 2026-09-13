@@ -1,0 +1,137 @@
+name: Packaging
+
+on:
+  push:
+    branches: [main]
+    paths: [native-packages.yaml, packaging/**, scripts/package*, .goreleaser.yml, .github/workflows/packaging.yml, .github/workflows/release.yml, go.mod, go.sum]
+  pull_request:
+    paths: [native-packages.yaml, packaging/**, scripts/package*, .goreleaser.yml, .github/workflows/packaging.yml, .github/workflows/release.yml, go.mod, go.sum]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published version to package (empty uses the latest local tag)
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-packages:
+    if: inputs.version != ''
+    permissions:
+      contents: write
+    uses: crmne/native-packages/.github/workflows/package.yml@4ddc1447a1ac2b987cfc101d5b4859f622123c77 # v0.2.0
+    with:
+      version: ${{ inputs.version }}
+      # The release job publishes binaries and source recipes together.
+      publish: false
+
+  recipes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+      - name: Install packaging CLI and source-recipe test dependency
+        run: |
+          gem install native-packages --version 0.2.0 --no-document
+          gem install minitest --version 6.0.6 --no-document
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nix-bin libarchive-tools
+      - name: Test packaging automation
+        run: |
+          ruby scripts/packages_test.rb --verbose
+          native-packages validate
+          native-packages repositories
+      - name: Generate and validate all recipes
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="${INPUT_VERSION:-$(git describe --tags --abbrev=0 --match 'v[0-9]*')}"
+          ruby scripts/package_sources.rb prepare "$version" --output dist/packaging
+          ruby scripts/package_sources.rb artifacts dist/packaging
+      - name: Check AUR metadata with makepkg
+        run: |
+          docker run --rm -v "$PWD/dist/packaging:/recipes:ro" archlinux:base-devel bash -ec '
+            useradd -m builder
+            for recipe in /recipes/arch/*; do
+              cp -r "$recipe" /tmp/package
+              chown -R builder:builder /tmp/package
+              runuser -u builder -- bash -ec "cd /tmp/package; makepkg --printsrcinfo > /tmp/actual-srcinfo"
+              diff -u "$recipe/.SRCINFO" /tmp/actual-srcinfo
+              rm -r /tmp/package
+            done
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packaging
+          path: dist/packaging/
+          include-hidden-files: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-assets
+          path: dist/package-assets/
+          if-no-files-found: error
+
+  binary-packages:
+    if: inputs.version == ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+      - name: Install shared packaging tools
+        run: |
+          gem install native-packages --version 0.2.0 --no-document
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools binutils rpm
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.18.1
+          args: release --snapshot --clean --skip=publish
+      - name: Package snapshot archives with the shared CLI
+        run: |
+          # Snapshot archive names carry a prerelease suffix. Use a disposable
+          # stable package version for this installation-content check.
+          for arch in amd64 arm64; do
+            cp dist/hyprmoncfg_*_linux_$arch.tar.gz "dist/hyprmoncfg_0.0.0_linux_$arch.tar.gz"
+          done
+          native-packages build --version 0.0.0 --output dist/snapshot-packages
+      - name: Inspect Debian and RPM contents
+        run: |
+          for package in dist/snapshot-packages/packages/*/deb/*.deb; do
+            dpkg-deb --contents "$package"
+            dpkg-deb --extract "$package" /tmp/deb-package
+            test -f /tmp/deb-package/usr/bin/hyprmoncfg
+            test -f /tmp/deb-package/usr/bin/hyprmoncfgd
+            test -f /tmp/deb-package/usr/lib/systemd/user/hyprmoncfgd.service
+            rm -r /tmp/deb-package
+          done
+          for package in dist/snapshot-packages/packages/*/rpm/*.rpm; do
+            rpm -qpl "$package"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-packages
+          path: dist/snapshot-packages/
