@@ -51,7 +51,7 @@ jobs:
         with:
           ruby-version: '4.0'
       - name: Install packaging CLI
-        run: gem install native-packages --version 0.5.0 --no-document
+        run: gem install native-packages --version 0.5.1 --no-document
       - uses: actions/download-artifact@v4
         with:
           name: package-assets
@@ -80,7 +80,7 @@ jobs:
         with:
           ruby-version: '4.0'
       - name: Install packaging CLI
-        run: gem install native-packages --version 0.5.0 --no-document
+        run: gem install native-packages --version 0.5.1 --no-document
       - uses: actions/download-artifact@v4
         with:
           name: packaging

@@ -95,7 +95,7 @@ install -Dm755 bin/hyprmoncfgd ~/.local/bin/hyprmoncfgd
 
 [`native-packages.yaml`](native-packages.yaml) declares binary packages and
 downstream repositories; native recipes live in [`packaging/`](packaging/).
-Install the shared CLI with `gem install native-packages --version 0.5.0`, build
+Install the shared CLI with `gem install native-packages --version 0.5.1`, build
 packages with `native-packages build --release v<version>`, and track destinations
 with `native-packages status`. Hyprmoncfg's Go/Nix source recipes use
 `ruby scripts/package_sources.rb prepare <version>`.
