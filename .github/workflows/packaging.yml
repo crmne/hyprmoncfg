@@ -26,7 +26,7 @@ jobs:
     if: inputs.version != ''
     permissions:
       contents: write
-    uses: crmne/native-packages/.github/workflows/package.yml@9d9e1d415b5d7d55ab973a5ffb2d54a9c21d1cbb # v0.4.0
+    uses: crmne/native-packages/.github/workflows/package.yml@5776754efb4a7108dac2e1567b930afee259ad28 # v0.5.0
     with:
       version: ${{ inputs.version }}
       # The release job publishes binaries and source recipes together.
@@ -46,7 +46,7 @@ jobs:
           ruby-version: '4.0'
       - name: Install packaging CLI and source-recipe test dependency
         run: |
-          gem install native-packages --version 0.4.0 --no-document
+          gem install native-packages --version 0.5.0 --no-document
           gem install minitest --version 6.0.6 --no-document
       - name: Install packaging tools
         run: |
@@ -102,7 +102,7 @@ jobs:
           ruby-version: '4.0'
       - name: Install shared packaging tools
         run: |
-          gem install native-packages --version 0.4.0 --no-document
+          gem install native-packages --version 0.5.0 --no-document
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
           sudo apt-get update
           sudo apt-get install -y libarchive-tools binutils rpm
