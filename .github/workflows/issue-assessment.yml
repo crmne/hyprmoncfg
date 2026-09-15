@@ -35,11 +35,11 @@ concurrency:
 
 jobs:
   assess:
-    if: vars.COPILOT_ISSUE_ASSESSMENT_ENABLED == 'true' && github.event.sender.type != 'Bot' && !github.event.issue.pull_request
+    if: vars.COPILOT_ISSUE_ASSESSMENT_ENABLED == 'true' && (github.event.sender.type != 'Bot' || github.event_name == 'issues') && !github.event.issue.pull_request
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: crmne/copilot-triage@46422d3c4d1107ca34b7f0478427e51d07c3cb11 # v0.2.0
+      - uses: crmne/copilot-triage@10fdd4aaa1b20ac434b9d6352bca2738cf4e80f0 # v0.3.0
         with:
           copilot-token: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           kind: ${{ github.event.discussion && 'discussion' || inputs.kind || 'issue' }}
