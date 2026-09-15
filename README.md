@@ -33,6 +33,7 @@ hyprmoncfg is a visual multi-monitor layout editor and automatic profile switche
 
 - **Spatial layout editor** -- drag monitors on a canvas and tune mode, scale, VRR, mirror, transform, and exact position
 - **Named profiles** -- save setups like `desk`, `conference`, or `home-office`
+- **Explicit layout reuse through editor IPC** -- map a saved layout onto currently connected displays, review the draft, then preview and save it as a new setup
 - **Hardware-identity matching** -- profiles follow monitor make, model, and serial instead of unstable connector names
 - **Hotplug and lid-aware daemon** -- apply the right profile automatically when monitors change or the laptop lid closes
 - **Workspace planner** -- assign workspaces across monitors with sequential, interleave, or manual strategies
@@ -143,7 +144,9 @@ systemctl --user daemon-reload
 systemctl --user enable --now hyprmoncfgd
 ```
 
-The daemon scores every profile in `~/.config/hyprmoncfg/profiles/`, so delete throwaway profiles before relying on automatic switching.
+The daemon scores profiles in `~/.config/hyprmoncfg/profiles/` that account for every connected display, so an unfamiliar monitor is left available for you to configure. Missing saved displays are allowed for undocking. Delete throwaway profiles before relying on automatic switching.
+
+When a dock is still connecting, monitor and workspace reads have short deadlines and desktop clients can show a connecting state while retrying. Unique hardware identities skip DRM connector probing; ambiguous identities use one shared probe with bounded waiting. See [daemon behavior](https://hyprmoncfg.dev/daemon/) and the [editor IPC reference](https://hyprmoncfg.dev/ipc/) for the matching and draft-reuse contracts.
 
 On Omarchy versions that launch `omarchy-hyprland-monitor-watch`, `hyprmoncfgd` stops that exact transient user scope while it owns monitor profiles and restores the watcher when the daemon exits during a live Hyprland session. Generated configuration used without the daemon cannot provide this runtime ownership; static-config users must disable the Omarchy watcher separately.
 

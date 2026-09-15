@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/crmne/hyprmoncfg/internal/appstatus"
 	"net"
 	"os"
 	"path/filepath"
@@ -201,6 +202,17 @@ func (s *Server) dispatch(owner string, client *serverClient, request Request) R
 		if err = decodeParams(request.Params, &params); err == nil {
 			result, err = s.Handler.EditProfile(params)
 		}
+	case MethodReuse:
+		var params ReuseParams
+		if err = decodeParams(request.Params, &params); err == nil {
+			if handler, ok := s.Handler.(interface {
+				ReuseProfile(ReuseParams) (appstatus.EditorDraft, error)
+			}); ok {
+				result, err = handler.ReuseProfile(params)
+			} else {
+				err = fmt.Errorf("layout reuse is not supported by this backend")
+			}
+		}
 	case MethodPreview:
 		var params PreviewParams
 		if err = decodeParams(request.Params, &params); err == nil {
@@ -267,6 +279,9 @@ func decodeParams(raw json.RawMessage, target any) error {
 }
 
 func encodeResponseError(err error) *ResponseError {
+	if errors.Is(err, ErrCompositorBusy) {
+		return &ResponseError{Code: "compositor_busy", Message: ErrCompositorBusy.Error()}
+	}
 	if errors.Is(err, ErrTransactionUnavailable) {
 		return &ResponseError{Code: "transaction_unavailable", Message: err.Error()}
 	}

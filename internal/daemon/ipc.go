@@ -40,11 +40,11 @@ func (s *Service) Status() (appstatus.Document, error) {
 	if err != nil {
 		return appstatus.Document{}, err
 	}
-	monitors, err := s.client.Monitors(ctx)
+	monitors, err := s.queryMonitors(ctx)
 	if err != nil {
 		return appstatus.Document{}, err
 	}
-	rules, err := s.client.WorkspaceRules(ctx)
+	rules, err := s.queryWorkspaceRules(ctx)
 	if err != nil {
 		return appstatus.Document{}, err
 	}
@@ -76,15 +76,43 @@ func (s *Service) EditorState() (appstatus.EditorDocument, error) {
 	if err != nil {
 		return appstatus.EditorDocument{}, err
 	}
-	monitors, err := s.client.Monitors(ctx)
+	monitors, err := s.queryMonitors(ctx)
 	if err != nil {
 		return appstatus.EditorDocument{}, err
 	}
-	rules, err := s.client.WorkspaceRules(ctx)
+	rules, err := s.queryWorkspaceRules(ctx)
 	if err != nil {
 		return appstatus.EditorDocument{}, err
 	}
-	return appstatus.BuildEditor(profiles, monitors, rules), nil
+	document := appstatus.BuildEditor(profiles, monitors, rules)
+	document.Capabilities = []string{"reuse_profile"}
+	return document, nil
+}
+
+// ReuseProfile reads current hardware and constructs a draft without saving,
+// applying, acquiring the display writer lock, or altering preview ownership.
+func (s *Service) ReuseProfile(params ipc.ReuseParams) (appstatus.EditorDraft, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	saved, err := s.store.Load(params.Name)
+	if err != nil {
+		return appstatus.EditorDraft{}, err
+	}
+	monitors, err := s.queryMonitors(ctx)
+	if err != nil {
+		return appstatus.EditorDraft{}, err
+	}
+	rules, err := s.queryWorkspaceRules(ctx)
+	if err != nil {
+		return appstatus.EditorDraft{}, err
+	}
+	draft, warnings, err := profile.ReuseLayout(saved, monitors, rules, params.Mapping)
+	if err != nil {
+		return appstatus.EditorDraft{}, err
+	}
+	result := appstatus.BuildEditorDraft(draft)
+	result.Warnings = warnings
+	return result, nil
 }
 
 func (s *Service) EditProfile(params ipc.EditParams) (appstatus.EditorDraft, error) {
@@ -216,11 +244,11 @@ func (s *Service) SetProfileAuto(params ipc.ProfileAutoParams) error {
 	if err != nil {
 		return err
 	}
-	monitors, err := s.client.Monitors(ctx)
+	monitors, err := s.queryMonitors(ctx)
 	if err != nil {
 		return err
 	}
-	rules, err := s.client.WorkspaceRules(ctx)
+	rules, err := s.queryWorkspaceRules(ctx)
 	if err != nil {
 		return err
 	}
@@ -263,7 +291,7 @@ func (s *Service) Preview(owner string, params ipc.PreviewParams) (ipc.Transacti
 
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	monitors, err := s.client.Monitors(ctx)
+	monitors, err := s.queryMonitors(ctx)
 	if err != nil {
 		return ipc.Transaction{}, err
 	}
@@ -350,7 +378,7 @@ func (s *Service) commitPreview(owner string, transactionID string, save bool) e
 	}
 	// Record what the confirmed profile left on screen, so the next automatic
 	// pass recognizes the current state instead of applying it a second time.
-	if monitors, err := s.client.Monitors(ctx); err != nil {
+	if monitors, err := s.queryMonitors(ctx); err != nil {
 		s.applied = nil
 		s.cfg.Logf("refresh monitors after confirm failed: %v", err)
 	} else {

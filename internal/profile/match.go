@@ -164,6 +164,20 @@ func MatchScore(p Profile, monitors []hypr.Monitor) int {
 	return EvaluateMatch(p, monitors).Score
 }
 
+// BestAutomaticMatch excludes profiles that would disable unfamiliar connected
+// outputs merely because they share another output, such as the laptop panel.
+// Missing saved outputs remain allowed, so undocking still restores the laptop.
+// Explicit profile selection retains its existing omitted-output behavior.
+func BestAutomaticMatch(profiles []Profile, monitors []hypr.Monitor) (Profile, int, bool) {
+	known := make([]Profile, 0, len(profiles))
+	for _, p := range profiles {
+		if EvaluateMatch(p, monitors).UnknownOutputs == 0 {
+			known = append(known, p)
+		}
+	}
+	return BestMatch(known, monitors)
+}
+
 func BestMatch(profiles []Profile, monitors []hypr.Monitor) (Profile, int, bool) {
 	type candidate struct {
 		profile Profile

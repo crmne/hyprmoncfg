@@ -99,6 +99,7 @@ type MonitorSummary struct {
 // anything changes; mode lists and a complete profile-shaped draft are only
 // fetched when an editor is actually open.
 type EditorDocument struct {
+	Capabilities          []string                   `json:"capabilities,omitempty"`
 	Profile               profile.Profile            `json:"profile"`
 	Profiles              []profile.Profile          `json:"profiles"`
 	Displays              []EditorDisplay            `json:"displays"`
@@ -109,6 +110,7 @@ type EditorDocument struct {
 }
 
 type EditorDraft struct {
+	Warnings      []string        `json:"warnings,omitempty"`
 	Profile       profile.Profile `json:"profile"`
 	WorkspacePlan []WorkspacePlan `json:"workspace_plan"`
 }
