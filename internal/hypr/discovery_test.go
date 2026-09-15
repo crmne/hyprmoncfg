@@ -70,6 +70,38 @@ func TestDiscoveryRecoversFromMalformedInstancesJSON(t *testing.T) {
 	}
 }
 
+func TestHasRunningInstanceChecksLiveSockets(t *testing.T) {
+	runtime := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	client := &Client{}
+
+	running, err := client.HasRunningInstance(context.Background())
+	if err != nil {
+		t.Fatalf("empty runtime: %v", err)
+	}
+	if running {
+		t.Fatal("reported a running compositor in an empty runtime")
+	}
+
+	instanceFixture(t, runtime, "stale", "wayland-0", false)
+	running, err = client.HasRunningInstance(context.Background())
+	if err != nil {
+		t.Fatalf("stale runtime: %v", err)
+	}
+	if running {
+		t.Fatal("reported a stale lock file as a running compositor")
+	}
+
+	instanceFixture(t, runtime, "active", "wayland-1", true)
+	running, err = client.HasRunningInstance(context.Background())
+	if err != nil {
+		t.Fatalf("live runtime: %v", err)
+	}
+	if !running {
+		t.Fatal("missed the live compositor socket")
+	}
+}
+
 func TestMonitorSubscriptionStopsWhileSocketIsIdle(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtime)

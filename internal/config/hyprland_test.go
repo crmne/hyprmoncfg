@@ -31,6 +31,61 @@ func TestIsGeneratedMonitorsConfig(t *testing.T) {
 	}
 }
 
+func TestNeutralizeGeneratedMonitorsConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		before      string
+		want        string
+		wantChanged bool
+	}{
+		{
+			name:        "lua clamshell rules",
+			before:      GeneratedLuaHeader + "\nhl.monitor({ output = \"eDP-1\", disabled = true })\n",
+			want:        GeneratedLuaHeader + "\n",
+			wantChanged: true,
+		},
+		{
+			name:        "legacy clamshell rules",
+			before:      GeneratedLegacyHeader + "\nmonitor = eDP-1, disable\n",
+			want:        GeneratedLegacyHeader + "\n",
+			wantChanged: true,
+		},
+		{
+			name:   "already neutral",
+			before: GeneratedLuaHeader + "\n",
+			want:   GeneratedLuaHeader + "\n",
+		},
+		{
+			name:   "user owned",
+			before: "-- my monitor rules\nhl.monitor({ output = \"eDP-1\", disabled = true })\n",
+			want:   "-- my monitor rules\nhl.monitor({ output = \"eDP-1\", disabled = true })\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "monitors.lua")
+			if err := os.WriteFile(path, []byte(tt.before), 0o644); err != nil {
+				t.Fatalf("write fixture: %v", err)
+			}
+			changed, err := NeutralizeGeneratedMonitorsConfig(path)
+			if err != nil {
+				t.Fatalf("neutralize: %v", err)
+			}
+			if changed != tt.wantChanged {
+				t.Fatalf("changed = %t, want %t", changed, tt.wantChanged)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read result: %v", err)
+			}
+			if string(got) != tt.want {
+				t.Fatalf("result = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestVerifySourceChainFindsNestedRelativeSource(t *testing.T) {
 	root := t.TempDir()
 	hypr := filepath.Join(root, "hypr")

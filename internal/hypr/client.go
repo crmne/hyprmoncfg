@@ -42,6 +42,18 @@ type Client struct {
 	hyprctl string
 }
 
+// HasRunningInstance checks the compositor sockets directly instead of trusting
+// environment variables left by an earlier graphical session. It is used for
+// cold-start decisions that must distinguish "Hyprland is not up yet" from a
+// live compositor whose IPC query happened to fail.
+func (c *Client) HasRunningInstance(ctx context.Context) (bool, error) {
+	instances, err := runningInstances(ctx)
+	if err != nil {
+		return false, err
+	}
+	return len(instances) > 0, nil
+}
+
 func NewClient() (*Client, error) {
 	path, err := exec.LookPath("hyprctl")
 	if err != nil {
