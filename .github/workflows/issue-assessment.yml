@@ -1,0 +1,42 @@
+name: Issue assessment
+
+on:
+  issues:
+    types: [opened, reopened]
+  discussion:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      kind:
+        type: choice
+        options: [issue, discussion]
+        default: issue
+      number:
+        description: Issue or discussion number
+        required: true
+      dry_run:
+        description: Preview without changing the report
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+  discussions: write
+
+concurrency:
+  group: assessment-${{ github.event.issue.number || github.event.discussion.number || inputs.number }}
+  cancel-in-progress: false
+
+jobs:
+  assess:
+    if: vars.COPILOT_ISSUE_ASSESSMENT_ENABLED == 'true' && github.event.sender.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: crmne/copilot-triage@283e7193e8fce77c8ac6f79e64bc7dc397755367 # v0.1.1
+        with:
+          copilot-token: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          kind: ${{ github.event.discussion && 'discussion' || inputs.kind || 'issue' }}
+          number: ${{ github.event.issue.number || github.event.discussion.number || inputs.number }}
+          dry-run: ${{ inputs.dry_run || false }}
