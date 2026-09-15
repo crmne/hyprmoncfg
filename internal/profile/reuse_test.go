@@ -30,7 +30,7 @@ func reuseFixture() (Profile, []hypr.Monitor, map[string]string) {
 func TestReuseLayoutRebindsIdentityAndWorkspaceRolesWithoutMutatingSource(t *testing.T) {
 	saved, monitors, mapping := reuseFixture()
 	before := cloneForReuse(saved)
-	draft, warnings, err := ReuseLayout(saved, monitors, nil, mapping)
+	draft, warnings, err := ReuseLayout(saved, nil, monitors, nil, mapping)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestReuseLayoutRebindsIdentityAndWorkspaceRolesWithoutMutatingSource(t *tes
 func TestReuseLayoutMapsMirrorsAndDropsExplicitlySkippedRoles(t *testing.T) {
 	saved, monitors, mapping := reuseFixture()
 	saved.Outputs[1].MirrorOf = saved.Outputs[0].Key
-	draft, _, err := ReuseLayout(saved, monitors, nil, mapping)
+	draft, _, err := ReuseLayout(saved, nil, monitors, nil, mapping)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestReuseLayoutMapsMirrorsAndDropsExplicitlySkippedRoles(t *testing.T) {
 		t.Fatalf("stale mirror: %+v", mirror)
 	}
 	mapping[saved.Outputs[0].Key] = ""
-	draft, warnings, err := ReuseLayout(saved, monitors, nil, mapping)
+	draft, warnings, err := ReuseLayout(saved, nil, monitors, nil, mapping)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestReuseLayoutRejectsIncompleteStaleAndDuplicateMappings(t *testing.T) {
 				}
 				monitors = monitors[:2]
 			}
-			if _, _, err := ReuseLayout(saved, monitors, nil, mapping); err == nil {
+			if _, _, err := ReuseLayout(saved, nil, monitors, nil, mapping); err == nil {
 				t.Fatal("invalid mapping accepted")
 			}
 		})
@@ -116,7 +116,7 @@ func TestReuseLayoutAdaptsUnavailableModeAndKeepsTargetColor(t *testing.T) {
 	saved, monitors, mapping := reuseFixture()
 	saved.Outputs[0].Width, saved.Outputs[0].Height, saved.Outputs[0].Mode = 3840, 2160, "3840x2160@60"
 	saved.Outputs[0].ICC, saved.Outputs[0].CM, saved.Outputs[0].SupportsHDR = "/old/icc", "hdr", 1
-	draft, warnings, err := ReuseLayout(saved, monitors, nil, mapping)
+	draft, warnings, err := ReuseLayout(saved, nil, monitors, nil, mapping)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestReuseLayoutRemapsGeneratedWorkspaceOrder(t *testing.T) {
 	saved, monitors, mapping := reuseFixture()
 	saved.Workspaces.Strategy = WorkspaceStrategyInterleave
 	saved.Workspaces.MaxWorkspaces, saved.Workspaces.GroupSize = 12, 4
-	draft, _, err := ReuseLayout(saved, monitors, nil, mapping)
+	draft, _, err := ReuseLayout(saved, nil, monitors, nil, mapping)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,22 +147,26 @@ func TestReuseLayoutRemapsGeneratedWorkspaceOrder(t *testing.T) {
 	}
 }
 
-func TestReuseLayoutDoesNotTransferCalibrationBetweenSeriallessTwins(t *testing.T) {
-	old := []hypr.Monitor{
-		{Name: "DP-1", Make: "Example", Model: "Twin", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1},
-		{Name: "DP-2", Make: "Example", Model: "Twin", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1, X: 1920},
-	}
-	saved := FromMonitors("Twins", old)
-	saved.Outputs[0].ICC = "/calibration/left.icc"
-	mapping := map[string]string{saved.Outputs[0].Key: saved.Outputs[1].Key, saved.Outputs[1].Key: saved.Outputs[0].Key}
-	draft, _, err := ReuseLayout(saved, old, nil, mapping)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, output := range draft.Outputs {
-		if output.ICC != "" {
-			t.Fatal("transferred calibration using ambiguous hardware identity")
-		}
+func TestReuseLayoutDoesNotTransferTemplateCalibrationBetweenAmbiguousTwins(t *testing.T) {
+	for _, serial := range []string{"", "duplicated-serial"} {
+		t.Run("serial="+serial, func(t *testing.T) {
+			old := []hypr.Monitor{
+				{Name: "DP-1", Make: "Example", Model: "Twin", Serial: serial, Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1},
+				{Name: "DP-2", Make: "Example", Model: "Twin", Serial: serial, Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1, X: 1920},
+			}
+			saved := FromMonitors("Twins", old)
+			saved.Outputs[0].ICC = "/calibration/left.icc"
+			mapping := map[string]string{saved.Outputs[0].Key: saved.Outputs[1].Key, saved.Outputs[1].Key: saved.Outputs[0].Key}
+			draft, _, err := ReuseLayout(saved, []Profile{saved}, old, nil, mapping)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, output := range draft.Outputs {
+				if output.ICC != "" {
+					t.Fatal("transferred template calibration using ambiguous hardware identity")
+				}
+			}
+		})
 	}
 }
 
@@ -170,7 +174,7 @@ func TestReuseLayoutRepairsUnassignedMirrorWhoseSourceWasDisabled(t *testing.T) 
 	saved, monitors, mapping := reuseFixture()
 	monitors[2].MirrorOf = "DP-2"
 	saved.Outputs[0].Enabled = false // this role maps to current DP-2
-	draft, warnings, err := ReuseLayout(saved, monitors, nil, mapping)
+	draft, warnings, err := ReuseLayout(saved, nil, monitors, nil, mapping)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,5 +184,114 @@ func TestReuseLayoutRepairsUnassignedMirrorWhoseSourceWasDisabled(t *testing.T) 
 	}
 	if !strings.Contains(strings.Join(warnings, " "), "made this display independent") {
 		t.Fatal("mirror repair not disclosed")
+	}
+}
+
+func TestReuseLayoutPreservesCurrentCalibrationForMappedAndUnassignedOutputs(t *testing.T) {
+	for _, custom := range []bool{false, true} {
+		t.Run(map[bool]string{false: "exact-current-profile", true: "best-current-profile"}[custom], func(t *testing.T) {
+			saved, monitors, mapping := reuseFixture()
+			current := FromMonitors("Current", monitors)
+			for i := range current.Outputs {
+				output := &current.Outputs[i]
+				output.ICC = "/current/" + output.Name + ".icc"
+				output.SDREOTF = "gamma22"
+				output.MinLuminance, output.MaxLuminance, output.MaxAvgLuminance = 0.005, 1000, 600
+				output.SupportsHDR, output.SupportsWideColor = 1, 1
+			}
+			if custom {
+				monitors[0].Y = 100
+			}
+			profiles := []Profile{saved, current}
+			if _, exact := ExactStateMatch(profiles, monitors, nil); exact == custom {
+				t.Fatal("fixture did not select the intended exact/best recovery path")
+			}
+			before := cloneForReuse(current)
+			draft, _, err := ReuseLayout(saved, profiles, monitors, nil, mapping)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, output := range draft.Outputs {
+				stored, ok := current.OutputByKey(output.Key)
+				if !ok || output.ICC != stored.ICC || output.SDREOTF != stored.SDREOTF ||
+					output.MinLuminance != stored.MinLuminance || output.MaxLuminance != stored.MaxLuminance ||
+					output.MaxAvgLuminance != stored.MaxAvgLuminance || output.SupportsHDR != stored.SupportsHDR ||
+					output.SupportsWideColor != stored.SupportsWideColor {
+					t.Fatalf("current calibration lost for %s: %+v", output.Name, output)
+				}
+			}
+			if !reflect.DeepEqual(current, before) {
+				t.Fatal("current saved profile mutated")
+			}
+		})
+	}
+}
+
+func TestReuseLayoutKeepsSeriallessCalibrationOnItsCurrentOutput(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "DP-1", Make: "Example", Model: "Twin", ConnectorPath: "pci-0000:00:02.0-card1-DP-1", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1},
+		{Name: "DP-2", Make: "Example", Model: "Twin", ConnectorPath: "pci-0000:00:02.0-card1-DP-2", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1, X: 1920},
+	}
+	current := FromMonitors("Twins", monitors)
+	current.Outputs[0].ICC, current.Outputs[1].ICC = "/current/first.icc", "/current/second.icc"
+	template := cloneForReuse(current)
+	template.Name = "Template"
+	template.Outputs[0].ICC, template.Outputs[1].ICC = "/template/first.icc", "/template/second.icc"
+	mapping := map[string]string{current.Outputs[0].Key: current.Outputs[1].Key, current.Outputs[1].Key: current.Outputs[0].Key}
+	draft, _, err := ReuseLayout(template, []Profile{template, current}, monitors, nil, mapping)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range draft.Outputs {
+		stored, _ := current.OutputByKey(output.Key)
+		if output.ICC != stored.ICC {
+			t.Fatalf("calibration followed the swapped role instead of current hardware: %+v", output)
+		}
+	}
+}
+
+func TestReuseLayoutKeepsSkippedUnambiguousTemplateCalibration(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "DP-1", Make: "Example", Model: "Panel", Serial: "known-unit", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1}}
+	saved := FromMonitors("Desk", monitors)
+	saved.Outputs[0].ICC = "/current/known-unit.icc"
+	draft, _, err := ReuseLayout(saved, []Profile{saved}, monitors, nil, map[string]string{saved.Outputs[0].Key: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Outputs[0].ICC != saved.Outputs[0].ICC {
+		t.Fatalf("skipped known physical display lost its calibration: %+v", draft.Outputs[0])
+	}
+}
+
+func TestReuseLayoutDoesNotRecoverDifferentSerialCalibrationByConnectorName(t *testing.T) {
+	saved, monitors, mapping := reuseFixture()
+	foreign := FromMonitors("Foreign", monitors)
+	for i := range foreign.Outputs {
+		foreign.Outputs[i].Serial = "another-physical-unit"
+		foreign.Outputs[i].ICC = "/foreign/calibration.icc"
+	}
+	foreign.Normalize()
+	draft, _, err := ReuseLayout(saved, []Profile{foreign}, monitors, nil, mapping)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range draft.Outputs {
+		if output.ICC != "" {
+			t.Fatalf("foreign calibration recovered by connector name: %+v", output)
+		}
+	}
+}
+
+func TestReuseLayoutRepairsMappedMirrorWhoseSavedSourceIsDisabled(t *testing.T) {
+	saved, monitors, mapping := reuseFixture()
+	saved.Outputs[1].MirrorOf = saved.Outputs[0].Key
+	saved.Outputs[0].Enabled = false
+	draft, warnings, err := ReuseLayout(saved, nil, monitors, nil, mapping)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mirror, _ := draft.OutputByKey(mapping[saved.Outputs[1].Key])
+	if !mirror.Enabled || mirror.MirrorOf != "" || !strings.Contains(strings.Join(warnings, " "), "mirror source is disabled") {
+		t.Fatalf("disabled dependency was not repaired and reported: output=%+v warnings=%v", mirror, warnings)
 	}
 }

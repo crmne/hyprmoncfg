@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/crmne/hyprmoncfg/internal/appstatus"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/ipc"
 	"github.com/crmne/hyprmoncfg/internal/lid"
@@ -114,6 +116,10 @@ func TestReuseProfileReturnsDraftWithoutChangingConfigOrStore(t *testing.T) {
 	if draft.Profile.Name != "" || draft.Profile.Exec != "" || len(draft.Profile.Outputs) != len(monitors) {
 		t.Fatalf("invalid draft: %+v", draft)
 	}
+	status, err := svc.Status()
+	if err != nil || draft.MonitorSetHash == "" || draft.MonitorSetHash != editor.MonitorSetHash || draft.MonitorSetHash != status.MonitorSetHash {
+		t.Fatalf("status/editor/reuse hardware snapshots differ: status=%q editor=%q reuse=%q error=%v", status.MonitorSetHash, editor.MonitorSetHash, draft.MonitorSetHash, err)
+	}
 	after, err := env.store.Load(saved.Name)
 	if err != nil || after.Exec != "must-not-run" || readMonitorsConf(t, env) != before || svc.pending != nil {
 		t.Fatalf("reuse changed state: %v", err)
@@ -121,6 +127,90 @@ func TestReuseProfileReturnsDraftWithoutChangingConfigOrStore(t *testing.T) {
 	data, _ := os.ReadFile(env.logPath)
 	if strings.Contains(string(data), "reload") || strings.Contains(string(data), "must-not-run") {
 		t.Fatalf("reuse applied commands: %s", data)
+	}
+}
+
+func TestHardwareSnapshotsRejectReplacementDuringWorkspaceRead(t *testing.T) {
+	for _, operation := range []string{"status", "editor", "reuse"} {
+		t.Run(operation, func(t *testing.T) {
+			monitors := applyBestDualMonitors()
+			before, _ := json.Marshal(monitors)
+			replacement := append([]hypr.Monitor(nil), monitors...)
+			replacement[1].Serial = "replacement-on-the-same-connector"
+			after, _ := json.Marshal(replacement)
+			env := newApplyBestTestEnvWithMonitors(t, string(before), string(after))
+			saved := profile.FromMonitors("Template", monitors)
+			if err := env.store.Save(saved); err != nil {
+				t.Fatal(err)
+			}
+			helper := filepath.Join(filepath.Dir(env.logPath), "hyprctl")
+			script, err := os.ReadFile(helper)
+			if err != nil {
+				t.Fatal(err)
+			}
+			query := `if [[ "${1-}" == "-j" && "${2-}" == "workspacerules" ]]; then`
+			script = []byte(strings.Replace(string(script), query, query+"\n  touch \"$HYPRCTL_STATE\"", 1))
+			if err := os.WriteFile(helper, script, 0755); err != nil {
+				t.Fatal(err)
+			}
+			svc := New(env.client, env.store, Config{})
+			switch operation {
+			case "status":
+				_, err = svc.Status()
+			case "editor":
+				_, err = svc.EditorState()
+			case "reuse":
+				mapping := map[string]string{}
+				for _, output := range saved.Outputs {
+					mapping[output.Key] = output.Key
+				}
+				_, err = svc.ReuseProfile(ipc.ReuseParams{Name: saved.Name, Mapping: mapping})
+			}
+			if !errors.Is(err, ipc.ErrCompositorBusy) {
+				t.Fatalf("%s returned an internally mixed hardware snapshot: %v", operation, err)
+			}
+			// A later retry can use the settled replacement without another event.
+			document, err := svc.EditorState()
+			if err != nil || document.MonitorSetHash != appstatus.HardwareSnapshotHash(replacement) {
+				t.Fatalf("settled snapshot did not recover: hash=%q error=%v", document.MonitorSetHash, err)
+			}
+		})
+	}
+}
+
+func TestReuseProfileRecoversCurrentProfileCalibration(t *testing.T) {
+	monitors := applyBestDualMonitors()
+	data, _ := json.Marshal(monitors)
+	env := newApplyBestTestEnvWithMonitors(t, string(data), string(data))
+	current := profile.FromMonitors("Current", monitors)
+	for i := range current.Outputs {
+		current.Outputs[i].ICC = "/current/" + current.Outputs[i].Name + ".icc"
+	}
+	template := profile.FromMonitors("Template", monitors)
+	for i := range template.Outputs {
+		template.Outputs[i].Serial = "foreign-" + template.Outputs[i].Name
+		template.Outputs[i].ICC = "/foreign/calibration.icc"
+	}
+	template.Normalize()
+	for _, saved := range []profile.Profile{current, template} {
+		if err := env.store.Save(saved); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mapping := map[string]string{}
+	for i, output := range template.Outputs {
+		mapping[output.Key] = current.Outputs[i].Key
+	}
+	svc := New(env.client, env.store, Config{})
+	draft, err := svc.ReuseProfile(ipc.ReuseParams{Name: template.Name, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range draft.Profile.Outputs {
+		stored, _ := current.OutputByKey(output.Key)
+		if output.ICC != stored.ICC {
+			t.Fatalf("daemon failed to recover target calibration: %+v", output)
+		}
 	}
 }
 

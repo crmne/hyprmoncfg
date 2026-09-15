@@ -12,7 +12,7 @@ import (
 // ReuseLayout copies layout roles onto explicitly selected current outputs. It
 // returns an unnamed draft only: the caller must preview and save it separately.
 // Hardware identities and unassigned outputs always come from the live state.
-func ReuseLayout(saved Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, mapping map[string]string) (Profile, []string, error) {
+func ReuseLayout(saved Profile, profiles []Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, mapping map[string]string) (Profile, []string, error) {
 	saved = cloneForReuse(saved)
 	saved.Normalize()
 	draft := FromState("", monitors, rules)
@@ -35,6 +35,29 @@ func ReuseLayout(saved Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceR
 	for _, output := range saved.Outputs {
 		bySource[output.Key] = output
 		savedIdentityCounts[output.MatchIdentity()]++
+	}
+	// The template alone is not evidence that an uncertain current output is
+	// the old physical display. Use only its unambiguous serial matches as a
+	// fallback, including skipped roles that remain live. A separate current
+	// exact/best profile then supplies settings by current output key, following
+	// the ordinary editor's recovery policy without using the role mapping.
+	trusted := Profile{}
+	for _, output := range draft.Outputs {
+		if source, ok := bySource[output.Key]; ok && reuseSameDisplay(source, output, savedIdentityCounts, counts) {
+			trusted.Outputs = append(trusted.Outputs, source)
+		}
+	}
+	PreserveUnreportedSettings(&draft, trusted)
+	donors := make([]Profile, 0, len(profiles))
+	for _, candidate := range profiles {
+		if candidate.Name != saved.Name {
+			donors = append(donors, candidate)
+		}
+	}
+	if active, ok := ExactStateMatch(donors, monitors, rules); ok {
+		PreserveUnreportedSettings(&draft, active)
+	} else if best, _, ok := BestMatch(donors, monitors); ok {
+		PreserveUnreportedSettings(&draft, best)
 	}
 	for key := range mapping {
 		if _, ok := bySource[key]; !ok {
@@ -87,14 +110,14 @@ func ReuseLayout(saved Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceR
 		}
 		// Color/ICC and hardware overrides are display-specific. Keep live
 		// settings when identity changes, even for another unit of one model.
-		if source.MatchIdentity() != current.MatchIdentity() || strings.TrimSpace(source.Serial) == "" || counts[current.MatchIdentity()] > 1 || savedIdentityCounts[source.MatchIdentity()] > 1 {
+		if !reuseSameDisplay(source, current, savedIdentityCounts, counts) {
 			output.VRR, output.Bitdepth, output.CM = current.VRR, current.Bitdepth, current.CM
 			output.SDRBrightness, output.SDRSaturation = current.SDRBrightness, current.SDRSaturation
 			output.SDRMinLuminance, output.SDRMaxLuminance = current.SDRMinLuminance, current.SDRMaxLuminance
 			output.MinLuminance, output.MaxLuminance, output.MaxAvgLuminance = current.MinLuminance, current.MaxLuminance, current.MaxAvgLuminance
 			output.SupportsWideColor, output.SupportsHDR = current.SupportsWideColor, current.SupportsHDR
 			output.SDREOTF, output.ICC = current.SDREOTF, current.ICC
-			warnings = append(warnings, fmt.Sprintf("%s: kept current color, HDR, ICC and VRR settings for the different hardware.", current.Name))
+			warnings = append(warnings, fmt.Sprintf("%s: used current color and VRR settings, with HDR/ICC calibration recovered where known for this display.", current.Name))
 		}
 		draft.Outputs[idx] = output
 	}
@@ -111,7 +134,8 @@ func ReuseLayout(saved Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceR
 		}
 		mirror := draft.Outputs[byTarget[mirrorKey]]
 		if !mirror.Enabled {
-			return Profile{}, nil, fmt.Errorf("the mirror source for %s must be enabled", draft.Outputs[idx].Name)
+			warnings = append(warnings, fmt.Sprintf("%s: mirror source is disabled; made this display independent.", draft.Outputs[idx].Name))
+			continue
 		}
 		draft.Outputs[idx].MirrorOf = mirrorKey
 		draft.Outputs[idx].X, draft.Outputs[idx].Y = mirror.X, mirror.Y
@@ -199,6 +223,11 @@ func ReuseLayout(saved Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceR
 	}
 	draft.Normalize()
 	return draft, warnings, nil
+}
+
+func reuseSameDisplay(source, current OutputConfig, sourceCounts, currentCounts map[string]int) bool {
+	return source.MatchIdentity() == current.MatchIdentity() && strings.TrimSpace(source.Serial) != "" &&
+		sourceCounts[source.MatchIdentity()] == 1 && currentCounts[current.MatchIdentity()] == 1
 }
 
 func cloneForReuse(p Profile) Profile {

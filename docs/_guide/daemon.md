@@ -69,6 +69,8 @@ Interactive profile changes are deliberate overrides. After you confirm one, the
 
 Connecting a dock can temporarily stall compositor reads. Each monitor or workspace-rule query uses a 750 ms deadline by default. Topology checks run in a coalesced worker so the event loop can still consume new hotplug and suspend events while that read is pending. Results and queued triggers from an older topology or before suspend are discarded. Transient query failures retry without requiring another monitor event, and reconciliation defers while an interactive writer owns the display lock.
 
+Automatic reconciliation still runs serially, including its bounded reads and profile apply/rollback; event consumption can wait for that reconciliation to finish. The deadlines described here cover daemon queries. The terminal editor retains its separate asynchronous refresh with an eight-second overall context; the Omarchy panel uses the bounded daemon IPC queries.
+
 DRM connector paths are needed only to distinguish displays with the same hardware identity. Distinct identities, including different serial numbers of the same model, skip DRM entirely. Ambiguous sets share one process-wide probe: a stuck driver may occupy that worker until it returns, but subsequent callers wait only until their own deadlines. No canceled result or incomplete identity snapshot is returned as fresh state.
 
 An unfamiliar setup takes the no-match path before reading workspace rules or applying a profile. These changes bound query waiting; they do not speed up physical dock enumeration. Applying and reverting a known profile still use the serialized apply engine.
