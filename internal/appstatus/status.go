@@ -1,6 +1,9 @@
 package appstatus
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"time"
 
@@ -11,7 +14,33 @@ import (
 
 const SchemaVersion = 1
 
+// HardwareSnapshotHash identifies the output keys and their current connector
+// bindings, including the paths used to distinguish otherwise identical panels.
+// It deliberately excludes layout, focus and power state. This is an opaque
+// equality token, not an event counter or a guarantee of an atomic snapshot.
+func HardwareSnapshotHash(monitors []hypr.Monitor) string {
+	type binding struct {
+		Key  string `json:"key"`
+		Name string `json:"name"`
+	}
+	bindings := make([]binding, 0, len(monitors))
+	counts := hypr.MonitorMatchCounts(monitors)
+	for _, monitor := range monitors {
+		bindings = append(bindings, binding{hypr.MonitorOutputKey(monitor, counts), monitor.Name})
+	}
+	sort.Slice(bindings, func(i, j int) bool {
+		if bindings[i].Key != bindings[j].Key {
+			return bindings[i].Key < bindings[j].Key
+		}
+		return bindings[i].Name < bindings[j].Name
+	})
+	encoded, _ := json.Marshal(bindings) // Strings and slices cannot fail encoding.
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
 type Document struct {
+	MonitorSetHash     string            `json:"monitor_set_hash,omitempty"`
 	SchemaVersion      int               `json:"schema_version"`
 	Version            string            `json:"version"`
 	Daemon             Daemon            `json:"daemon"`
@@ -71,6 +100,9 @@ type ProfileSummary struct {
 }
 
 type MonitorSummary struct {
+	Key           string  `json:"key"`
+	MatchKey      string  `json:"match_key"`
+	Serial        string  `json:"serial"`
 	Name          string  `json:"name"`
 	Description   string  `json:"description"`
 	Make          string  `json:"make"`
@@ -99,6 +131,8 @@ type MonitorSummary struct {
 // anything changes; mode lists and a complete profile-shaped draft are only
 // fetched when an editor is actually open.
 type EditorDocument struct {
+	MonitorSetHash        string                     `json:"monitor_set_hash,omitempty"`
+	Capabilities          []string                   `json:"capabilities,omitempty"`
 	Profile               profile.Profile            `json:"profile"`
 	Profiles              []profile.Profile          `json:"profiles"`
 	Displays              []EditorDisplay            `json:"displays"`
@@ -109,8 +143,10 @@ type EditorDocument struct {
 }
 
 type EditorDraft struct {
-	Profile       profile.Profile `json:"profile"`
-	WorkspacePlan []WorkspacePlan `json:"workspace_plan"`
+	MonitorSetHash string          `json:"monitor_set_hash,omitempty"`
+	Warnings       []string        `json:"warnings,omitempty"`
+	Profile        profile.Profile `json:"profile"`
+	WorkspacePlan  []WorkspacePlan `json:"workspace_plan"`
 }
 
 type WorkspacePlan struct {
@@ -139,6 +175,7 @@ type EditorDisplay struct {
 func BuildEditor(profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) EditorDocument {
 	draft, sourceName, suggestedName := profile.EditorProfileFromState(profiles, monitors, rules)
 	document := EditorDocument{
+		MonitorSetHash:        HardwareSnapshotHash(monitors),
 		Profile:               draft,
 		Profiles:              append([]profile.Profile{}, profiles...),
 		Displays:              make([]EditorDisplay, 0, len(monitors)),
@@ -225,11 +262,12 @@ func editorScaleOptions(width, height int, current float64) []float64 {
 
 func Build(version string, daemonRunning bool, profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) Document {
 	document := Document{
-		SchemaVersion: SchemaVersion,
-		Version:       version,
-		Daemon:        Daemon{Running: daemonRunning},
-		Profiles:      make([]ProfileSummary, 0, len(profiles)),
-		Monitors:      make([]MonitorSummary, 0, len(monitors)),
+		MonitorSetHash: HardwareSnapshotHash(monitors),
+		SchemaVersion:  SchemaVersion,
+		Version:        version,
+		Daemon:         Daemon{Running: daemonRunning},
+		Profiles:       make([]ProfileSummary, 0, len(profiles)),
+		Monitors:       make([]MonitorSummary, 0, len(monitors)),
 	}
 
 	activeName := ""
@@ -267,9 +305,13 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 		})
 	}
 
+	matchCounts := hypr.MonitorMatchCounts(monitors)
 	for _, monitor := range monitors {
 		logicalWidth, logicalHeight := monitor.LogicalSize()
 		document.Monitors = append(document.Monitors, MonitorSummary{
+			Key:           hypr.MonitorOutputKey(monitor, matchCounts),
+			MatchKey:      monitor.HardwareKey(),
+			Serial:        monitor.Serial,
 			Name:          monitor.Name,
 			Description:   monitor.Description,
 			Make:          monitor.Make,
