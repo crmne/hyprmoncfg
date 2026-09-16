@@ -62,7 +62,8 @@ func WorkspaceSettingsFromHypr(monitors []hypr.Monitor, rules []hypr.WorkspaceRu
 	if inferred, ok := inferGeneratedWorkspaceSettings(settings.Rules); ok {
 		inferred.Enabled = settings.Enabled
 		inferred.Rules = settings.Rules
-		inferred.MonitorOrder = append([]string(nil), settings.MonitorOrder...)
+		// The inferred order reproduces the live assignments; physical monitor
+		// order may differ after the user reorders the workspace planner.
 		return inferred
 	}
 
