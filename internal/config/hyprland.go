@@ -52,6 +52,33 @@ func IsGeneratedMonitorsConfig(content []byte) bool {
 	return firstLine == GeneratedLegacyHeader || firstLine == GeneratedLuaHeader
 }
 
+// NeutralizeGeneratedMonitorsConfig removes runtime monitor rules while
+// retaining a valid, owned include target. A generated clamshell layout can
+// otherwise persist an unconditional internal-panel disable across logout or
+// reboot while the external output it enables is absent at the next login.
+// User-owned files are never rewritten.
+func NeutralizeGeneratedMonitorsConfig(path string) (bool, error) {
+	snapshot, err := SnapshotFile(path)
+	if err != nil {
+		return false, err
+	}
+	if !snapshot.Exists || !IsGeneratedMonitorsConfig(snapshot.Content) {
+		return false, nil
+	}
+
+	text := strings.TrimPrefix(string(snapshot.Content), "\ufeff")
+	header, _, _ := strings.Cut(text, "\n")
+	header = strings.TrimSuffix(header, "\r")
+	neutral := []byte(header + "\n")
+	if string(snapshot.Content) == string(neutral) {
+		return false, nil
+	}
+	if err := WriteFileAtomic(path, neutral, 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func HyprlandDir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "hypr"), nil

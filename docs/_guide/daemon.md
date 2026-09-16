@@ -16,6 +16,14 @@ On Omarchy releases that start `omarchy-hyprland-monitor-watch`, the daemon take
 
 This is especially useful if you move between setups regularly. A conference projector, a coworking space monitor, your desk at home -- each one has different resolution, position, and scale requirements. Save a profile once, and the daemon takes care of it from then on.
 
+## Recovery after sleep
+
+Resume and lid-open explicitly request display recovery. The daemon first restores an enabled internal panel's saved mode, scale, and position, using its last known hardware mapping. This step reuses the configuration format detected at startup and does not need a successful monitor-list query or a ready external display. It then wakes outputs and reconciles the full profile.
+
+A transient IPC failure or DPMS-off state during that wake does not cancel recovery. The daemon retries for up to 45 seconds, stopping when the outputs recover, the lid closes, the system suspends again, or management is turned off. Ordinary idle blanking does not start recovery. An explicit panel-disable preference is preserved, and an active interactive preview keeps ownership of its layout.
+
+The retries cannot repair a kernel display driver that has stopped responding. If recovery expires, inspect the daemon and kernel journals before attempting another wake.
+
 ## Setup
 
 AUR, Fedora COPR, Nixpkgs, and Gentoo GURU:

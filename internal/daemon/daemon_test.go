@@ -575,6 +575,10 @@ exit 1
 		MonitorsConf:    monitorsConfPath,
 		HyprConfig:      hyprlandConfigPath,
 	})
+	// This fixture tests idle hotplug, independently of the host's actual lid.
+	svc.readLid = func(context.Context) (lid.State, error) { return lid.Open, nil }
+	svc.watchLid = func(context.Context, time.Duration) (<-chan lid.State, <-chan error) { return nil, nil }
+	svc.watchSuspend = func(context.Context) <-chan bool { return nil }
 	go func() { done <- svc.Run(ctx) }()
 	defer func() {
 		cancel()
@@ -673,7 +677,7 @@ func (r *logRecorder) all() string {
 
 // newRunTestEnv starts a daemon whose lid and suspend sources are test
 // channels, against a fake hyprctl serving monitor state from a file.
-func newRunTestEnv(t *testing.T, monitors []hypr.Monitor) runTestEnv {
+func newRunTestEnv(t *testing.T, monitors []hypr.Monitor, configure ...func(*Config)) runTestEnv {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -696,6 +700,7 @@ if [[ "${1-}" == "-j" && "${2-}" == "version" ]]; then
   exit 0
 fi
 if [[ "${1-}" == "-j" && "${2-}" == "monitors" && "${3-}" == "all" ]]; then
+  if [[ -f "$HYPRCTL_MONITORS.fail" ]]; then exit 6; fi
   cat "$HYPRCTL_MONITORS"
   exit 0
 fi
@@ -713,7 +718,7 @@ if [[ "${1-}" == "reload" ]]; then
   fi
   exit 0
 fi
-if [[ "${1-}" == "dispatch" ]]; then
+if [[ "${1-}" == "dispatch" || "${1-}" == "keyword" || "${1-}" == "eval" ]]; then
   exit 0
 fi
 
@@ -750,7 +755,7 @@ exit 1
 	}
 
 	logs := &logRecorder{}
-	svc := New(client, store, Config{
+	cfg := Config{
 		Debounce:        50 * time.Millisecond,
 		WakeSettle:      80 * time.Millisecond,
 		PollInterval:    time.Hour,
@@ -759,7 +764,11 @@ exit 1
 		MonitorsConf:    monitorsConfPath,
 		HyprConfig:      hyprlandConfigPath,
 		Logf:            logs.logf,
-	})
+	}
+	for _, option := range configure {
+		option(&cfg)
+	}
+	svc := New(client, store, cfg)
 
 	var lidMu sync.Mutex
 	lidNow := lid.Open

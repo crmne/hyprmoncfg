@@ -145,6 +145,8 @@ systemctl --user enable --now hyprmoncfgd
 
 The daemon scores every profile in `~/.config/hyprmoncfg/profiles/`, so delete throwaway profiles before relying on automatic switching.
 
+On resume or lid-open, the daemon restores an enabled internal panel from the last selected profile before reconciling the full layout. If display IPC fails or outputs still report asleep, it retries for up to 45 seconds without requiring another hardware event. Recovery preserves explicit panel-disable preferences and active previews; normal idle blanking does not start retries. This cannot repair a stalled kernel display driver.
+
 On Omarchy versions that launch `omarchy-hyprland-monitor-watch`, `hyprmoncfgd` stops that exact transient user scope while it owns monitor profiles and restores the watcher when the daemon exits during a live Hyprland session. Generated configuration used without the daemon cannot provide this runtime ownership; static-config users must disable the Omarchy watcher separately.
 
 Omarchy's lock/wake script reads `~/.config/hypr/monitors.lua` directly, before its remembered scale. To prevent it from resetting the laptop's scale and position, hyprmoncfg keeps a marked, connector-specific wake rule at the top of that file, alongside Omarchy's remembered scale. Your existing rules and defaults stay intact. Canceling a preview restores the previous wake settings; turning management off removes the marked block. Read-only dotfiles are left alone with a diagnostic. Omarchy still controls lid recovery and uses its preferred mode when re-enabling an entirely disabled panel; hyprmoncfg then restores the full profile.
