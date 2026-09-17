@@ -349,3 +349,41 @@ func TestResolveWorkspaceRulesFallsBackToManualRuleOrder(t *testing.T) {
 		t.Fatalf("expected manual-rule order fallback, got %+v", rules)
 	}
 }
+
+func TestWorkspaceMonitorOrderSurvivesLiveReadback(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "DP-2", Make: "Dell", Model: "P2725DE", Serial: "desk", X: -1185},
+		{Name: "eDP-1", Make: "LG", Model: "Panel", X: 1438},
+	}
+	for _, strategy := range []WorkspaceStrategy{WorkspaceStrategySequential, WorkspaceStrategyInterleave} {
+		t.Run(string(strategy), func(t *testing.T) {
+			original := FromState("duals", monitors, nil)
+			original.Workspaces = WorkspaceSettings{
+				Enabled: true, Strategy: strategy, MaxWorkspaces: 10, GroupSize: 3,
+				MonitorOrder: []string{monitors[1].HardwareKey(), monitors[0].HardwareKey()},
+			}
+			want := ResolveWorkspaceRules(original, monitors)
+			liveRules := make([]hypr.WorkspaceRule, 0, len(want))
+			for _, rule := range want {
+				liveRules = append(liveRules, hypr.WorkspaceRule{
+					WorkspaceString: rule.Workspace, Monitor: rule.OutputName,
+					Default: rule.Default, Persistent: rule.Persistent,
+				})
+			}
+			// Applying an unsaved order leaves no exact saved profile to restore.
+			draft, _, _ := EditorProfileFromState(nil, monitors, liveRules)
+			if draft.Workspaces.MonitorOrder[0] != monitors[1].HardwareKey() {
+				t.Fatalf("readback replaced selected order: %v", draft.Workspaces.MonitorOrder)
+			}
+			got := ResolveWorkspaceRules(draft, monitors)
+			if len(got) != len(want) {
+				t.Fatalf("got %d rules, want %d", len(got), len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("workspace %s changed after readback: got %+v, want %+v", want[i].Workspace, got[i], want[i])
+				}
+			}
+		})
+	}
+}

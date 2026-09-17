@@ -107,7 +107,7 @@ You can also configure:
 - **Workspace rules on/off** -- disable them entirely if you manage workspaces yourself
 - **Max workspaces** -- how many workspaces to generate rules for
 - **Group size** (sequential only) -- how many consecutive workspaces to assign to each monitor before moving to the next. With 2 monitors and a group size of 3, monitor A gets 1-3, monitor B gets 4-6, and so on
-- **Monitor order** -- which monitor gets the first batch of generated workspaces
+- **Monitor order** -- which monitor gets the first batch of generated workspaces. Applied assignments preserve this order when the editor reads the live configuration back, independently of the monitors' physical positions. Save the profile to reuse it later.
 - **Workspace → display** (manual only) -- select a workspace and press `←` or `→` to assign it to a different monitor
 
 There is no fixed workspace or group-size limit. Select **Max workspaces** or **Group size** and press `Enter` to type an exact count; `←` and `→` still make one-step adjustments.
