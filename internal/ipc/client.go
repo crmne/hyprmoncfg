@@ -69,6 +69,12 @@ func (c *Client) EditProfile(ctx context.Context, params EditParams) (appstatus.
 	return result, err
 }
 
+func (c *Client) ReuseProfile(ctx context.Context, params ReuseParams) (appstatus.EditorDraft, error) {
+	var result appstatus.EditorDraft
+	err := c.call(ctx, MethodReuse, params, &result)
+	return result, err
+}
+
 func (c *Client) Preview(ctx context.Context, params PreviewParams) (Transaction, error) {
 	var result Transaction
 	err := c.call(ctx, MethodPreview, params, &result)
@@ -193,6 +199,12 @@ func decodeResponseError(responseErr *ResponseError) error {
 	}
 	if responseErr.Code == "transaction_unavailable" {
 		return fmt.Errorf("%w: %s", ErrTransactionUnavailable, responseErr.Message)
+	}
+	if responseErr.Code == "compositor_busy" {
+		if responseErr.Message == "" || responseErr.Message == ErrCompositorBusy.Error() {
+			return ErrCompositorBusy
+		}
+		return fmt.Errorf("%w: %s", ErrCompositorBusy, responseErr.Message)
 	}
 	return fmt.Errorf("%s", responseErr.Message)
 }

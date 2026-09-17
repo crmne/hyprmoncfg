@@ -12,6 +12,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/apply"
 	"github.com/crmne/hyprmoncfg/internal/config"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
+	"github.com/crmne/hyprmoncfg/internal/ipc"
 	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/omarchywatch"
 	"github.com/crmne/hyprmoncfg/internal/profile"
@@ -25,6 +26,7 @@ type Config struct {
 	PollInterval    time.Duration
 	LidPollInterval time.Duration
 	EventRetry      time.Duration
+	QueryTimeout    time.Duration
 	ForcedProfile   string
 	MonitorsConf    string
 	HyprConfig      string
@@ -145,6 +147,9 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 	if cfg.EventRetry <= 0 {
 		cfg.EventRetry = 5 * time.Second
 	}
+	if cfg.QueryTimeout <= 0 {
+		cfg.QueryTimeout = 750 * time.Millisecond
+	}
 	if cfg.Logf == nil {
 		cfg.Logf = func(string, ...any) {}
 	}
@@ -176,14 +181,16 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 	s.ensureConfigInclude(ctx)
 
+	var probeGeneration uint64
 	type trigger struct {
-		reason string
-		delay  time.Duration
+		generation uint64
+		reason     string
+		delay      time.Duration
 	}
 	triggerCh := make(chan trigger, 8)
 	pushTrigger := func(reason string, delay time.Duration) {
 		select {
-		case triggerCh <- trigger{reason: reason, delay: delay}:
+		case triggerCh <- trigger{generation: probeGeneration, reason: reason, delay: delay}:
 		default:
 		}
 	}
@@ -210,6 +217,60 @@ func (s *Service) Run(ctx context.Context) error {
 			eventRetry = time.After(s.cfg.EventRetry)
 		}
 	}
+
+	// Query the compositor on one bounded worker. Dock enumeration can stop
+	// hyprctl responding; it must not stop raw events, suspend or cancellation
+	// from being consumed. A single pending slot coalesces the hotplug burst.
+	type monitorProbe struct {
+		generation uint64
+		reason     string
+		monitors   []hypr.Monitor
+		err        error
+	}
+	type probeRequest struct {
+		reason     string
+		generation uint64
+	}
+	systemSuspended := false
+	probeRequests := make(chan probeRequest, 1)
+	probeResults := make(chan monitorProbe, 1)
+	requestProbe := func(reason string) {
+		request := probeRequest{reason, probeGeneration}
+		select {
+		case probeRequests <- request:
+			return
+		default:
+		}
+		// Keep the newest queued topology generation while one read is in flight.
+		select {
+		case <-probeRequests:
+		default:
+		}
+		select {
+		case probeRequests <- request:
+		default:
+		}
+	}
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	workerDone := make(chan struct{})
+	defer func() { stopWorker(); <-workerDone }()
+
+	go func() {
+		defer close(workerDone)
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case request := <-probeRequests:
+				monitors, err := s.queryMonitors(workerCtx)
+				select {
+				case probeResults <- monitorProbe{request.generation, request.reason, monitors, err}:
+				case <-workerCtx.Done():
+					return
+				}
+			}
+		}
+	}()
 
 	pollTicker := time.NewTicker(s.cfg.PollInterval)
 	defer pollTicker.Stop()
@@ -278,30 +339,11 @@ func (s *Service) Run(ctx context.Context) error {
 			if !(hypr.Monitor{Name: name}).IsInternal() {
 				s.cfg.LaptopToggle.Reset()
 			}
-			monitors, err := s.client.Monitors(ctx)
-			if err != nil {
-				if displayGuard.sleeping {
-					deferForDisplaySleep(reason)
-					continue
-				}
-			} else {
-				switch displayGuard.Observe(monitors) {
-				case displaySleepEntered:
-					s.cfg.Logf("display sleep detected; pausing automatic switching")
-					deferForDisplaySleep(reason)
-					continue
-				case displaySleepExited:
-					settlingAfterWake = true
-					s.cfg.Logf("display wake detected; waiting %s for monitors to settle", s.cfg.WakeSettle)
-					scheduleMonitorTrigger("display-wake:" + reason)
-					continue
-				}
-				if displayGuard.sleeping {
-					deferForDisplaySleep(reason)
-					continue
-				}
+			s.cfg.Logf("monitor event received: %s connector=%s", ev.Type, name)
+			probeGeneration++
+			if !systemSuspended {
+				requestProbe(reason)
 			}
-			scheduleMonitorTrigger(reason)
 		case <-eventRetry:
 			eventRetry = nil
 			if events == nil && eventErrs == nil {
@@ -312,6 +354,8 @@ func (s *Service) Run(ctx context.Context) error {
 				suspendEvents = nil
 				continue
 			}
+			probeGeneration++
+			systemSuspended = sleeping
 			if sleeping {
 				s.cfg.LaptopToggle.Reset()
 				// A lid close that suspends the machine must not be applied on
@@ -366,9 +410,19 @@ func (s *Service) Run(ctx context.Context) error {
 				s.cfg.Logf("lid state unavailable: %v", err)
 			}
 		case <-pollTicker.C:
-			monitors, err := s.client.Monitors(ctx)
+			if !systemSuspended {
+				requestProbe("poll")
+			}
+		case probe := <-probeResults:
+			if systemSuspended || probe.generation != probeGeneration {
+				continue
+			}
+			monitors, err := probe.monitors, probe.err
 			if err != nil {
-				s.cfg.Logf("poll monitors failed: %v", err)
+				s.cfg.Logf("monitor probe failed: %v", err)
+				if probe.reason != "poll" {
+					scheduleMonitorTrigger("monitor-query-retry")
+				}
 				continue
 			}
 			switch displayGuard.Observe(monitors) {
@@ -387,12 +441,20 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 
+			if probe.reason != "poll" {
+				scheduleMonitorTrigger(probe.reason)
+				continue
+			}
+
 			h := profile.MonitorStateHash(monitors)
 			_, toggleChanged, toggleErr := s.cfg.LaptopToggle.Changed()
 			if toggleErr != nil {
 				s.cfg.Logf("read Omarchy laptop toggle: %v", toggleErr)
 			}
-			s.writeMu.Lock()
+			if !s.writeMu.TryLock() {
+				// An interactive writer owns state; a later event/poll reconciles it.
+				continue
+			}
 			stateChanged := h != s.lastSeenHash
 			s.lastSeenHash = h
 			s.writeMu.Unlock()
@@ -400,6 +462,9 @@ func (s *Service) Run(ctx context.Context) error {
 				scheduleMonitorTrigger("poll-change")
 			}
 		case next := <-triggerCh:
+			if systemSuspended || next.generation != probeGeneration {
+				continue
+			}
 			if displayGuard.sleeping {
 				deferForDisplaySleep(next.reason)
 				continue
@@ -409,10 +474,16 @@ func (s *Service) Run(ctx context.Context) error {
 			stopDebounce()
 			debounceTimer.Reset(next.delay)
 		case <-debounceTimer.C:
-			if !pending {
+			if systemSuspended || !pending {
 				continue
 			}
-			err := s.applyBest(ctx)
+			err := s.tryApplyBest(ctx)
+			if errors.Is(err, errWriterBusy) || errors.Is(err, ipc.ErrCompositorBusy) {
+				// A settled topology may not emit another event after a transient
+				// query timeout. Keep this reconciliation pending until it recovers.
+				debounceTimer.Reset(s.cfg.Debounce)
+				continue
+			}
 			if errors.Is(err, errDisplaysSleeping) {
 				if displayGuard.MarkSleeping() {
 					s.cfg.Logf("display sleep detected; pausing automatic switching")
@@ -519,9 +590,27 @@ func (s *Service) wakeDisplays(ctx context.Context) {
 	}
 }
 
+var errWriterBusy = errors.New("display writer is busy")
+
+func (s *Service) tryApplyBest(ctx context.Context) error {
+	if !s.writeMu.TryLock() {
+		return errWriterBusy
+	}
+	defer s.writeMu.Unlock()
+	return s.applyBestLocked(ctx)
+}
+
 func (s *Service) applyBest(ctx context.Context) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	return s.applyBestLocked(ctx)
+}
+
+func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
+	started := time.Now()
+	defer func() {
+		s.cfg.Logf("automatic reconciliation completed elapsed=%s error=%v", time.Since(started).Round(time.Millisecond), resultErr)
+	}()
 
 	s.pendingMu.Lock()
 	interactive := s.pending != nil
@@ -538,7 +627,7 @@ func (s *Service) applyBest(ctx context.Context) error {
 
 	s.refreshLidState(ctx)
 
-	monitors, err := s.client.Monitors(ctx)
+	monitors, err := s.queryMonitors(ctx)
 	if err != nil {
 		return err
 	}
@@ -551,10 +640,8 @@ func (s *Service) applyBest(ctx context.Context) error {
 
 	hash := profile.MonitorStateHash(monitors)
 	monitorSet := profile.MonitorSetHash(monitors)
-	rules, err := s.client.WorkspaceRules(ctx)
-	if err != nil {
-		return err
-	}
+	var rules []hypr.WorkspaceRule
+	rulesReady := false
 
 	var target profile.Profile
 	manualHold := false
@@ -574,7 +661,7 @@ func (s *Service) applyBest(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		best, score, ok := profile.BestMatch(profiles, monitors)
+		best, score, ok := profile.BestAutomaticMatch(profiles, monitors)
 		// Keep a recognized setup stable until its hardware or lid changes.
 		// A transient wake layout must not select a different saved profile.
 		if s.lastMonitorSet == monitorSet && s.lastLidState == s.lidState {
@@ -584,7 +671,12 @@ func (s *Service) applyBest(ctx context.Context) error {
 					break
 				}
 			}
-		} else if s.applied == nil {
+		} else if ok && s.applied == nil {
+			rules, err = s.queryWorkspaceRules(ctx)
+			if err != nil {
+				return err
+			}
+			rulesReady = true
 			// On startup, prefer a complete saved layout already on screen
 			// to a guess based only on hardware scores.
 			if active, matched := profile.ExactStateMatch(profiles, monitors, rules); matched &&
@@ -598,7 +690,7 @@ func (s *Service) applyBest(ctx context.Context) error {
 				s.cfg.Logf("no matching profile for monitor set %s; enabling internal output", hash)
 				target = fallback
 			} else {
-				s.cfg.Logf("no matching profile for monitor set %s", hash)
+				s.cfg.Logf("unfamiliar display setup: no automatic profile; connected=%d elapsed=%s", len(monitors), time.Since(started).Round(time.Millisecond))
 				return nil
 			}
 		} else {
@@ -608,6 +700,13 @@ func (s *Service) applyBest(ctx context.Context) error {
 				s.cfg.Logf("best profile %q score=%d", best.Name, score)
 			}
 			target = best
+		}
+	}
+
+	if !rulesReady {
+		rules, err = s.queryWorkspaceRules(ctx)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -679,7 +778,7 @@ func (s *Service) applyBest(ctx context.Context) error {
 	s.lastLidState = s.lidState
 
 	appliedHash := hash
-	appliedMonitors, err := s.client.Monitors(ctx)
+	appliedMonitors, err := s.queryMonitors(ctx)
 	if err != nil {
 		s.applied = nil
 		s.cfg.Logf("refresh monitors after apply failed: %v", err)

@@ -2818,8 +2818,8 @@ func (m Model) refreshCmd(background bool) tea.Cmd {
 
 // daemonReachable answers whether the daemon is running. A daemon that is busy
 // applying a profile can miss the deadline while being perfectly alive, so a
-// timeout reports "unknown" and leaves the last answer standing; only a broken
-// connection counts as "not running".
+// timeout or compositor_busy reply reports "unknown" and leaves the last answer
+// standing; a busy reply does not mean the connection needs to be replaced.
 func daemonReachable(ctx context.Context, client *ipc.Client) (ok bool, unknown bool, version string, profileOverride string) {
 	if client == nil {
 		return false, false, "", ""
@@ -2829,7 +2829,7 @@ func daemonReachable(ctx context.Context, client *ipc.Client) (ok bool, unknown 
 	defer cancel()
 	document, err := client.Status(probeCtx)
 	if err != nil {
-		return false, isTimeout(err), "", ""
+		return false, isTimeout(err) || errors.Is(err, ipc.ErrCompositorBusy), "", ""
 	}
 	return true, false, strings.TrimSpace(document.Version), strings.TrimSpace(document.Daemon.ProfileOverride)
 }
@@ -2852,7 +2852,7 @@ func redialDaemon(ctx context.Context) *ipc.Client {
 
 	probeCtx, probeCancel := context.WithTimeout(ctx, daemonProbeTimeout)
 	defer probeCancel()
-	if _, err := client.Status(probeCtx); err != nil {
+	if _, err := client.Status(probeCtx); err != nil && !errors.Is(err, ipc.ErrCompositorBusy) {
 		_ = client.Close()
 		return nil
 	}

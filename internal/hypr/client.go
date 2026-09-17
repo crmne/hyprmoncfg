@@ -40,6 +40,8 @@ type instanceInfo struct {
 
 type Client struct {
 	hyprctl string
+	// Tests can supply an isolated probe; production clients share one gate.
+	connectorEnricher *monitorConnectorEnricher
 }
 
 func NewClient() (*Client, error) {
@@ -65,8 +67,11 @@ func (c *Client) Monitors(ctx context.Context) ([]Monitor, error) {
 	}
 	monitors = dropSyntheticMonitors(monitors)
 	normalizeMirrorTargets(monitors)
-	enrichMonitorConnectorPaths(monitors)
-	return monitors, nil
+	enricher := c.connectorEnricher
+	if enricher == nil {
+		enricher = sharedMonitorConnectorEnricher
+	}
+	return enricher.enrich(ctx, monitors)
 }
 
 // fallbackConnectorName is what Hyprland calls the placeholder head it invents
@@ -294,7 +299,10 @@ func (c *Client) commandContext(ctx context.Context, args ...string) (*exec.Cmd,
 		return nil, err
 	}
 	cmdArgs := append([]string{"--instance", instance}, args...)
-	return exec.CommandContext(ctx, c.hyprctl, cmdArgs...), nil
+	cmd := exec.CommandContext(ctx, c.hyprctl, cmdArgs...)
+	// Bound a canceled helper whose descendant inherited its output pipe.
+	cmd.WaitDelay = 100 * time.Millisecond
+	return cmd, nil
 }
 
 // InstanceSignature identifies the same compositor for queries and profile hooks.
@@ -307,6 +315,7 @@ func (c *Client) InstanceSignature(ctx context.Context) (string, error) {
 
 func (c *Client) discoverInstance(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, c.hyprctl, "-j", "instances")
+	cmd.WaitDelay = 100 * time.Millisecond
 	out, err := cmd.Output()
 	var instances []instanceInfo
 	if err == nil {
