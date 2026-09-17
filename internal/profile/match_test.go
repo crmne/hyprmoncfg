@@ -251,6 +251,7 @@ func TestExactStateMatchTreatsConnectedOutputOmittedFromProfileAsDisabled(t *tes
 		Width: 3840, Height: 2160, RefreshRate: 144, Scale: 1, Disabled: true,
 	}
 	saved := FromState("Laptop", []hypr.Monitor{laptop}, nil)
+	saved.DisableUnknownOutputs = true
 
 	matched, ok := ExactStateMatch([]Profile{saved}, []hypr.Monitor{laptop, external}, nil)
 	if !ok || matched.Name != "Laptop" {

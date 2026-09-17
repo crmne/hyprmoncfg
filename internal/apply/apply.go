@@ -74,6 +74,7 @@ func snapshotState(monitors []hypr.Monitor, rules []hypr.WorkspaceRule, workspac
 }
 
 func CommandsForProfile(p profile.Profile, monitors []hypr.Monitor) ([]string, error) {
+	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
 	if len(monitors) == 0 {
 		return nil, fmt.Errorf("no monitors detected")
@@ -110,6 +111,7 @@ func WorkspaceCommandsForProfile(p profile.Profile, monitors []hypr.Monitor) []s
 }
 
 func workspaceCommandsForProfile(p profile.Profile, monitors []hypr.Monitor, luaDispatch bool) []string {
+	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
 	rules := profile.ResolveWorkspaceRules(p, monitors)
 	if len(rules) == 0 {
@@ -175,6 +177,7 @@ func SnapshotCommands(monitors []hypr.Monitor) []string {
 }
 
 func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Monitor, modearg ...applyMode) (RevertState, error) {
+	p = profile.ExtendConnected(p, monitors)
 	mode := ApplyModeNonInteractive
 	if len(modearg) > 0 {
 		mode = modearg[0]
@@ -596,6 +599,7 @@ func ValidateLayout(outputs []profile.OutputConfig) error {
 }
 
 func ValidateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hypr.Monitor) error {
+	p = profile.ExtendConnected(p, before)
 	p.Normalize()
 	beforeResolver := profile.NewMonitorResolver(before)
 	afterResolver := profile.NewMonitorResolver(after)

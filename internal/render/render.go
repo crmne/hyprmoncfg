@@ -136,6 +136,7 @@ func WorkspaceRuleCommand(workspace string, monitorSelector string, isDefault bo
 }
 
 func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) (string, error) {
+	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
 	resolver := profile.NewMonitorResolver(monitors)
 	matched, matchedByKey := resolveProfileOutputs(p, resolver)
@@ -197,6 +198,7 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) 
 }
 
 func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) (string, error) {
+	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
 	resolver := profile.NewMonitorResolver(monitors)
 	matched, matchedByKey := resolveProfileOutputs(p, resolver)

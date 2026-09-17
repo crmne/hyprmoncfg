@@ -83,6 +83,7 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 			{"1 2 3", "Switch tabs"},
 			{"a", "Apply the current draft or selected profile"},
 			{"s", "Save the current draft as a profile"},
+			{"U", fmt.Sprintf("Disable displays outside the draft: %t (toggle)", m.disableUnknownOutputs)},
 			{"r", "Reset from live Hyprland state"},
 			{"?", "Show these keys"},
 			{"R", "Restart the daemon after an upgrade"},

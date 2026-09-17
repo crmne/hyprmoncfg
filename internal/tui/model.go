@@ -307,23 +307,24 @@ type Model struct {
 	snapSeq       int
 	toastSeq      int
 
-	resetRequested     bool
-	status             string
-	statusErr          bool
-	dirty              bool
-	draftSaved         bool
-	draftProfileName   string
-	matchedProfileName string
-	activeProfileName  string
-	draftExec          string
-	daemonOK           bool
-	daemonVersion      string
-	profileOverride    string
-	profileModePending bool
-	refreshInFlight    bool
-	applying           bool
-	quitAfterApply     bool
-	quitAfterRevert    bool
+	resetRequested        bool
+	status                string
+	statusErr             bool
+	dirty                 bool
+	draftSaved            bool
+	draftProfileName      string
+	matchedProfileName    string
+	activeProfileName     string
+	draftExec             string
+	disableUnknownOutputs bool
+	daemonOK              bool
+	daemonVersion         string
+	profileOverride       string
+	profileModePending    bool
+	refreshInFlight       bool
+	applying              bool
+	quitAfterApply        bool
+	quitAfterRevert       bool
 
 	width  int
 	height int
@@ -700,6 +701,15 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "R":
 		return m, m.restartDaemonCmd()
+	case "U":
+		m.disableUnknownOutputs = !m.disableUnknownOutputs
+		m.markDirty()
+		if m.disableUnknownOutputs {
+			m.setStatusOK("Displays outside this profile will be disabled (save to keep)")
+		} else {
+			m.setStatusOK("New displays will extend the layout to the right (save to keep)")
+		}
+		return m, nil
 	case "r":
 		m.resetRequested = true
 		m.draftProfileName = ""
@@ -1945,6 +1955,7 @@ func (m *Model) loadLiveState() {
 	}
 	m.recoverMirroredIdentity()
 	m.workspaceEdit = workspaceEditorFromSettings(draft.Workspaces, m.editOutputs)
+	m.disableUnknownOutputs = draft.DisableUnknownOutputs
 	m.matchedProfileName = ""
 	m.activeProfileName = ""
 	if sourceName != "" {
@@ -1986,6 +1997,7 @@ func (m *Model) loadProfile(p profile.Profile) {
 	}
 	m.editOutputs = outputs
 	m.workspaceEdit = workspaceEditorFromSettings(p.Workspaces, m.editOutputs)
+	m.disableUnknownOutputs = p.DisableUnknownOutputs
 	m.selectedOutput = clampIndex(0, len(m.editOutputs))
 	m.inspectorField = 0
 	m.picker = nil
@@ -2690,6 +2702,7 @@ func (m *Model) moveWorkspaceOrder(delta int) {
 func (m Model) currentProfile(name string) profile.Profile {
 	p := profile.New(name, m.currentProfileOutputs())
 	p.Workspaces = m.workspaceEdit.settings()
+	p.DisableUnknownOutputs = m.disableUnknownOutputs
 	p.Exec = m.currentProfileExec(name)
 	p.Normalize()
 	return p

@@ -79,6 +79,7 @@ func TestCommandsForProfileDisablesConnectedMonitorMissingFromProfile(t *testing
 		Width: 2880, Height: 1800, Refresh: 120, Scale: 1.5,
 	}})
 
+	p.DisableUnknownOutputs = true
 	commands, err := CommandsForProfile(p, []hypr.Monitor{laptop, external})
 	if err != nil {
 		t.Fatal(err)
@@ -353,6 +354,7 @@ func TestRenderLuaConfigDisablesConnectedMonitorMissingFromProfile(t *testing.T)
 		Width: 2880, Height: 1800, Refresh: 120, Scale: 1.5,
 	}})
 
+	p.DisableUnknownOutputs = true
 	rendered, err := RenderConfig(p, []hypr.Monitor{laptop, external}, RenderOptions{Format: config.HyprConfigLua, UseMonitorV2: true})
 	if err != nil {
 		t.Fatal(err)
@@ -372,6 +374,7 @@ func TestValidateAppliedProfileRejectsEnabledMonitorMissingFromProfile(t *testin
 		Width: 2880, Height: 1800, Refresh: 120, Scale: 1.5,
 	}})
 
+	p.DisableUnknownOutputs = true
 	if err := ValidateAppliedProfile(p, []hypr.Monitor{laptop, external}, []hypr.Monitor{laptop, external}); err == nil {
 		t.Fatal("expected an omitted external monitor left enabled to fail validation")
 	}

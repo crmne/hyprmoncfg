@@ -467,6 +467,44 @@ func TestApplyBestDefersWhileDisplaysSleep(t *testing.T) {
 	}
 }
 
+func TestApplyBestExtendsLaptopProfileForProjector(t *testing.T) {
+	laptop := hypr.Monitor{Name: "eDP-1", Width: 2880, Height: 1800, RefreshRate: 120, Scale: 1.5, DPMSStatus: true}
+	projector := hypr.Monitor{Name: "HDMI-A-1", Disabled: true, AvailableModes: []string{"1920x1080@60.00Hz"}}
+	before, _ := json.Marshal([]hypr.Monitor{laptop, projector})
+	projector.Disabled, projector.Width, projector.Height = false, 1920, 1080
+	projector.RefreshRate, projector.Scale, projector.X, projector.DPMSStatus = 60, 1, 1920, true
+	after, _ := json.Marshal([]hypr.Monitor{laptop, projector})
+	env := newApplyBestTestEnvWithMonitors(t, string(before), string(after))
+	saved := profile.FromMonitors("laptop", []hypr.Monitor{laptop})
+	saved.Workspaces = profile.WorkspaceSettings{Enabled: true, Strategy: profile.WorkspaceStrategySequential, GroupSize: 3, MaxWorkspaces: 9}
+	if err := env.store.Save(saved); err != nil {
+		t.Fatal(err)
+	}
+	svc := New(env.client, env.store, Config{MonitorsConf: env.monitorsConfPath, HyprConfig: env.hyprlandConfigPath})
+	if err := svc.applyBest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rendered := readMonitorsConf(t, env)
+	for _, want := range []string{"position = 1920x0", "mode = 1920x1080@60.00", "workspace = 4, monitor:HDMI-A-1"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("missing %q:\n%s", want, rendered)
+		}
+	}
+	stored, err := env.store.Load("laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Outputs) != 1 {
+		t.Fatal("hotplug overwrote the laptop profile")
+	}
+	if _, ok := profile.ExactStateMatch([]profile.Profile{stored}, []hypr.Monitor{laptop, projector}, nil); ok {
+		t.Fatal("automatically extended layout should be reported as a draft")
+	}
+	if err := svc.applyBest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunDefersTransientHotplugWhileDisplaysSleep(t *testing.T) {
 	dir := t.TempDir()
 	runtimeDir := filepath.Join(dir, "runtime")
@@ -998,6 +1036,11 @@ fi
 
 if [[ "${1-}" == "-j" && "${2-}" == "workspaces" ]]; then
   printf '[]'
+  exit 0
+fi
+
+if [[ "${1-}" == "--batch" ]]; then
+  printf 'ok'
   exit 0
 fi
 

@@ -599,7 +599,7 @@ func (s *Service) applyBest(ctx context.Context) error {
 				target = fallback
 			} else {
 				s.cfg.Logf("no matching profile for monitor set %s", hash)
-				return nil
+				target = profile.ExtendConnected(profile.Profile{Name: "draft"}, monitors)
 			}
 		} else {
 			if s.lidState.Known() {
@@ -629,9 +629,9 @@ func (s *Service) applyBest(ctx context.Context) error {
 		}
 	}
 
-	effective := target
+	effective := profile.ExtendConnected(target, monitors)
 	if s.lidState == lid.Closed {
-		adjusted, adjustment := profile.ApplyClosedLidPolicy(target, monitors)
+		adjusted, adjustment := profile.ApplyClosedLidPolicy(effective, monitors)
 		effective = adjusted
 		if adjustment.Applied {
 			disabled := strings.Join(adjustment.DisabledOutputNames, ",")

@@ -12,30 +12,31 @@ import (
 )
 
 type EditorEdit struct {
-	OutputKey     string             `json:"output_key,omitempty"`
-	Enabled       *bool              `json:"enabled,omitempty"`
-	Mode          *string            `json:"mode,omitempty"`
-	Scale         *float64           `json:"scale,omitempty"`
-	VRR           *int               `json:"vrr,omitempty"`
-	Transform     *int               `json:"transform,omitempty"`
-	MirrorOf      *string            `json:"mirror_of,omitempty"`
-	X             *int               `json:"x,omitempty"`
-	Y             *int               `json:"y,omitempty"`
-	Bitdepth      *int               `json:"bitdepth,omitempty"`
-	CM            *string            `json:"cm,omitempty"`
-	SDRBrightness *float64           `json:"sdr_brightness,omitempty"`
-	SDRSaturation *float64           `json:"sdr_saturation,omitempty"`
-	SDRMinLum     *float64           `json:"sdr_min_luminance,omitempty"`
-	SDRMaxLum     *int               `json:"sdr_max_luminance,omitempty"`
-	SDREOTF       *string            `json:"sdr_eotf,omitempty"`
-	MinLuminance  *float64           `json:"min_luminance,omitempty"`
-	MaxLuminance  *int               `json:"max_luminance,omitempty"`
-	MaxAvgLum     *int               `json:"max_avg_luminance,omitempty"`
-	ForceWide     *int               `json:"supports_wide_color,omitempty"`
-	ForceHDR      *int               `json:"supports_hdr,omitempty"`
-	ICC           *string            `json:"icc,omitempty"`
-	SnapDistance  int                `json:"snap_distance,omitempty"`
-	Workspaces    *WorkspaceSettings `json:"workspaces,omitempty"`
+	DisableUnknownOutputs *bool              `json:"disable_unknown_outputs,omitempty"`
+	OutputKey             string             `json:"output_key,omitempty"`
+	Enabled               *bool              `json:"enabled,omitempty"`
+	Mode                  *string            `json:"mode,omitempty"`
+	Scale                 *float64           `json:"scale,omitempty"`
+	VRR                   *int               `json:"vrr,omitempty"`
+	Transform             *int               `json:"transform,omitempty"`
+	MirrorOf              *string            `json:"mirror_of,omitempty"`
+	X                     *int               `json:"x,omitempty"`
+	Y                     *int               `json:"y,omitempty"`
+	Bitdepth              *int               `json:"bitdepth,omitempty"`
+	CM                    *string            `json:"cm,omitempty"`
+	SDRBrightness         *float64           `json:"sdr_brightness,omitempty"`
+	SDRSaturation         *float64           `json:"sdr_saturation,omitempty"`
+	SDRMinLum             *float64           `json:"sdr_min_luminance,omitempty"`
+	SDRMaxLum             *int               `json:"sdr_max_luminance,omitempty"`
+	SDREOTF               *string            `json:"sdr_eotf,omitempty"`
+	MinLuminance          *float64           `json:"min_luminance,omitempty"`
+	MaxLuminance          *int               `json:"max_luminance,omitempty"`
+	MaxAvgLum             *int               `json:"max_avg_luminance,omitempty"`
+	ForceWide             *int               `json:"supports_wide_color,omitempty"`
+	ForceHDR              *int               `json:"supports_hdr,omitempty"`
+	ICC                   *string            `json:"icc,omitempty"`
+	SnapDistance          int                `json:"snap_distance,omitempty"`
+	Workspaces            *WorkspaceSettings `json:"workspaces,omitempty"`
 }
 
 type SnapEdge int
@@ -102,6 +103,7 @@ func PreserveUnreportedSettings(draft *Profile, saved Profile) {
 	if draft == nil {
 		return
 	}
+	draft.DisableUnknownOutputs = saved.DisableUnknownOutputs
 	for idx := range draft.Outputs {
 		stored, ok := saved.OutputByKey(draft.Outputs[idx].Key)
 		if !ok {
@@ -147,6 +149,9 @@ func PreserveExactScales(draft *Profile, saved Profile) {
 // directly when it is running without a daemon.
 func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 	draft.Normalize()
+	if edit.DisableUnknownOutputs != nil {
+		draft.DisableUnknownOutputs = *edit.DisableUnknownOutputs
+	}
 	if edit.Workspaces != nil {
 		if err := edit.Workspaces.Validate(); err != nil {
 			return Profile{}, err

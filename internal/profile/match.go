@@ -198,6 +198,11 @@ func ExactStateMatch(profiles []Profile, monitors []hypr.Monitor, rules []hypr.W
 	var match Profile
 	matches := 0
 	for _, candidate := range profiles {
+		// An automatically extended layout is a draft, even if its known
+		// displays still have exactly their saved settings.
+		if !candidate.DisableUnknownOutputs && len(OmittedMonitors(candidate, monitors)) > 0 {
+			continue
+		}
 		if !profilesShareEffectiveState(candidate, current, monitors) {
 			continue
 		}

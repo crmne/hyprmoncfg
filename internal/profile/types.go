@@ -70,12 +70,13 @@ type WorkspaceSettings struct {
 }
 
 type Profile struct {
-	Name       string            `json:"name"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
-	Outputs    []OutputConfig    `json:"outputs"`
-	Workspaces WorkspaceSettings `json:"workspaces,omitempty"`
-	Exec       string            `json:"exec"`
+	DisableUnknownOutputs bool              `json:"disable_unknown_outputs,omitempty"`
+	Name                  string            `json:"name"`
+	CreatedAt             time.Time         `json:"created_at"`
+	UpdatedAt             time.Time         `json:"updated_at"`
+	Outputs               []OutputConfig    `json:"outputs"`
+	Workspaces            WorkspaceSettings `json:"workspaces,omitempty"`
+	Exec                  string            `json:"exec"`
 }
 
 func New(name string, outputs []OutputConfig) Profile {
