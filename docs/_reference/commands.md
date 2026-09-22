@@ -46,7 +46,7 @@ Both `hyprmoncfg` and `hyprmoncfgd` use these variables when the corresponding f
 
 | Flag | Description |
 |------|-------------|
-| `--confirm-timeout <seconds>` | Seconds to wait for confirmation before reverting (default: 10) |
+| `--confirm-timeout <seconds>` | Seconds to wait for confirmation before reverting (default: 30) |
 | `--confirm-timeout 0` | Disable the revert timer entirely |
 
 ## `hyprmoncfgd`

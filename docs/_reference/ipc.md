@@ -50,6 +50,10 @@ Errors replace `result` with an object containing a stable `code`, a human-reada
 
 A transaction contains an opaque `id`, the effective profile, and an RFC 3339 `deadline`.
 
+An omitted or nonpositive `timeout_seconds` uses the 30-second default. Explicit
+durations from older clients are still honored. The deadline starts after apply
+verification succeeds; the confirmation interval is separate from link readiness.
+
 ## Safe preview lifecycle
 
 Only one preview can be active at a time. It belongs to the connection that created it. If that connection disappears—for example, because changing the monitor layout rebuilt a screen-bound panel—the preview stays armed until its original deadline. Its transaction metadata remains available as `daemon.preview` in status, and a replacement client can reclaim it by sending the same transaction ID to `confirm`, `commit`, or `revert`.
@@ -79,6 +83,17 @@ After `confirm`, the selected profile becomes a session-scoped override for the 
 `commit` completes the same safe preview transaction and can atomically save its effective profile before making the layout permanent. If saving fails, the transaction stays armed and still reverts at its deadline. Compact editors should use `save_on_commit: true` when creating a draft preview (or `commit` with `save: true`) for “keep and save” rather than racing separate `confirm` and `save` requests. Keeping that intent in the daemon lets a replacement panel finish the transaction correctly after reconnecting.
 
 ## Status events
+
+Monitor summaries add `usable` and `health` (`usable`, `off`, `sleeping`,
+`no_signal`, or `synthetic`). `enabled` alone is not evidence of a working mode.
+Older daemons omit these fields; clients must not interpret absence as failure.
+
+Editor documents add `workspace_persistence_supported`. Only when true may an
+editor offer `workspaces.persist_all`. Missing capability means unavailable, not
+false user intent. The typed client rejects sending this setting to older
+daemons rather than silently losing it. Older clients retain their existing
+first-per-display default; upgrade both clients before editing profiles that use
+the new policy, since old clients cannot preserve an unknown field.
 
 After `subscribe`, the daemon pushes a fresh status document whenever monitor or profile state changes:
 

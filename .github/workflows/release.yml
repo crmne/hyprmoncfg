@@ -71,7 +71,7 @@ jobs:
             dist/package-assets/source-packaging-checksums.txt --clobber
 
   publish-aur:
-    if: vars.PUBLISH_AUR == 'true' && startsWith(github.ref, 'refs/tags/v')
+    if: vars.PUBLISH_AUR == 'true' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     needs: publish-packaging-assets
     runs-on: ubuntu-latest
     steps:
@@ -106,7 +106,7 @@ jobs:
         run: native-packages publish-aur dist/packaging
 
   sync-docs-version:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     needs: goreleaser
     runs-on: ubuntu-latest
     env:

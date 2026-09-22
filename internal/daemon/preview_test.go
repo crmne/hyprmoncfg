@@ -10,6 +10,32 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
+func TestPreviewDefaultAndExplicitDuration(t *testing.T) {
+	for _, seconds := range []int{0, 10, 60} {
+		const state = `[{"name":"eDP-1","width":1920,"height":1080,"refreshRate":60,"scale":1,"dpmsStatus":true}]`
+		env := newApplyBestTestEnvWithMonitors(t, state, state)
+		svc := New(env.client, env.store, Config{MonitorsConf: env.monitorsConfPath, HyprConfig: env.hyprlandConfigPath})
+		t.Cleanup(func() { _ = svc.Shutdown() })
+		monitors, err := env.client.Monitors(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := profile.FromMonitors("Laptop", monitors)
+		tx, err := svc.Preview("panel", ipc.PreviewParams{Profile: &p, TimeoutSeconds: seconds})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := seconds
+		if want == 0 {
+			want = 30
+		}
+		remaining := time.Until(tx.Deadline)
+		if remaining > time.Duration(want)*time.Second || remaining < time.Duration(want-1)*time.Second {
+			t.Fatalf("timeout=%d: remaining %v", seconds, remaining)
+		}
+	}
+}
+
 func TestPreviewOwnershipAndSafetyRollback(t *testing.T) {
 	for _, action := range []string{"timeout", "shutdown", "unmanage", "late commit"} {
 		t.Run(action, func(t *testing.T) {

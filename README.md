@@ -8,6 +8,10 @@
 <strong>Create multi-monitor layouts for Hyprland.</strong><br>
 Arrange visually. Save each setup. Switch automatically on hotplug and lid events.
 
+The 1.19 release candidate aligns display summaries and profile-command wording
+with the Omarchy panel. See the [TUI guide](docs/_guide/tui.md) for hardware details
+and the [shared design](DESIGN.md) for accepted presentation conventions and scope.
+
 [![GitHub Release](https://img.shields.io/github/v/release/crmne/hyprmoncfg)](https://github.com/crmne/hyprmoncfg/releases)
 [![AUR](https://img.shields.io/aur/version/hyprmoncfg)](https://aur.archlinux.org/packages/hyprmoncfg)
 [![CI](https://github.com/crmne/hyprmoncfg/actions/workflows/ci.yml/badge.svg)](https://github.com/crmne/hyprmoncfg/actions/workflows/ci.yml)
@@ -23,6 +27,12 @@ Arrange visually. Save each setup. Switch automatically on hotplug and lid event
 
 </div>
 
+The 1.19 release candidate adds independent failed-apply retries, per-output health,
+bounded display discovery, visible small-terminal footer actions, workspace
+persistence choices in both editors, and opt-in `hyprmoncfgd --power-aware-refresh`
+for internal laptop panels. See the daemon guide for limits and defaults; these
+the RC is not proof of physical dock/projector testing.
+
 ---
 
 hyprmoncfg is a visual multi-monitor layout editor and automatic profile switcher for Hyprland. Drag displays into place, save each setup as a hardware-aware profile, and let the daemon apply the right one when monitors or your laptop lid change.
@@ -32,6 +42,7 @@ hyprmoncfg is a visual multi-monitor layout editor and automatic profile switche
 ## What you get
 
 - **Spatial layout editor** -- drag monitors on a canvas and tune mode, scale, VRR, mirror, transform, and exact position
+- **Visible off displays** -- select a separate Off row and enable it in the draft; preview before changing the live layout
 - **Named profiles** -- save setups like `desk`, `conference`, or `home-office`
 - **Hardware-identity matching** -- profiles follow monitor make, model, and serial instead of unstable connector names
 - **Hotplug and lid-aware daemon** -- apply the right profile automatically when monitors change or the laptop lid closes
@@ -240,6 +251,10 @@ You don't commit the generated `~/.config/hypr/hyprmoncfg-monitors.{conf,lua}`. 
 Full documentation at **[hyprmoncfg.dev](https://hyprmoncfg.dev)**.
 
 ## Development
+
+Read [DESIGN.md](DESIGN.md) for the proposed shared daemon, TUI, and Omarchy-panel
+direction and the [dated baseline review](docs/design-review-2026-09-22.md) for
+release evidence and outstanding work. Proposed capabilities are not shipped features.
 
 Install the pre-commit hook to run CI checks locally before each commit:
 

@@ -473,6 +473,7 @@ func TestApplyBestExtendsLaptopProfileForProjector(t *testing.T) {
 	before, _ := json.Marshal([]hypr.Monitor{laptop, projector})
 	projector.Disabled, projector.Width, projector.Height = false, 1920, 1080
 	projector.RefreshRate, projector.Scale, projector.X, projector.DPMSStatus = 60, 1, 1920, true
+	projector.Y = 60
 	after, _ := json.Marshal([]hypr.Monitor{laptop, projector})
 	env := newApplyBestTestEnvWithMonitors(t, string(before), string(after))
 	saved := profile.FromMonitors("laptop", []hypr.Monitor{laptop})
@@ -485,7 +486,7 @@ func TestApplyBestExtendsLaptopProfileForProjector(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := readMonitorsConf(t, env)
-	for _, want := range []string{"position = 1920x0", "mode = 1920x1080@60.00", "workspace = 4, monitor:HDMI-A-1"} {
+	for _, want := range []string{"position = 1920x60", "mode = 1920x1080@60.00", "workspace = 4, monitor:HDMI-A-1"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("missing %q:\n%s", want, rendered)
 		}
@@ -711,7 +712,7 @@ func (r *logRecorder) all() string {
 
 // newRunTestEnv starts a daemon whose lid and suspend sources are test
 // channels, against a fake hyprctl serving monitor state from a file.
-func newRunTestEnv(t *testing.T, monitors []hypr.Monitor) runTestEnv {
+func newRunTestEnv(t *testing.T, monitors []hypr.Monitor, configure ...func(*Service)) runTestEnv {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -815,6 +816,9 @@ exit 1
 		return suspendEvents
 	}
 
+	for _, setup := range configure {
+		setup(svc)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- svc.Run(ctx) }()

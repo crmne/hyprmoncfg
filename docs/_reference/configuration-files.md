@@ -32,6 +32,12 @@ Each profile stores:
 - **Monitor outputs**: hardware identity (make, model, serial), resolution, refresh rate, scale, position, transform, VRR mode
 - **Workspace settings**: strategy, max workspaces, group size, monitor order, explicit rules
 
+Generated workspace plans support `workspaces.persist_all: true` to keep every
+assigned workspace persistent. Omitted or false retains the first-workspace-per-
+display default. Each display still has only one default workspace. Manual plans
+use each rule's `persistent` flag instead. Both editors expose this as Persistence
+on the Workspaces page; no edits to generated files are needed.
+
 Monitors are identified by hardware key (`make|model|serial`), not connector name. This means your profiles survive connector swaps between boots.
 
 ### Commands after applying a profile

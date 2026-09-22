@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/crmne/hyprmoncfg/internal/appstatus"
+	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
 type Client struct {
@@ -65,12 +66,25 @@ func (c *Client) EditorState(ctx context.Context) (appstatus.EditorDocument, err
 
 func (c *Client) EditProfile(ctx context.Context, params EditParams) (appstatus.EditorDraft, error) {
 	var result appstatus.EditorDraft
+	if err := c.checkWorkspacePersistence(ctx, params.Profile); err != nil {
+		return result, err
+	}
+	if params.Edit.Workspaces != nil && params.Edit.Workspaces.PersistAll {
+		if err := c.checkWorkspacePersistence(ctx, profile.Profile{Workspaces: *params.Edit.Workspaces}); err != nil {
+			return result, err
+		}
+	}
 	err := c.call(ctx, MethodEdit, params, &result)
 	return result, err
 }
 
 func (c *Client) Preview(ctx context.Context, params PreviewParams) (Transaction, error) {
 	var result Transaction
+	if params.Profile != nil {
+		if err := c.checkWorkspacePersistence(ctx, *params.Profile); err != nil {
+			return result, err
+		}
+	}
 	err := c.call(ctx, MethodPreview, params, &result)
 	return result, err
 }
@@ -88,7 +102,26 @@ func (c *Client) Revert(ctx context.Context, transactionID string) error {
 }
 
 func (c *Client) Save(ctx context.Context, params SaveParams) error {
+	if err := c.checkWorkspacePersistence(ctx, params.Profile); err != nil {
+		return err
+	}
 	return c.call(ctx, MethodSave, params, nil)
+}
+
+// An older daemon ignores unknown JSON fields. Refuse to send a policy it
+// cannot preserve instead of appearing to save it successfully.
+func (c *Client) checkWorkspacePersistence(ctx context.Context, p profile.Profile) error {
+	if !p.Workspaces.PersistAll {
+		return nil
+	}
+	document, err := c.EditorState(ctx)
+	if err != nil {
+		return err
+	}
+	if !document.WorkspacePersistenceSupported {
+		return errors.New("workspace persistence requires a newer daemon; restart the updated hyprmoncfgd")
+	}
+	return nil
 }
 
 func (c *Client) Delete(ctx context.Context, name string) error {

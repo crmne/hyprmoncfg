@@ -40,14 +40,15 @@ const (
 	modeNumericInput
 	modeProfileExecInput
 	modeKeybindings
+	modeDeleteConfirm
 )
 
 type mainTab int
 
 const (
 	tabLayout mainTab = iota
-	tabProfiles
 	tabWorkspaces
+	tabProfiles
 )
 
 type layoutFocus int
@@ -171,6 +172,7 @@ type editableOutput struct {
 	PhysicalHeight    int
 	Enabled           bool
 	Modes             []string
+	HardwareModes     []string
 	ModeIndex         int
 	ModeUnsupported   bool
 	Width             int
@@ -255,6 +257,7 @@ type snapAnalysis struct {
 }
 
 type workspaceEditor struct {
+	PersistAll              bool
 	Enabled                 bool
 	Strategy                profile.WorkspaceStrategy
 	MaxWorkspaces           int
@@ -286,12 +289,13 @@ type Model struct {
 	workspaces     []hypr.WorkspaceState
 	lidState       lid.State
 
-	editOutputs     []editableOutput
-	workspaceEdit   workspaceEditor
-	selectedOutput  int
-	inspectorField  int
-	inspectorTab    inspectorTab
-	selectedProfile int
+	editOutputs       []editableOutput
+	workspaceEdit     workspaceEditor
+	selectedOutput    int
+	inspectorField    int
+	inspectorTab      inspectorTab
+	selectedProfile   int
+	deleteProfileName string
 
 	pending       *pendingApply
 	revertGuard   *pendingRevertGuard
@@ -547,7 +551,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		deadline := msg.deadline
 		if deadline.IsZero() {
-			deadline = time.Now().Add(10 * time.Second)
+			deadline = time.Now().Add(apply.DefaultPreviewTimeout)
 		}
 		m.pending = &pendingApply{
 			profile:       msg.profile,
@@ -575,7 +579,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.mode = modeConfirm
 			if m.pending != nil {
-				m.pending.deadline = time.Now().Add(10 * time.Second)
+				m.pending.deadline = time.Now().Add(apply.DefaultPreviewTimeout)
 			}
 			m.setStatusErr(fmt.Sprintf("Revert failed: %v", msg.err))
 			return m, nil
@@ -620,6 +624,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSaveKeys(msg)
 		case modeSaveConfirm:
 			return m.updateSaveConfirmKeys(msg)
+		case modeDeleteConfirm:
+			name := m.deleteProfileName
+			if msg.String() == "y" {
+				m.mode, m.deleteProfileName = modeMain, ""
+				return m, m.deleteCmd(name)
+			}
+			if msg.String() == "esc" || msg.String() == "n" || msg.String() == "enter" {
+				m.mode, m.deleteProfileName = modeMain, ""
+			}
+			return m, nil
 		case modeConfirm:
 			return m.updateConfirmKeys(msg)
 		case modeModePicker:
@@ -684,9 +698,6 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tab = tabLayout
 		return m, nil
 	case "2":
-		m.tab = tabProfiles
-		return m, nil
-	case "3":
 		m.tab = tabWorkspaces
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual && !m.workspaceEdit.ManualRulesInitialized {
 			m.workspaceEdit.Rules = m.materializeManualWorkspaceRules()
@@ -695,6 +706,9 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.markDirty()
 			}
 		}
+		return m, nil
+	case "3":
+		m.tab = tabProfiles
 		return m, nil
 	case "?":
 		m.mode = modeKeybindings
@@ -734,10 +748,6 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.tab == tabProfiles {
 			if len(m.profiles) == 0 {
 				m.setStatusErr("No profiles available")
-				return m, nil
-			}
-			if m.profileSelectionLocked() {
-				m.setStatusErr("Turn off automatic profile selection before choosing a profile")
 				return m, nil
 			}
 			m.applying = true
@@ -840,14 +850,11 @@ func (m Model) updateProfileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatusErr("No profiles to delete")
 			return m, nil
 		}
-		return m, m.deleteCmd(m.profiles[m.selectedProfile].Name)
+		m.mode, m.deleteProfileName = modeDeleteConfirm, m.profiles[m.selectedProfile].Name
+		return m, nil
 	case "enter":
 		if len(m.profiles) == 0 {
 			m.setStatusErr("No profiles available")
-			return m, nil
-		}
-		if m.profileSelectionLocked() {
-			m.setStatusErr("Turn off automatic profile selection before choosing a profile")
 			return m, nil
 		}
 		if m.applying {
@@ -872,10 +879,6 @@ func (m Model) updateProfileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) profileAutomatic() bool {
 	return m.daemonOK && strings.TrimSpace(m.profileOverride) == ""
-}
-
-func (m Model) profileSelectionLocked() bool {
-	return m.profileAutomatic()
 }
 
 func (m Model) toggleProfileAutomatic() (tea.Model, tea.Cmd) {
@@ -1044,6 +1047,12 @@ func (m Model) View() string {
 		return m.renderModalScreen(m.renderSavePrompt())
 	case modeSaveConfirm:
 		return m.renderModalScreen(m.renderSaveConfirm())
+	case modeDeleteConfirm:
+		return m.renderModalScreen(m.renderModalFrame("Delete profile?", []string{
+			m.styles.warning.Render(fmt.Sprintf("Delete %q?", m.deleteProfileName)),
+			"Your live layout will not change.",
+			m.styles.help.Render("y deletes. Enter, Esc or n cancels."),
+		}))
 	case modeConfirm:
 		return m.renderModalScreen(m.renderConfirm())
 	case modeModePicker:
@@ -1104,7 +1113,7 @@ func (m Model) renderMain() string {
 }
 
 func (m Model) renderTabs() string {
-	labels := []string{"Layout", "Profiles", "Workspaces"}
+	labels := []string{"Layout", "Workspaces", "Profiles"}
 	parts := make([]string, 0, len(labels)*2+1)
 	lineStyle := withFG(lipgloss.NewStyle(), m.styles.palette.paneBorder)
 	parts = append(parts, lineStyle.Render("─"))
@@ -1188,7 +1197,7 @@ func (m Model) renderCanvas(width, height int) string {
 	}
 
 	layout := m.canvasLayout(width, height)
-	if !layout.ok {
+	if !layout.ok && len(m.hiddenDisplayRows(width, height)) == 0 {
 		if m.hasMirroredOutputs() {
 			return "(mirrors shown below)"
 		}
@@ -1231,7 +1240,7 @@ func (m Model) renderCanvas(width, height int) string {
 			}
 		}
 	}
-	paintCanvasSegments(grid, 0, 1, m.hiddenOutputSegments(m.editOutputs, m.selectedOutput, canvasW-2))
+	m.paintHiddenDisplays(grid)
 	return renderCanvasCells(grid)
 }
 
@@ -1389,18 +1398,26 @@ func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 }
 
 func (m Model) renderInspectorColumn(width, height int, compact bool) string {
-	preferencesHeight, infoHeight := m.inspectorPaneHeights(height)
+	preferencesHeight, infoHeight := m.inspectorPaneHeights(height, width)
 	info := m.renderInfoPane(width, infoHeight)
 	preferences := m.renderInspectorPane(width, preferencesHeight, compact)
 	return lipgloss.JoinVertical(lipgloss.Left, info, preferences)
 }
 
-func (m Model) inspectorPaneHeights(height int) (int, int) {
+func (m Model) inspectorPaneHeights(height, width int) (int, int) {
 	if height <= 8 {
 		preferences := max(3, (height+1)/2)
 		return preferences, max(2, height-preferences)
 	}
-	info := clampInt(11, 5, height/2)
+	needed := 6
+	if len(m.editOutputs) > 0 {
+		innerWidth := max(1, width-m.styles.staticPane.GetHorizontalFrameSize())
+		needed = m.styles.staticPane.GetVerticalFrameSize()
+		for _, line := range m.inspectorDetailLines(m.editOutputs[m.selectedOutput]) {
+			needed += max(1, (lipgloss.Width(line)+innerWidth-1)/innerWidth)
+		}
+	}
+	info := clampInt(needed, 5, max(5, height-4))
 	return height - info, info
 }
 
@@ -1520,20 +1537,27 @@ func scrollLinesToFit(lines []string, selectedLine, height int) []string {
 
 func (m Model) renderProfilesView(height int) string {
 	summaries := m.profileMatchSummaries()
+	automaticWidth := m.profileAutomaticRect().w
+	automatic := m.renderTitledPane(paneToneStatic, "Automatic profile selection", m.profileAutomaticRow(max(1, automaticWidth-m.styles.inactivePane.GetHorizontalFrameSize())), automaticWidth)
 
 	if m.terminalWidth() < 96 {
+		height -= profileAutomaticPaneHeight
 		// Compact: stack vertically, list gets enough for profiles, details gets the rest.
 		width := m.terminalWidth() - m.styles.app.GetHorizontalFrameSize()
-		listHeight := clampInt(len(m.profiles)+profileListHeaderRows+2, profileListHeaderRows+4, height/3)
+		listHeight := m.compactProfileListHeight(height)
 		left := m.renderProfileListPane(summaries, width, listHeight)
 		right := m.renderProfileDetailPanes(summaries, width, max(3, height-listHeight))
-		return lipgloss.JoinVertical(lipgloss.Left, left, right)
+		return lipgloss.JoinVertical(lipgloss.Left, automatic, left, right)
 	}
 
 	listWidth, detailWidth := m.sidePaneWidths(35)
-	left := m.renderProfileListPane(summaries, listWidth, height)
+	left := lipgloss.JoinVertical(lipgloss.Left, automatic, m.renderProfileListPane(summaries, listWidth, height-profileAutomaticPaneHeight))
 	right := m.renderProfileDetailPanes(summaries, detailWidth, height)
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", paneGapWidth), right)
+}
+
+func (m Model) compactProfileListHeight(height int) int {
+	return clampInt(len(m.profiles)+profileListHeaderRows+profileListActionRows+2, 7, max(7, height/3))
 }
 
 func (m Model) renderProfileListPane(summaries []profileMatchSummary, width, height int) string {
@@ -1542,8 +1566,12 @@ func (m Model) renderProfileListPane(summaries []profileMatchSummary, width, hei
 	innerHeight := max(1, height-style.GetVerticalFrameSize())
 	cols := m.profileListColumns(innerWidth)
 	rows := m.profileListRows(summaries, cols)
-	lines := append([]string{m.profileAutomaticRow(innerWidth), "", m.profileListHeader(cols), ""}, rows[min(m.profileListScroll(innerHeight), len(rows)-1):]...)
-	body := fitBlock(strings.Join(lines, "\n"), innerWidth, innerHeight)
+	actions := m.styles.value.Render(fitString("[Preview] [Edit] [Delete]", innerWidth))
+	if len(m.profiles) == 0 {
+		actions = ""
+	}
+	lines := append([]string{m.profileListHeader(cols), ""}, rows[min(m.profileListScroll(innerHeight), len(rows)-1):]...)
+	body := fitBlock(strings.Join(lines, "\n"), innerWidth, max(1, innerHeight-profileListActionRows)) + "\n" + actions
 	return m.renderTitledPane(paneToneFocused, "Saved Profiles", body, width)
 }
 
@@ -1863,7 +1891,7 @@ func (m Model) compactLayoutHeights(total int) (int, int) {
 		return canvas, max(1, total-canvas)
 	}
 
-	inspector := max(4, (total*7)/12)
+	inspector := max(min(13, total-4), (total*7)/12)
 	canvas := total - inspector
 	if canvas < 4 {
 		canvas = 4
@@ -1881,19 +1909,7 @@ func (m Model) compactLayoutHeights(total int) (int, int) {
 }
 
 func (m Model) inspectorDetailLines(output editableOutput) []string {
-	lines := []string{
-		fmt.Sprintf("%s %s", m.styles.label.Render("Connector "), m.styles.value.Render(output.Name)),
-		fmt.Sprintf("%s %s", m.styles.label.Render("Type      "), m.styles.value.Render(outputTypeLabel(output))),
-		fmt.Sprintf("%s %s", m.styles.label.Render("Model     "), m.styles.value.Render(output.displayModelLabel())),
-		fmt.Sprintf("%s %s", m.styles.label.Render("Serial    "), m.styles.value.Render(blankFallback(strings.TrimSpace(output.Serial), "(none)"))),
-		fmt.Sprintf("%s %s", m.styles.label.Render("Layout px "), m.styles.value.Render(output.layoutSizeLabel())),
-		fmt.Sprintf("%s %s", m.styles.label.Render("Workspace "), m.styles.value.Render(blankFallback(output.ActiveWorkspace, "(none)"))),
-		fmt.Sprintf("%s %s", m.styles.label.Render("DPMS      "), m.styles.value.Render(boolText(output.DPMSStatus))),
-	}
-	if output.PhysicalWidth > 0 && output.PhysicalHeight > 0 {
-		lines = append(lines, fmt.Sprintf("%s %s", m.styles.label.Render("Panel mm  "), m.styles.value.Render(fmt.Sprintf("%d x %d mm", output.PhysicalWidth, output.PhysicalHeight))))
-	}
-	return lines
+	return m.hardwareDetailLines(output)
 }
 
 func outputTypeLabel(output editableOutput) string {
@@ -2494,6 +2510,10 @@ func (m *Model) adjustWorkspaceField(delta int) {
 		}
 		m.workspaceEdit.GroupSize = adjustPositiveInt(m.workspaceEdit.GroupSize, delta)
 		m.workspaceEdit.LastSequentialGroupSize = m.workspaceEdit.GroupSize
+	case 4:
+		if m.workspaceEdit.Strategy != profile.WorkspaceStrategyManual {
+			m.workspaceEdit.PersistAll = !m.workspaceEdit.PersistAll
+		}
 	}
 }
 
@@ -2678,7 +2698,6 @@ func normalizeManualWorkspaceDefaults(rules []profile.WorkspaceRule) []profile.W
 			target = normalized[idx].OutputName
 		}
 		normalized[idx].Default = false
-		normalized[idx].Persistent = false
 		if target != "" && !seen[target] {
 			normalized[idx].Default = true
 			normalized[idx].Persistent = true
@@ -2971,8 +2990,7 @@ func (m Model) applyCmd(p profile.Profile, allowUnmanagedOverwrite ...bool) tea.
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			transaction, err := client.Preview(ctx, ipc.PreviewParams{
-				Profile:        &p,
-				TimeoutSeconds: 10,
+				Profile: &p,
 			})
 			if err != nil {
 				return applyMsg{profile: p, remote: true, err: err}
@@ -3258,7 +3276,7 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 	case 0:
 		return boolText(output.Enabled)
 	case 1:
-		return output.DisplayMode()
+		return displayModeLabel(output.DisplayMode())
 	case 2:
 		return scaling.Format(output.Scale)
 	case 3:
@@ -3427,6 +3445,14 @@ func validStringOption(value string, allowed ...string) bool {
 
 func (m Model) workspaceFieldValue(field int) string {
 	switch field {
+	case 4:
+		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
+			return "Custom (per rule)"
+		}
+		if m.workspaceEdit.PersistAll {
+			return "All assigned"
+		}
+		return "First per display"
 	case 0:
 		return boolText(m.workspaceEdit.Enabled)
 	case 1:
@@ -3552,6 +3578,7 @@ func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, ha
 		output.IsInternal = live.IsInternal()
 		output.ActiveWorkspace = live.ActiveWorkspace.Name
 		output.Modes = normalizeModes(live.AvailableModes, mode)
+		output.HardwareModes = append([]string(nil), live.AvailableModes...)
 		output.ModeUnsupported = len(live.AvailableModes) > 0 && indexOf(live.AvailableModes, mode) < 0
 	} else {
 		output.Modes = normalizeModes(nil, mode)
@@ -3630,6 +3657,7 @@ func workspaceEditorFromSettings(settings profile.WorkspaceSettings, outputs []e
 	}
 
 	return workspaceEditor{
+		PersistAll:              settings.PersistAll,
 		Enabled:                 settings.Enabled,
 		Strategy:                strategy,
 		MaxWorkspaces:           maxWorkspaces,
@@ -3686,6 +3714,7 @@ func workspaceOrderFromEditorRules(rules []profile.WorkspaceRule, outputs []edit
 
 func (w workspaceEditor) settings() profile.WorkspaceSettings {
 	return profile.WorkspaceSettings{
+		PersistAll:    w.PersistAll,
 		Enabled:       w.Enabled,
 		Strategy:      w.Strategy,
 		MaxWorkspaces: w.MaxWorkspaces,
@@ -3792,12 +3821,7 @@ type cardLine struct {
 	bold bool
 }
 
-func (o editableOutput) cardModelLabel() string {
-	if o.IsInternal {
-		return "Internal · " + o.displayModelLabel()
-	}
-	return o.displayModelLabel()
-}
+func (o editableOutput) cardModelLabel() string { return o.modelSizeLabel() }
 
 func (o editableOutput) cardLines(maxLines int, fg string, muted string) []cardLine {
 	return o.cardLinesWithIssue(maxLines, fg, muted, "", "")
@@ -3807,72 +3831,19 @@ func (o editableOutput) cardLinesWithIssue(maxLines int, fg string, muted string
 	if maxLines <= 0 {
 		return nil
 	}
-
-	scaleLayout := fmt.Sprintf("%sx=%s", scaling.Format(o.Scale), strings.ReplaceAll(o.layoutSizeLabel(), " ", ""))
-	position := fmt.Sprintf("pos %d,%d", o.X, o.Y)
 	name := o.Name
 	if issue != "" {
 		name += " ⚠"
 	}
-	issueLine := cardLine{text: "⚠ " + issue, fg: issueFG, bold: true}
-	full := []cardLine{
-		{text: name, fg: fg, bold: true},
-		{text: o.cardModelLabel(), fg: muted},
-		{text: o.DisplayMode(), fg: muted},
-		{text: scaleLayout, fg: muted},
-		{text: position, fg: muted},
-	}
+	lines := []cardLine{{text: name, fg: fg, bold: true}}
 	if issue != "" {
-		warnFull := []cardLine{
-			full[0],
-			issueLine,
-			full[1],
-			full[2],
-			full[3],
-			full[4],
-		}
-		if maxLines >= len(warnFull) {
-			return warnFull
-		}
-		switch maxLines {
-		case 5:
-			return []cardLine{full[0], issueLine, full[1], full[2], full[3]}
-		case 4:
-			return []cardLine{full[0], issueLine, full[1], full[2]}
-		case 3:
-			return []cardLine{full[0], issueLine, cardLine{text: scaleLayout + "  " + position, fg: muted}}
-		case 2:
-			return []cardLine{full[0], issueLine}
-		default:
-			return []cardLine{full[0]}
-		}
+		lines = append(lines, cardLine{text: "⚠ " + issue, fg: issueFG, bold: true})
 	}
-	if maxLines >= len(full) {
-		return full
-	}
-
-	switch maxLines {
-	case 4:
-		return []cardLine{
-			full[0],
-			full[1],
-			full[2],
-			{text: scaleLayout + "  " + position, fg: muted},
-		}
-	case 3:
-		return []cardLine{
-			full[0],
-			full[1],
-			{text: scaleLayout + "  " + position, fg: muted},
-		}
-	case 2:
-		return []cardLine{
-			full[0],
-			full[1],
-		}
-	default:
-		return []cardLine{full[0]}
-	}
+	lines = append(lines,
+		cardLine{text: o.modelSizeLabel(), fg: muted},
+		cardLine{text: displayModeLabel(o.DisplayMode()), fg: muted},
+		cardLine{text: o.placementLabel(), fg: muted})
+	return lines[:min(maxLines, len(lines))]
 }
 
 func (m Model) newCanvasCells(width, height int) [][]canvasCell {
@@ -4541,6 +4512,7 @@ var workspaceFields = []string{
 	"Strategy",
 	"Max workspaces",
 	"Group size",
+	"Persistence",
 }
 
 func (m Model) isOutputOverlapping(o editableOutput) bool {

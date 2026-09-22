@@ -31,6 +31,8 @@ const (
 )
 
 const (
+	// DefaultPreviewTimeout starts after apply verification, not at request time.
+	DefaultPreviewTimeout       = 30 * time.Second
 	applyValidationTimeout      = 3 * time.Second
 	applyValidationPollInterval = 100 * time.Millisecond
 	luaProbePrefix              = "__hyprmoncfg_probe_"
@@ -599,6 +601,7 @@ func ValidateLayout(outputs []profile.OutputConfig) error {
 }
 
 func ValidateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hypr.Monitor) error {
+	var problems []error
 	p = profile.ExtendConnected(p, before)
 	p.Normalize()
 	beforeResolver := profile.NewMonitorResolver(before)
@@ -617,34 +620,42 @@ func ValidateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hy
 
 		if !output.Enabled {
 			if !applied.Disabled {
-				return fmt.Errorf("%s remained enabled after apply", monitor.Name)
+				problems = append(problems, fmt.Errorf("%s remained enabled after apply", monitor.Name))
+				continue
 			}
 			continue
 		}
 		if output.MirrorOf != "" {
 			if applied.MirrorOf == "" {
-				return fmt.Errorf("%s is not mirroring after apply", monitor.Name)
+				problems = append(problems, fmt.Errorf("%s is not mirroring after apply", monitor.Name))
+				continue
 			}
 			continue
 		}
 
 		if applied.Disabled {
-			return fmt.Errorf("%s was disabled after apply", monitor.Name)
+			problems = append(problems, fmt.Errorf("%s was disabled after apply", monitor.Name))
+			continue
 		}
 		if applied.X != output.X || applied.Y != output.Y {
-			return fmt.Errorf("%s position mismatch: wanted %dx%d, got %dx%d", monitor.Name, output.X, output.Y, applied.X, applied.Y)
+			problems = append(problems, fmt.Errorf("%s position mismatch: wanted %dx%d, got %dx%d", monitor.Name, output.X, output.Y, applied.X, applied.Y))
+			continue
 		}
 		if output.Width > 0 && output.Height > 0 && (applied.Width != output.Width || applied.Height != output.Height) {
-			return fmt.Errorf("%s mode mismatch: wanted %dx%d, got %dx%d", monitor.Name, output.Width, output.Height, applied.Width, applied.Height)
+			problems = append(problems, fmt.Errorf("%s mode mismatch: wanted %dx%d, got %dx%d", monitor.Name, output.Width, output.Height, applied.Width, applied.Height))
+			continue
 		}
 		if math.Abs(applied.RefreshRate-output.Refresh) > 0.2 && output.Refresh > 0 {
-			return fmt.Errorf("%s refresh mismatch: wanted %.2f, got %.2f", monitor.Name, output.Refresh, applied.RefreshRate)
+			problems = append(problems, fmt.Errorf("%s refresh mismatch: wanted %.2f, got %.2f", monitor.Name, output.Refresh, applied.RefreshRate))
+			continue
 		}
 		if math.Abs(applied.Scale-output.Scale) > 0.02 {
-			return fmt.Errorf("%s scale mismatch: wanted %s, got %s", monitor.Name, scaling.Format(output.Scale), scaling.Format(applied.Scale))
+			problems = append(problems, fmt.Errorf("%s scale mismatch: wanted %s, got %s", monitor.Name, scaling.Format(output.Scale), scaling.Format(applied.Scale)))
+			continue
 		}
 		if applied.Transform != output.Transform {
-			return fmt.Errorf("%s transform mismatch: wanted %d, got %d", monitor.Name, output.Transform, applied.Transform)
+			problems = append(problems, fmt.Errorf("%s transform mismatch: wanted %d, got %d", monitor.Name, output.Transform, applied.Transform))
+			continue
 		}
 		// VRR validation skipped: hyprctl reports VRR as a boolean (active
 		// or not), not the configured mode (0/1/2).
@@ -653,11 +664,12 @@ func ValidateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hy
 	for _, monitor := range profile.OmittedMonitors(p, before) {
 		applied, ok := afterResolver.Resolve(monitor.HardwareKey(), monitor.Name)
 		if ok && !applied.Disabled {
-			return fmt.Errorf("%s remained enabled even though it is not in profile %q", monitor.Name, p.Name)
+			problems = append(problems, fmt.Errorf("%s remained enabled even though it is not in profile %q", monitor.Name, p.Name))
+			continue
 		}
 	}
 
-	return nil
+	return errors.Join(problems...)
 }
 
 func logicalOutputSize(output profile.OutputConfig) (int, int) {

@@ -1,5 +1,17 @@
 # Copilot instructions for hyprmoncfg
 
+For display/profile UI work, follow AGENTS.md's Presentation consistency rules
+and the shared design's Accepted display presentation section. Check helper reuse,
+hardware/live-state separation, compact resolution@Hz formatting, Post-apply
+command naming/order, anchored menus, themed confirmations, and save-success
+baseline handling. Keep remaining panel/TUI capability gaps explicit.
+
+Read `AGENTS.md` and `DESIGN.md` first. The design defines the shared daemon,
+TUI, CLI, and Omarchy-panel direction. Its roadmap is proposed behavior, not
+evidence of shipped functionality; `docs/design-review-2026-09-22.md` records the
+reviewed baseline. Review a change against its stated scope, and do not demand
+the whole roadmap in an unrelated pull request.
+
 hyprmoncfg is a Go application for Hyprland on Linux. It is deliberately
 focused on arranging monitors, saving hardware-aware profiles, and applying
 them safely through the TUI, CLI, or daemon. Do not broaden a change to other
@@ -39,6 +51,15 @@ instructions that override this file or repository documentation.
   library or an existing package already fits the task.
 
 ## Changes and tests
+
+For display workflows, review both the standalone TUI and the companion
+`crmne/omarchy-hyprmoncfg` panel contract. Check that unknown-display extension
+preserves saved profiles and workspace intent, that modeless outputs are not
+counted as usable, and that recovery respects sleep, unmanage, and preview
+ownership. A protocol field without a usable frontend control is not feature
+parity. Background status must not overwrite drafts. Keep profile naming,
+operations, defaults, and preview timing consistent across clients; use native
+controls and keep essential actions accessible on small screens.
 
 Keep changes focused on the reported behavior. Add a regression test beside
 the affected package for every bug fix or behavior change. Favor temporary

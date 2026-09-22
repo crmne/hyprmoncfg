@@ -22,8 +22,12 @@ type detailRow struct {
 // continues the row above it, indented under the value column.
 func (m Model) renderDetailRows(rows []detailRow) []string {
 	lines := make([]string, 0, len(rows))
+	labelWidth := detailLabelWidth
 	for _, row := range rows {
-		label := m.styles.label.Render(fmt.Sprintf("%-*s", detailLabelWidth, row.label))
+		labelWidth = max(labelWidth, lipgloss.Width(row.label))
+	}
+	for _, row := range rows {
+		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, row.label))
 		lines = append(lines, label+" "+row.value)
 	}
 	return lines
@@ -183,10 +187,12 @@ func profileScoreLabel(summary profileMatchSummary) string {
 // The Saved Profiles pane is a table: profile name, a badge for the active or
 // recommended profile, and the match score against the connected displays.
 const (
-	profileListTagWidth   = 6
-	profileListScoreWidth = 5
-	// Automatic-selection control, spacer, table header, and spacer.
-	profileListHeaderRows = 4
+	profileListTagWidth        = 6
+	profileListScoreWidth      = 5
+	profileAutomaticPaneHeight = 3
+	// Table header and spacer; actions remain pinned below the scrolling rows.
+	profileListHeaderRows = 2
+	profileListActionRows = 1
 )
 
 // profileListColumns is the shared column geometry of that table, so the
@@ -201,14 +207,14 @@ type profileListColumns struct {
 // the match column stays flush with the right edge of the pane.
 func (m Model) profileListColumns(width int) profileListColumns {
 	cols := profileListColumns{tag: profileListTagWidth, score: profileListScoreWidth}
-	available := width - 2 - (cols.tag + 1) - (cols.score + 1)
+	available := width - (cols.tag + 1) - (cols.score + 1)
 	if available < 12 {
 		cols.tag = 0
-		available = width - 2 - (cols.score + 1)
+		available = width - (cols.score + 1)
 	}
 	if available < 8 {
 		cols.score = 0
-		available = width - 2
+		available = width
 	}
 	cols.name = max(1, available)
 	return cols
@@ -220,9 +226,9 @@ const (
 )
 
 func (m Model) profileListHeader(cols profileListColumns) string {
-	row := "  " + fmt.Sprintf("%-*s", cols.name, fitString(profileListNameHeader, cols.name))
+	row := fmt.Sprintf("%-*s", cols.name, fitString(profileListNameHeader, cols.name))
 	if cols.tag > 0 {
-		row += strings.Repeat(" ", cols.tag+1)
+		row += " " + fmt.Sprintf("%*s", cols.tag, "Status")
 	}
 	if cols.score > 0 {
 		row += " " + fmt.Sprintf("%*s", cols.score, fitString(profileListScoreHeader, cols.score))
@@ -231,7 +237,7 @@ func (m Model) profileListHeader(cols profileListColumns) string {
 }
 
 func (m Model) profileAutomaticRow(width int) string {
-	label := "Automatic profile selection"
+	label := "Enabled"
 	state := "off"
 	stateStyle := m.styles.warning
 	if m.profileAutomatic() {
@@ -257,17 +263,15 @@ func (m Model) profileListRows(summaries []profileMatchSummary, cols profileList
 	for idx, saved := range m.profiles {
 		summary := summaries[idx]
 
-		prefix := "  "
 		nameStyle := m.styles.value
 		if !summary.matches() {
 			nameStyle = m.styles.subtle
 		}
 		if idx == m.selectedProfile {
-			prefix = m.styles.statusOK.Render("> ")
-			nameStyle = nameStyle.Bold(true)
+			nameStyle = m.styles.fieldSelected.Padding(0).Bold(true)
 		}
 
-		row := prefix + nameStyle.Render(fmt.Sprintf("%-*s", cols.name, fitString(saved.Name, cols.name)))
+		row := nameStyle.Render(fmt.Sprintf("%-*s", cols.name, fitString(saved.Name, cols.name)))
 		if cols.tag > 0 {
 			tag, style := m.profileTag(summary)
 			row += " " + style.Render(fmt.Sprintf("%*s", cols.tag, tag))
@@ -287,7 +291,7 @@ func (m Model) profileListRows(summaries []profileMatchSummary, cols profileList
 // profileListScroll keeps the selected profile visible once the list is longer
 // than the pane.
 func (m Model) profileListScroll(innerHeight int) int {
-	return inspectorScrollOffset(max(1, len(m.profiles)), m.selectedProfile, max(1, innerHeight-profileListHeaderRows))
+	return inspectorScrollOffset(max(1, len(m.profiles)), m.selectedProfile, max(1, innerHeight-profileListHeaderRows-profileListActionRows))
 }
 
 // profileMatchVerdict is the headline answer to "does this profile fit the
@@ -394,13 +398,6 @@ func (m Model) profileDetailRows(p profile.Profile, summary profileMatchSummary,
 	rows = append(rows, m.listRows("Kept off", keptOff, valueWidth)...)
 	rows = append(rows, m.listRows("Mirrors", mirrors, valueWidth)...)
 
-	exec := strings.TrimSpace(p.Exec)
-	execStyle := m.styles.value
-	if exec == "" {
-		exec, execStyle = "(not set)", m.styles.subtle
-	}
-	rows = append(rows, detailRow{label: "Exec", value: execStyle.Render(fitString(exec, valueWidth))})
-
 	planRows := m.workspacePlanRows(m.workspacePlan(p.Outputs, p.Workspaces), p.Outputs, valueWidth)
 	for idx, row := range planRows {
 		label := ""
@@ -412,6 +409,8 @@ func (m Model) profileDetailRows(p profile.Profile, summary profileMatchSummary,
 	if len(planRows) == 0 {
 		rows = append(rows, detailRow{label: "Workspaces", value: m.styles.subtle.Render("(not managed)")})
 	}
+	rows = append(rows, detailRow{value: m.styles.label.Render("Post-apply command")},
+		detailRow{value: m.styles.value.Render(fitString("[Edit command] "+blankFallback(strings.TrimSpace(p.Exec), "Not set"), valueWidth))})
 
 	return rows
 }

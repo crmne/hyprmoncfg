@@ -242,7 +242,7 @@ func (m *Model) activateInspectorField() tea.Cmd {
 		}
 		items := make([]list.Item, 0, len(output.Modes))
 		for _, mode := range output.Modes {
-			items = append(items, pickerItem(mode))
+			items = append(items, fieldPickerItem{pickerItem: pickerItem(mode), label: displayModeLabel(mode)})
 		}
 		inner := list.NewDefaultDelegate()
 		inner.ShowDescription = false
@@ -567,7 +567,7 @@ func (m *Model) openProfileExecInput() tea.Cmd {
 
 	m.execInput = &profileExecInputState{
 		ProfileIndex: m.selectedProfile,
-		Title:        fmt.Sprintf("Edit Exec for %s", selected.Name),
+		Title:        fmt.Sprintf("Post-apply command for %s", selected.Name),
 		Input:        input,
 	}
 	m.mode = modeProfileExecInput
@@ -584,7 +584,7 @@ func (m Model) renderProfileExecInput() string {
 		BorderForeground(lipgloss.Color(m.styles.palette.paneActiveBorder)).
 		Padding(0, 1).
 		Render(m.execInput.Input.View())
-	body := []string{m.styles.label.Render("Exec"), inputBox}
+	body := []string{m.styles.label.Render("Post-apply command"), inputBox}
 	if m.execInput.Err != nil {
 		body = append(body, "", m.styles.statusError.MaxWidth(max(20, m.modalMaxWidth()-6)).Render(m.execInput.Err.Error()))
 	}
@@ -922,9 +922,9 @@ func (m *Model) commitProfileExecInput() tea.Cmd {
 		m.draftExec = selected.Exec
 	}
 	if selected.Exec == "" {
-		m.setStatusOK(fmt.Sprintf("Cleared exec for %q", selected.Name))
+		m.setStatusOK(fmt.Sprintf("Cleared post-apply command for %q", selected.Name))
 	} else {
-		m.setStatusOK(fmt.Sprintf("Updated exec for %q", selected.Name))
+		m.setStatusOK(fmt.Sprintf("Updated post-apply command for %q", selected.Name))
 	}
 	m.execInput = nil
 	m.mode = modeMain
@@ -1231,7 +1231,7 @@ func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.updateSaveMouse(msg)
 	case modeModePicker:
 		return m.updateModePickerMouse(msg)
-	case modeNumericInput, modeProfileExecInput, modeSaveConfirm, modeConfirm:
+	case modeNumericInput, modeProfileExecInput, modeSaveConfirm, modeConfirm, modeDeleteConfirm:
 		return m, nil
 	}
 
@@ -1337,6 +1337,21 @@ func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.inCanvas(msg.X, msg.Y, canvasRect, layout) {
 		m.layoutFocus = layoutFocusCanvas
 		localX, localY := m.canvasLocalPoint(msg.X, msg.Y, canvasRect)
+		rows := m.hiddenDisplayRows(layout.width-2, layout.height)
+		if localY >= 0 && localY < len(rows) {
+			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+				row := rows[localY]
+				m.selectedOutput = row.index
+				m.drag = nil
+				if row.action != "" && localX >= row.actionX+1 && localX < row.actionX+1+len(row.action) {
+					m.toggleSelectedOutput()
+				} else {
+					m.inspectorTab = inspectorTabDisplay
+					m.inspectorField = 0
+				}
+			}
+			return m, nil
+		}
 		if rect, ok := layout.rectAt(localX, localY); ok {
 			m.selectedOutput = rect.index
 			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
@@ -1414,16 +1429,28 @@ func (m Model) updateProfilesMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	listRect := m.profilesListRect()
+	automaticRect := m.profileAutomaticRect()
+	if automaticRect.inner(m.styles.inactivePane).contains(msg.X, msg.Y) {
+		return m.toggleProfileAutomatic()
+	}
+	for _, action := range []struct{ label, key string }{{"[Preview]", "enter"}, {"[Edit]", "l"}, {"[Delete]", "d"}} {
+		if len(m.profiles) > 0 && m.visibleActionAt(msg.X, msg.Y, action.label) {
+			if action.key == "enter" {
+				return m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyEnter})
+			}
+			return m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(action.key)})
+		}
+	}
 	if !listRect.contains(msg.X, msg.Y) {
+		if m.visibleActionAt(msg.X, msg.Y, "Post-apply command") || m.visibleActionAt(msg.X, msg.Y, "[Edit command]") {
+			return m, m.openProfileExecInput()
+		}
 		return m, nil
 	}
 
 	inner := listRect.inner(m.styles.activePane)
-	if msg.Y == inner.y {
-		return m.toggleProfileAutomatic()
-	}
 	row := msg.Y - inner.y - profileListHeaderRows + m.profileListScroll(inner.h)
-	if row < 0 || row >= len(m.profiles) || msg.Y < inner.y+profileListHeaderRows {
+	if row < 0 || row >= len(m.profiles) || msg.Y < inner.y+profileListHeaderRows || msg.Y >= inner.y+inner.h-profileListActionRows {
 		return m, nil
 	}
 	m.selectedProfile = row
@@ -1515,19 +1542,30 @@ func (m Model) layoutInspectorRect() (hitRect, bool) {
 	body := m.bodyRect()
 	if m.useCompactLayout(body.h) {
 		canvasHeight, inspectorHeight := m.compactLayoutHeights(body.h)
-		preferencesHeight, infoHeight := m.inspectorPaneHeights(inspectorHeight)
+		preferencesHeight, infoHeight := m.inspectorPaneHeights(inspectorHeight, body.w)
 		return hitRect{x: body.x, y: body.y + canvasHeight + infoHeight, w: body.w, h: preferencesHeight}, true
 	}
 
 	canvasWidth, inspectorWidth := m.layoutPaneWidths()
-	preferencesHeight, infoHeight := m.inspectorPaneHeights(body.h)
+	preferencesHeight, infoHeight := m.inspectorPaneHeights(body.h, inspectorWidth)
 	return hitRect{x: body.x + canvasWidth + paneGapWidth, y: body.y + infoHeight, w: inspectorWidth, h: preferencesHeight}, false
+}
+
+func (m Model) profileAutomaticRect() hitRect {
+	body := m.bodyRect()
+	body.h = profileAutomaticPaneHeight
+	if m.terminalWidth() >= 96 {
+		body.w, _ = m.sidePaneWidths(35)
+	}
+	return body
 }
 
 func (m Model) profilesListRect() hitRect {
 	body := m.bodyRect()
+	body.y += profileAutomaticPaneHeight
+	body.h -= profileAutomaticPaneHeight
 	if m.terminalWidth() < 96 {
-		listHeight := clampInt(len(m.profiles)+profileListHeaderRows+2, profileListHeaderRows+4, body.h/3)
+		listHeight := m.compactProfileListHeight(body.h)
 		return hitRect{x: body.x, y: body.y, w: body.w, h: listHeight}
 	}
 
@@ -1680,7 +1718,7 @@ func (m Model) tabAt(x, y int) (mainTab, bool) {
 		return tabLayout, false
 	}
 
-	labels := []string{"Layout", "Profiles", "Workspaces"}
+	labels := []string{"Layout", "Workspaces", "Profiles"}
 	cursorX := 1
 	for idx, label := range labels {
 		width := lipgloss.Width(fmt.Sprintf(" %d %s ", idx+1, label))
@@ -1735,7 +1773,14 @@ func (m Model) inspectorFieldAt(y int, inspectorRect hitRect, compact bool, wasF
 }
 
 func (m Model) canvasLayout(width, height int) canvasGeometry {
-	return canvasLayoutFor(m.editOutputs, width, height)
+	rows := len(m.hiddenDisplayRows(max(1, width-4), height))
+	layout := canvasLayoutFor(m.editOutputs, width, max(3, height-rows))
+	layout.height = max(3, height)
+	layout.offsetY += rows
+	for i := range layout.rects {
+		layout.rects[i].y += rows
+	}
+	return layout
 }
 
 // canvasLayoutFor scales a set of outputs into a terminal-cell rectangle. The

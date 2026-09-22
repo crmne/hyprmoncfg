@@ -38,6 +38,7 @@ func newRootCmd() *cobra.Command {
 	var lidPoll time.Duration
 	var forceProfile string
 	var quiet bool
+	var powerAwareRefresh bool
 	var monitorsConf string
 	var hyprConfig string
 
@@ -75,19 +76,20 @@ func newRootCmd() *cobra.Command {
 			watcherOwner := omarchywatch.New(logf)
 
 			svc := daemon.New(client, store, daemon.Config{
-				Debounce:        debounce,
-				WakeSettle:      wakeSettle,
-				PollInterval:    poll,
-				LidPollInterval: lidPoll,
-				ForcedProfile:   forceProfile,
-				MonitorsConf:    monitorsConf,
-				HyprConfig:      hyprConfig,
-				ConfigDir:       base,
-				ClaimWatcher:    watcherOwner.Start,
-				ReleaseWatcher:  watcherOwner.Release,
-				LaptopToggle:    omarchywatch.NewLaptopToggle(),
-				WakeConfig:      omarchywatch.NewWakeConfig(),
-				Logf:            logf,
+				PowerAwareRefresh: powerAwareRefresh,
+				Debounce:          debounce,
+				WakeSettle:        wakeSettle,
+				PollInterval:      poll,
+				LidPollInterval:   lidPoll,
+				ForcedProfile:     forceProfile,
+				MonitorsConf:      monitorsConf,
+				HyprConfig:        hyprConfig,
+				ConfigDir:         base,
+				ClaimWatcher:      watcherOwner.Start,
+				ReleaseWatcher:    watcherOwner.Release,
+				LaptopToggle:      omarchywatch.NewLaptopToggle(),
+				WakeConfig:        omarchywatch.NewWakeConfig(),
+				Logf:              logf,
 			})
 			socketPath, err := ipc.SocketPath()
 			if err != nil {
@@ -141,6 +143,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().StringVar(&monitorsConf, "monitors-conf", "", "Generated monitor config target to write and reload (overrides HYPRMONCFG_MONITORS_CONF)")
 	cmd.Flags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config for include verification (overrides HYPRLAND_CONFIG)")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "Suppress logs")
+	cmd.Flags().BoolVar(&powerAwareRefresh, "power-aware-refresh", false, "Adapt internal-panel refresh to AC/battery power (preserves resolution)")
 	cmd.AddCommand(newVersionCmd("hyprmoncfgd"))
 
 	return cmd

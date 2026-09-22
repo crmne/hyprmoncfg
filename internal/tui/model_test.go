@@ -417,12 +417,28 @@ func TestAutomaticProfileSelectionStillAllowsProfileBrowsing(t *testing.T) {
 	}
 
 	updated, cmd = got.updateProfileKeys(tea.KeyMsg{Type: tea.KeyEnter})
-	locked := updated.(Model)
-	if cmd != nil || locked.applying {
-		t.Fatalf("automatic selection must still reject activation, applying=%v cmd=%v", locked.applying, cmd != nil)
+	previewing := updated.(Model)
+	if cmd == nil || !previewing.applying {
+		t.Fatalf("explicit use must start a preview, applying=%v cmd=%v", previewing.applying, cmd != nil)
 	}
-	if !strings.Contains(locked.status, "Turn off automatic profile selection") {
-		t.Fatalf("expected an actionable activation message, got %q", locked.status)
+}
+
+func TestProfileDeletionRequiresExplicitConfirmation(t *testing.T) {
+	m := Model{styles: newStyles(), tab: tabProfiles, profiles: []profile.Profile{testProfile("Laptop", 1)}}
+	updated, cmd := m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	prompt := updated.(Model)
+	if cmd != nil || prompt.mode != modeDeleteConfirm || prompt.deleteProfileName != "Laptop" {
+		t.Fatal("delete must open confirmation without touching storage")
+	}
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyEnter}, {Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune{'n'}}} {
+		updated, cmd = prompt.Update(key)
+		if cmd != nil || updated.(Model).mode != modeMain || updated.(Model).deleteProfileName != "" {
+			t.Fatal("cancel must clear the pending deletion")
+		}
+	}
+	updated, cmd = prompt.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil || updated.(Model).mode != modeMain {
+		t.Fatal("explicit yes must schedule deletion")
 	}
 }
 
@@ -955,7 +971,7 @@ func TestModePickerMouseSelectsVisibleMode(t *testing.T) {
 	}
 	m := base
 
-	x, y := findVisiblePosition(t, m.View(), "2560x1440@143.97Hz")
+	x, y := findVisiblePosition(t, m.View(), "2560x1440@144Hz")
 	updated, cmd := m.updateMouse(mousePressAt(x, y))
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
@@ -996,10 +1012,10 @@ func TestModePickerRendersOptionsWithoutBlankRows(t *testing.T) {
 	lines := strings.Split(ansi.Strip(m.picker.List.View()), "\n")
 	first, second := -1, -1
 	for i, line := range lines {
-		if strings.Contains(line, "3840x2160@143.99Hz") {
+		if strings.Contains(line, "3840x2160@144Hz") {
 			first = i
 		}
-		if strings.Contains(line, "2560x1440@143.97Hz") {
+		if strings.Contains(line, "2560x1440@144Hz") {
 			second = i
 		}
 	}
@@ -1121,14 +1137,14 @@ func TestCardLinesShowMakeModelAndPosition(t *testing.T) {
 	}
 
 	lines := output.cardLines(5, "", "")
-	if len(lines) != 5 {
-		t.Fatalf("expected 5 card lines, got %d", len(lines))
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 card lines, got %d", len(lines))
 	}
 	if lines[1].text != "Microstep MPG321UR-QD" {
 		t.Fatalf("expected make+model on card, got %q", lines[1].text)
 	}
-	if lines[4].text != "pos 0,0" {
-		t.Fatalf("expected position line on card, got %q", lines[4].text)
+	if lines[3].text != "Scale 1.33x  Position 0,0" {
+		t.Fatalf("expected scale and position on card, got %q", lines[3].text)
 	}
 }
 
@@ -2178,7 +2194,7 @@ func TestRenderInspectorPaneCompactsFieldsOnShortHeight(t *testing.T) {
 	}
 
 	view := m.renderInspectorPane(48, 30, false)
-	for _, want := range []string{"Mode", "3840x2160@143.99Hz", "Scale", "VRR", "Rotation", "Position X", "Position Y"} {
+	for _, want := range []string{"Mode", "3840x2160@144Hz", "Scale", "VRR", "Rotation", "Position X", "Position Y"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected inspector to include %q, got:\n%s", want, view)
 		}
@@ -2195,7 +2211,7 @@ func TestInspectorModeOmitsPickerPosition(t *testing.T) {
 		Refresh:   143.99,
 	}
 	got := m.layoutFieldValue(output, 1)
-	if got != "3840x2160@143.99Hz" {
+	if got != "3840x2160@144Hz" {
 		t.Fatalf("expected clean mode value, got %q", got)
 	}
 }
@@ -2654,7 +2670,7 @@ func TestOpeningWorkspaceTabRepairsAnEmptyManualDraft(t *testing.T) {
 		},
 	}
 
-	updated, _ := m.updateMainKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	updated, _ := m.updateMainKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	got := updated.(Model)
 
 	if got.tab != tabWorkspaces || len(got.workspaceEdit.Rules) != 4 {

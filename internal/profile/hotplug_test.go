@@ -19,10 +19,10 @@ func TestExtendConnectedPlacesDisplaysAndPlansWorkspaces(t *testing.T) {
 	got := ExtendConnected(saved, monitors)
 	first, _ := got.OutputByKey(projector.HardwareKey())
 	second, _ := got.OutputByKey(other.HardwareKey())
-	if !first.Enabled || first.X != 1080 || first.Y != 100 || first.Width != 1920 || first.Scale != 1 {
+	if !first.Enabled || first.X != 1080 || first.Y != 520 || first.Width != 1920 || first.Scale != 1 {
 		t.Fatalf("unexpected projector: %+v", first)
 	}
-	if !second.Enabled || second.X != 3000 || second.Y != 100 {
+	if !second.Enabled || second.X != 3000 || second.Y != 700 {
 		t.Fatalf("unexpected second display: %+v", second)
 	}
 	rules := ResolveWorkspaceRules(got, monitors)
@@ -68,5 +68,34 @@ func TestExtendConnectedPreservesWorkspaceStrategy(t *testing.T) {
 	rules := ResolveWorkspaceRules(got, monitors)
 	if len(rules) != 6 || rules[1].OutputName != "HDMI-A-1" || got.Workspaces.Strategy != WorkspaceStrategyInterleave {
 		t.Fatalf("workspace preferences lost: %+v", got.Workspaces)
+	}
+}
+
+func TestExtendConnectedSelectsAdvertisedPairAndConservativeSignal(t *testing.T) {
+	laptop := hypr.Monitor{Name: "eDP-1", Width: 2880, Height: 1800, Scale: 1.5, X: -1920, Y: -100}
+	external := hypr.Monitor{Name: "DP-1", Width: 1920, Height: 1080, Scale: 1, VRR: 1,
+		ColorManagementPreset: "hdr", AvailableModes: []string{
+			"1920x1080@240Hz", "invalid", "3840x2160@60Hz", "3840x2160@120Hz", "3840x2160@30Hz",
+		}}
+	saved := FromMonitors("laptop", []hypr.Monitor{laptop})
+	got := ExtendConnected(saved, []hypr.Monitor{laptop, external})
+	out, _ := got.OutputByKey(external.HardwareKey())
+	if out.Width != 3840 || out.Height != 2160 || out.Refresh != 120 || out.X != 0 || out.Y != -580 {
+		t.Fatalf("unexpected mode or logical centering: %+v", out)
+	}
+	if out.VRR != 0 || out.Bitdepth != 8 || out.CM != "srgb" || out.MirrorOf != "" || out.Transform != 0 {
+		t.Fatalf("unsafe new-output defaults: %+v", out)
+	}
+	surviving, _ := got.OutputByKey(laptop.HardwareKey())
+	if !reflect.DeepEqual(saved.Outputs[0], surviving) {
+		t.Fatal("changed the surviving display")
+	}
+}
+
+func TestExtendConnectedWithoutSurvivingDisplayStartsAtOrigin(t *testing.T) {
+	p := New("draft", nil)
+	got := ExtendConnected(p, []hypr.Monitor{{Name: "DP-1", Disabled: true, AvailableModes: []string{"1920x1080@60Hz"}}})
+	if len(got.Outputs) != 1 || got.Outputs[0].X != 0 || got.Outputs[0].Y != 0 {
+		t.Fatalf("unexpected initial layout: %+v", got.Outputs)
 	}
 }

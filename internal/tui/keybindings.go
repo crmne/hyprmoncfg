@@ -39,6 +39,7 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 					{"Alt+arrows", "Snap beside the nearest monitor"},
 					{"0", "Move to 0,0"},
 					{"[ ]", "Select the previous or next monitor"},
+					{"Space", "Enable or disable the selected monitor in the draft"},
 				},
 			},
 			keyGroup{
@@ -54,9 +55,9 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 			title: "Selected profile",
 			bindings: []keyBinding{
 				{"↑ ↓, click", "Browse profiles and preview their saved setup"},
-				{"Enter, a", "Apply it (manual profile mode only)"},
+				{"Enter, a", "Preview this profile"},
 				{"l", "Load it into the layout editor"},
-				{"e", "Edit its exec command"},
+				{"e", "Edit post-apply command"},
 				{"d", "Delete it"},
 			},
 		})

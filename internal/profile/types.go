@@ -65,6 +65,7 @@ type WorkspaceSettings struct {
 	Strategy      WorkspaceStrategy `json:"strategy,omitempty"`
 	MaxWorkspaces int               `json:"max_workspaces,omitempty"`
 	GroupSize     int               `json:"group_size,omitempty"`
+	PersistAll    bool              `json:"persist_all,omitempty"`
 	MonitorOrder  []string          `json:"monitor_order,omitempty"`
 	Rules         []WorkspaceRule   `json:"rules,omitempty"`
 }

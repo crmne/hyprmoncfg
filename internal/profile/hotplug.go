@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"math"
 	"sort"
 
 	"github.com/crmne/hyprmoncfg/internal/hypr"
@@ -20,7 +21,7 @@ func ExtendConnected(p Profile, monitors []hypr.Monitor) Profile {
 		return p
 	}
 	resolver := NewMonitorResolver(monitors)
-	right, top, found := 0, 0, false
+	right, top, adjacentHeight, found := 0, 0, 0, false
 	connected := make([]OutputConfig, 0, len(p.Outputs))
 	for _, out := range p.Outputs {
 		live, ok := resolver.ResolveOutput(out)
@@ -35,9 +36,9 @@ func ExtendConnected(p Profile, monitors []hypr.Monitor) Profile {
 		if m.Width <= 0 || m.Height <= 0 {
 			m.Width, m.Height = live.Width, live.Height
 		}
-		w, _ := m.LogicalSize()
+		w, h := m.LogicalSize()
 		if !found || out.X+w > right {
-			right, top, found = out.X+w, out.Y, true
+			right, top, adjacentHeight, found = out.X+w, out.Y, h, true
 		}
 	}
 	p.Outputs = connected
@@ -56,13 +57,13 @@ func ExtendConnected(p Profile, monitors []hypr.Monitor) Profile {
 	})
 	counts := hypr.MonitorMatchCounts(monitors)
 	for _, m := range omitted {
-		// Disabled connectors can report zero dimensions. The first advertised
-		// mode supplies a concrete size for positioning subsequent displays.
-		if m.Width <= 0 || m.Height <= 0 {
-			for _, mode := range m.AvailableModes {
-				if w, h, hz, ok := hypr.ParseMode(mode); ok && w > 0 && h > 0 {
+		// Choose a supported pair, not independent resolution/refresh maxima.
+		bestArea, bestRefresh := 0, 0.0
+		for _, mode := range m.AvailableModes {
+			if w, h, hz, ok := hypr.ParseMode(mode); ok && w > 0 && h > 0 && hz > 0 {
+				if area := w * h; area > bestArea || (area == bestArea && hz > bestRefresh) {
 					m.Width, m.Height, m.RefreshRate = w, h, hz
-					break
+					bestArea, bestRefresh = area, hz
 				}
 			}
 		}
@@ -71,12 +72,17 @@ func ExtendConnected(p Profile, monitors []hypr.Monitor) Profile {
 		}
 		m.Disabled, m.MirrorOf, m.Transform = false, "", 0
 		m.X, m.Y = right, top
+		w, h := m.LogicalSize()
+		if found {
+			m.Y += int(math.Round(float64(adjacentHeight-h) / 2))
+		}
 		out := FromMonitors("draft", []hypr.Monitor{m}).Outputs[0]
+		out.VRR, out.Bitdepth, out.CM = 0, 8, "srgb"
 		out.Key = hypr.MonitorOutputKey(m, counts)
 		p.Outputs = append(p.Outputs, out)
 		p.Workspaces.MonitorOrder = append(p.Workspaces.MonitorOrder, out.Key)
-		w, _ := m.LogicalSize()
 		right += w
+		top, adjacentHeight, found = m.Y, h, true
 	}
 	if !p.Workspaces.Enabled {
 		p.Workspaces.Enabled = true

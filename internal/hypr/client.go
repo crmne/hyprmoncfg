@@ -51,10 +51,13 @@ func NewClient() (*Client, error) {
 }
 
 func (c *Client) Monitors(ctx context.Context) ([]Monitor, error) {
+	ctx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
+	defer cancel()
 	cmd, err := c.commandContext(ctx, "-j", "monitors", "all")
 	if err != nil {
 		return nil, err
 	}
+	cmd.WaitDelay = 100 * time.Millisecond
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to query monitors: %w", err)
@@ -121,10 +124,13 @@ func normalizeMirrorTargets(monitors []Monitor) {
 }
 
 func (c *Client) Workspaces(ctx context.Context) ([]WorkspaceState, error) {
+	ctx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
+	defer cancel()
 	cmd, err := c.commandContext(ctx, "-j", "workspaces")
 	if err != nil {
 		return nil, err
 	}
+	cmd.WaitDelay = 100 * time.Millisecond
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to query workspaces: %w", err)
@@ -137,10 +143,13 @@ func (c *Client) Workspaces(ctx context.Context) ([]WorkspaceState, error) {
 }
 
 func (c *Client) WorkspaceRules(ctx context.Context) ([]WorkspaceRule, error) {
+	ctx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
+	defer cancel()
 	cmd, err := c.commandContext(ctx, "-j", "workspacerules")
 	if err != nil {
 		return nil, err
 	}
+	cmd.WaitDelay = 100 * time.Millisecond
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to query workspace rules: %w", err)

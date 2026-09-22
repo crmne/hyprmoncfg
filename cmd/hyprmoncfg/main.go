@@ -136,6 +136,11 @@ func newStatusCmd(configDir *string) *cobra.Command {
 				}
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Displays: %d enabled, %d connected\n", enabledMonitors, len(document.Monitors))
+			for _, monitor := range document.Monitors {
+				if monitor.Enabled && (monitor.Width <= 0 || monitor.Height <= 0) {
+					fmt.Fprintf(cmd.OutOrStdout(), "Display %s: no usable mode (%dx%d)\n", monitor.Name, monitor.Width, monitor.Height)
+				}
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Saved profiles: %d\n", len(document.Profiles))
 			return nil
 		},
@@ -361,7 +366,7 @@ func newApplyCmd(configDir *string, monitorsConf *string, hyprConfig *string) *c
 			return err
 		},
 	}
-	cmd.Flags().IntVar(&confirmTimeout, "confirm-timeout", 10, "Seconds to confirm configuration before reverting; set 0 to disable")
+	cmd.Flags().IntVar(&confirmTimeout, "confirm-timeout", int(apply.DefaultPreviewTimeout/time.Second), "Seconds to confirm configuration before reverting; set 0 to disable")
 	return cmd
 }
 
@@ -740,7 +745,7 @@ func runRemoteApply(cmd *cobra.Command, client *ipc.Client, target profile.Profi
 	preview := func() (ipc.Transaction, error) {
 		timeout := confirmTimeout
 		if timeout <= 0 {
-			timeout = 10
+			timeout = int(apply.DefaultPreviewTimeout / time.Second)
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
 		defer cancel()

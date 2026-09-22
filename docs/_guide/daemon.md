@@ -48,12 +48,42 @@ When the daemon detects a monitor or lid-state change, it runs through these ste
 1. Read the current monitor set from Hyprland
 2. Score every saved profile against the connected hardware (see [Profile matching](#profile-matching) below for how scoring works)
 3. Pick the highest-scoring profile
-4. If the lid is closed and an external monitor is connected, force internal laptop-panel outputs off for this apply
+4. If the lid is closed and an external monitor is already usable and will remain enabled, force internal laptop-panel outputs off for this apply
 5. Write the active generated monitor file atomically (temp file + rename, so a crash mid-write can't corrupt your config)
 6. Tell Hyprland to reload
 7. Re-read monitor state and verify the result matches what was intended
 
 If the winning profile is the same one that's already applied, the daemon skips re-applying it. You won't see unnecessary reloads.
+
+An output absent from a non-strict profile is added to its right edge, vertically
+centered against the adjacent independent display using logical dimensions. For
+simultaneous arrivals, each new display becomes the next neighbor. The backend
+chooses the greatest advertised pixel area, then the highest refresh at that
+resolution, with VRR off and 8-bit sRGB. Existing output settings and an enabled
+workspace plan are preserved; the saved profile is not overwritten. Mode fallback,
+physical-size scale recommendations, and explicit failed-wake/cold-start rescue
+remain separate follow-up work.
+
+Failed automatic applies retry independently of monitor-change events, starting
+after 2 seconds with capped exponential backoff up to 30 seconds. Successful
+application stops retries. Preview ownership defers retries; suspend, intentional
+display sleep and unmanaged mode stop them. Resume or a later wake/topology event
+restarts reconciliation. Verification reports all failed outputs, not just the
+first. Monitor/workspace discovery queries have a 750ms timeout. This does not
+prove physical projector readiness or recover an all-DPMS-off failed wake which
+cannot yet be distinguished from deliberate sleep.
+
+### Optional laptop power-aware refresh
+
+Start the daemon with `--power-aware-refresh` to adapt enabled independent
+internal panels on AC/battery changes, detected at the normal polling interval.
+It preserves resolution, scale, placement and calibration. On AC it chooses the
+highest advertised refresh at that resolution; on battery it chooses the highest
+advertised rate at or below 60Hz, or the lowest advertised rate if none qualifies.
+Missing modes or unknown power telemetry leave the saved mode unchanged.
+External displays, saved profile files and OS power profiles are not changed.
+Manual profile overrides and interactive previews take precedence. The option
+is off by default; frontend preference controls are not implemented yet.
 
 When every enabled display is DPMS-off, the daemon treats monitor add/remove events as part of display sleep rather than physical hotplug. It keeps the current profile in place, waits for the displays to wake, and then waits for two seconds without another monitor event before matching once. A real dock or undock that happened while the machine slept is still applied after the monitor set stabilizes.
 
@@ -81,7 +111,7 @@ Highest score wins. Ties break alphabetically by profile name. A profile that me
 
 On laptops, the daemon also reads lid state. UPower is optional, but recommended: with UPower available, lid changes arrive as D-Bus events and the daemon can react immediately. Without UPower, the daemon falls back to polling `/proc/acpi/button/lid/*/state` at `--lid-poll-interval`, which defaults to `1s` and is not available on every system. If neither source exists, lid-aware switching is disabled and monitor hotplug still works.
 
-Lid state is not a separate profile type. Save the profile for the monitor setup you actually have attached. When the lid is closed and an external monitor is connected, hyprmoncfg treats internal laptop-panel outputs like `eDP-1`, `LVDS-1`, or `DSI-1` as forced off for that apply. Saved profiles are not rewritten. If workspace rules target the forced-off internal panel, those workspaces are moved to the first enabled external output in the selected profile.
+Lid state is not a separate profile type. Save the profile for the monitor setup you actually have attached. When the lid is closed and an external output has an awake, nonzero mode and remains enabled in the target profile, hyprmoncfg treats internal laptop-panel outputs like `eDP-1`, `LVDS-1`, or `DSI-1` as forced off for that apply. Modeless, disabled, sleeping, and synthetic fallback outputs do not qualify. Saved profiles are not rewritten. If workspace rules target the forced-off internal panel, those workspaces are moved to the first enabled external output in the selected profile.
 
 {% include alert.html type="warning" title="Every Profile Is A Candidate" content="The daemon does not know which profiles are \"real\" and which were temporary experiments. It scores every JSON file in your profiles directory. An old throwaway profile with a high enough score will win over the one you actually want." %}
 

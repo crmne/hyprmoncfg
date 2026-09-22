@@ -168,7 +168,7 @@ func TestLayoutCanvasNamesDisplaysItCannotDraw(t *testing.T) {
 	m := paneTestModel(t, tabLayout, []hypr.Monitor{paneTestDesk, off, mirror}, nil)
 	view := ansi.Strip(m.renderMain())
 
-	requireContains(t, view, "Off: eDP-1", "Mirrored: DP-2 → DP-1")
+	requireContains(t, view, "eDP-1  Off", "[Enable]", "DP-2  Mirrors DP-1")
 }
 
 func TestWorkspacePreviewDrawsPlanOnMonitorLayout(t *testing.T) {
@@ -295,7 +295,7 @@ func TestEveryTabUsesTheSameAdaptiveMonitorCardVocabulary(t *testing.T) {
 	}
 
 	requireContains(t, strings.Join(expected, "\n"),
-		"DP-1", "Microstep MPG321UR-QD", "3840x2160@143.99Hz", "pos 10,20", "1, 2, 3, 4")
+		"DP-1", "Microstep MPG321UR-QD", "3840x2160@144Hz", "Position 10,20", "1, 2, 3, 4")
 
 	compact := m.monitorCardLines(output, []string{"1", "2", "3", "4"}, monitorCardLayout,
 		3, 40, colors, "", m.styles.palette.warning)

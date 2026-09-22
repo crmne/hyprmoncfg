@@ -244,7 +244,7 @@ func (s *Service) Preview(owner string, params ipc.PreviewParams) (ipc.Transacti
 	}
 	timeout := time.Duration(params.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
-		timeout = 10 * time.Second
+		timeout = apply.DefaultPreviewTimeout
 	}
 	if timeout > 24*time.Hour {
 		timeout = 24 * time.Hour

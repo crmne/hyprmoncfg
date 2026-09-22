@@ -23,7 +23,7 @@ func ApplyClosedLidPolicy(p Profile, monitors []hypr.Monitor) (Profile, ClosedLi
 	adjusted := cloneProfile(p)
 	adjusted.Normalize()
 
-	if !hasExternalMonitor(monitors) {
+	if !hasUsableExternalOutput(adjusted, monitors) {
 		return adjusted, ClosedLidAdjustment{}
 	}
 
@@ -106,9 +106,14 @@ func cloneProfile(p Profile) Profile {
 	return p
 }
 
-func hasExternalMonitor(monitors []hypr.Monitor) bool {
-	for _, monitor := range monitors {
-		if !monitor.IsInternal() {
+// Presence alone is insufficient: docks can enumerate an output before it has
+// a usable signal. Never force the laptop off on the strength of that alone.
+func hasUsableExternalOutput(p Profile, monitors []hypr.Monitor) bool {
+	resolver := NewMonitorResolver(monitors)
+	for _, output := range p.Outputs {
+		monitor, ok := resolver.ResolveOutput(output)
+		if ok && output.Enabled && !monitor.IsInternal() && monitor.Name != "FALLBACK" &&
+			!monitor.Disabled && monitor.DPMSStatus && monitor.Width > 0 && monitor.Height > 0 {
 			return true
 		}
 	}

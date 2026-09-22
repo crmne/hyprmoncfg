@@ -6,16 +6,39 @@ nav_order: 2
 
 ## Layout editor
 
+At narrow widths, footer Apply/Save/Keys actions take priority over project links
+and build information. The Workspaces planner includes Persistence: First per
+display (default) or All assigned. Manual plans display Custom (per rule) and
+preserve individual flags.
+
 When you launch `hyprmoncfg`, you land on the layout tab. This is where you arrange your monitors and tune their settings. The screen is split into two panes:
 
 - **Left**: a canvas showing your monitors as draggable rectangles, positioned the way Hyprland currently sees them
 - **Right**: monitor information above switchable **Display** and **Color** controls -- resolution, scale, position, transform, VRR, color management, and more
 
+Display cards consistently show connector, model with whole-inch size (`32"`),
+`3840x2160@144Hz`, `Scale 1.33x  Position 0,0`, and workspace IDs. There are no
+arbitrary display numbers or logical desktop dimensions. Small cards prioritize
+identity and workspaces. Formatting never rounds the stored mode or scale.
+
+The hardware summary shows connector, model, and maximum advertised
+resolution, panel dimensions, type, and serial, all shown directly without a
+More details action. The TUI currently has no standalone on-screen Identify overlay; this
+remains a panel capability, not a requirement to install Omarchy for the TUI.
+Panel size shows a whole-inch diagonal and exact reported dimensions, such as
+`32" (710x400mm)`, separately from the inspector's model name.
+
 Drag monitors on the canvas to reposition them. The information and controls update in real time. When you need pixel-perfect placement, use the `Position X` and `Position Y` fields in **Display** instead of dragging.
 
 While the TUI is open, it also refreshes live monitor state in the background. Plugging or unplugging a monitor, docking, undocking, or changing lid state reloads the editor so the canvas matches the current hardware.
 
-The canvas only draws displays that are on and not mirroring another one. Anything it leaves out is named along the top edge, so a monitor you turned off or set to mirror never disappears without a trace.
+The canvas only draws displays that are on and not mirroring another one. Off
+and mirrored displays have separate bracketed rows above the geometry, showing
+connector, state, and model. Click a row to inspect it; click **Enable** to turn an
+off display on in the draft. Keyboard users can select it with `[` / `]` and press
+`Space`. This does not apply the draft. Missing hardware says **Not connected**
+without an Enable action. In crowded layouts, keyboard selection reveals hidden
+rows without covering the active display cards.
 
 ![Layout editor]({{ '/assets/images/screenshots/layout-dark.png' | relative_url }})
 {: .screenshot }
@@ -24,7 +47,7 @@ The canvas only draws displays that are on and not mirroring another one. Anythi
 
 | Key | Action |
 |-----|--------|
-| `1` `2` `3` | Switch tabs (layout, profiles, workspaces) |
+| `1` `2` `3` | Switch tabs (layout, workspaces, profiles) |
 | `a` | Apply current draft or selected profile |
 | `s` | Save current draft as a named profile |
 | `r` | Reset from live Hyprland state |
@@ -72,7 +95,14 @@ Press `s` from the layout tab. You'll see a text input and the list of existing 
 
 ## Profiles
 
-The second tab lists every saved profile and how well it fits the displays that are plugged in right now.
+The third tab lists every saved profile and how well it fits the displays that are plugged in right now.
+
+**Automatic profile selection** has its own compact box above the left-hand
+profile list, matching its width. The details column starts at the top alongside it.
+Click its On/Off control to change automatic matching. The **Saved Profiles** box
+contains only the table and its actions: Preview, Edit, and Delete stay pinned
+below the scrolling list and act on the highlighted row. Profile details remain
+alongside the list, or below it in narrow terminals.
 
 - **Match** is the profile's score against the connected hardware, the same score the daemon uses to pick a profile automatically. A dash means the profile has no display in common with what is connected
 - **active** marks the profile your screens are already showing
@@ -86,15 +116,24 @@ Selecting a profile fills the right side: its details on top, its monitor arrang
 | Key | Action |
 |-----|--------|
 | `↑` `↓` | Select a profile |
-| `Enter` | Load the profile into the layout editor |
-| `a` | Apply the profile |
-| `e` | Edit the profile's exec command |
-| `d` | Delete the profile |
+| `Enter`, `a` | Preview the profile, even with automatic selection on |
+| `l` | Load the profile into the layout editor |
+| `e` | Edit the profile's post-apply command |
+| `d` | Ask to delete the profile; `y` confirms, Enter or Esc cancels |
 | `s` | Save the current draft |
+
+**Post-apply command** is the final profile detail. Click its
+**Edit command** button or its heading to edit it; `e` provides the same operation. Selection
+uses highlighting without an extra arrow. The profile action context menu remains
+a panel-only affordance for now; the TUI has visible **Preview**, **Edit**,
+and **Delete** buttons acting on the highlighted profile, with keyboard shortcuts
+listed in the footer and help.
+Selection alone does not apply it. The Status column distinguishes the active or
+best match from the row currently selected for inspection.
 
 ## Workspace planner
 
-The third tab lets you distribute workspaces across monitors. Pick one of three strategies:
+The second tab lets you distribute workspaces across monitors. Pick one of three strategies:
 
 | Strategy | What it does | When to use it |
 |----------|-------------|----------------|
@@ -124,4 +163,8 @@ The workspace plan is stored inside each profile. When the daemon applies a prof
 
 Internal laptop panels are marked as internal displays in the layout view. The TUI also shows the current lid state when it is available.
 
-Profiles are still profiles for the attached monitor setup, not separate open-lid and closed-lid variants. When the lid is closed and an external monitor is connected, applying a profile forces internal laptop-panel outputs off for that apply and moves workspace rules away from the forced-off panel.
+Profiles are still profiles for the attached monitor setup, not separate open-lid and closed-lid variants. The closed-lid policy only forces internal laptop panels off when a real external output already has a usable, awake mode and the target profile keeps it enabled. A modeless dock output, sleeping display, or synthetic fallback does not qualify. Workspace rules move away from a forced-off panel.
+
+Interactive previews default to 30 seconds after verification. Confirming a saved
+profile pauses automatic selection for the current display setup. There is no
+need to turn automatic selection off before starting a preview.

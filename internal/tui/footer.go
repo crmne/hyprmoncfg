@@ -49,9 +49,9 @@ func (m Model) footerHelpText() string {
 		return "`drag/arrows` move | `[ ]` monitors | `Tab` pane | `Enter` edit | `a` apply | `s` save | `?` keys"
 	case tabProfiles:
 		if m.profileAutomatic() {
-			return "`↑↓` browse | `Space` manual mode | `l` edit | `e` exec | `d` delete | `?` keys"
+			return "`↑↓` browse | `Enter` preview | `l` edit | `e` post-apply command | `d` delete | `?` keys"
 		}
-		return "`↑↓` browse | `Enter` apply | `Space` automatic | `l` edit | `e` exec | `d` delete | `?` keys"
+		return "`↑↓` browse | `Enter` preview | `l` edit | `e` post-apply command | `d` delete | `?` keys"
 	case tabWorkspaces:
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
 			return "`↑↓` select | `←→` assign | `Enter` type count | `a` apply | `s` save | `?` keys"
@@ -184,6 +184,19 @@ func (m Model) footerLayout() footerLayout {
 
 	// Commands live on the left; project links live on the right.
 	helpClean := strings.ReplaceAll(help, "`", "")
+	if lipgloss.Width(helpClean)+lipgloss.Width(info)+1 > width {
+		switch m.tab {
+		case tabProfiles:
+			helpClean = "Enter preview | l edit | d delete | ? keys"
+		default:
+			helpClean = "a apply | s save | ? keys"
+		}
+		// Essential actions take precedence over project links and version.
+		for len(items) > 0 && lipgloss.Width(helpClean)+lipgloss.Width(joinFooterItems(items))+1 > width {
+			items = items[1:]
+		}
+		info = joinFooterItems(items)
+	}
 	maxHelp := max(0, width-lipgloss.Width(info)-1)
 	if lipgloss.Width(helpClean) > maxHelp {
 		helpClean = fitString(helpClean, maxHelp)
