@@ -411,10 +411,13 @@ func (s *Service) Disconnect(owner string) {
 // client disconnects can be a harmless bar rebuild, but once the daemon itself
 // is going away there will be neither a replacement panel nor a safety timer.
 func (s *Service) Shutdown() error {
-	if err := s.revertPending(""); err != nil {
+	reverted, err := s.revertPending("")
+	if err != nil {
 		return fmt.Errorf("restore unconfirmed profile during shutdown: %w", err)
 	}
-	s.cfg.Logf("restored unconfirmed profile during shutdown")
+	if reverted {
+		s.cfg.Logf("restored unconfirmed profile during shutdown")
+	}
 	return nil
 }
 
@@ -475,16 +478,16 @@ func (s *Service) revertOwned(owner string, id string) error {
 
 // The safety timer and shutdown belong to the daemon, not to a connection
 // which may have been replaced since the preview started.
-func (s *Service) revertPending(id string) error {
+func (s *Service) revertPending(id string) (bool, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	s.pendingMu.Lock()
 	pending := s.pending
 	s.pendingMu.Unlock()
 	if pending == nil || (id != "" && pending.id != id) {
-		return nil
+		return false, nil
 	}
-	return s.restorePending(pending)
+	return true, s.restorePending(pending)
 }
 
 func (s *Service) restorePending(pending *pendingTransaction) error {
@@ -499,9 +502,10 @@ func (s *Service) restorePending(pending *pendingTransaction) error {
 }
 
 func (s *Service) expirePreview(id string) {
-	if err := s.revertPending(id); err != nil {
+	reverted, err := s.revertPending(id)
+	if err != nil {
 		s.cfg.Logf("auto-revert IPC preview: %v", err)
-	} else if err == nil {
+	} else if reverted {
 		s.cfg.Logf("profile preview expired and was reverted")
 	}
 }
