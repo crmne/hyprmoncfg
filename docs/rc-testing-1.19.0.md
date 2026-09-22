@@ -1,6 +1,6 @@
 # 1.19.0 release-candidate test rubric
 
-Test backend `v1.19.0-rc.1` with panel `v2.4.0-rc.1`. Back up
+Test backend `v1.19.0-rc.2` with panel `v2.4.0-rc.1`. Back up
 `~/.config/hyprmoncfg` first. Keep a TTY or another usable display available for
 physical display tests. Do not test a presentation-critical setup for the first
 time on stage.
