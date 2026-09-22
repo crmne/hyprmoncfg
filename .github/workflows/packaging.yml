@@ -61,7 +61,14 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version="${INPUT_VERSION:-$(git describe --tags --abbrev=0 --match 'v[0-9]*')}"
+          # Source-package recipes are stable-channel artifacts. A prerelease
+          # tag may be newer than the latest stable tag, but must not become
+          # the implicit input for main/PR validation.
+          latest_stable="$(git tag --merged HEAD --list 'v[0-9]*' --sort=-version:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | head -n 1)"
+          version="${INPUT_VERSION:-$latest_stable}"
+          test -n "$version"
           ruby scripts/package_sources.rb prepare "$version" --output dist/packaging
           ruby scripts/package_sources.rb artifacts dist/packaging
       - name: Check AUR metadata with makepkg
