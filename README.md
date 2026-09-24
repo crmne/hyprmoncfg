@@ -48,6 +48,7 @@ both themes, workspace planning, and profiles.
 - **Spatial layout editor** -- drag monitors on a canvas and tune mode, scale, VRR, mirror, transform, and exact position
 - **Visible off displays** -- select a separate Off row and enable it in the draft; preview before changing the live layout
 - **Named profiles** -- save setups like `desk`, `conference`, or `home-office`
+- **Explicit layout reuse through editor IPC** -- map a saved layout onto currently connected displays, review the draft, then preview and save it as a new setup
 - **Hardware-identity matching** -- profiles follow monitor make, model, and serial instead of unstable connector names
 - **Hotplug and lid-aware daemon** -- apply the right profile automatically when monitors change or the laptop lid closes
 - **Workspace planner** -- assign workspaces across monitors with sequential, interleave, or manual strategies
@@ -160,7 +161,7 @@ systemctl --user enable --now hyprmoncfgd
 
 The daemon scores profiles in `~/.config/hyprmoncfg/profiles/` against the connected displays. A partial match can provide the base for a temporary extended layout without changing the saved profile. Unfamiliar displays are added unless the profile explicitly sets `disable_unknown_outputs: true`; deliberately disabled known displays remain off. Missing saved displays are allowed for undocking. Delete throwaway profiles before relying on automatic switching.
 
-When a dock is still connecting, monitor and workspace reads have short deadlines and desktop clients can show a connecting state while retrying. Unique hardware identities skip DRM connector probing; ambiguous identities use one shared probe with bounded waiting. See [daemon behavior](https://hyprmoncfg.dev/daemon/) and the [editor IPC reference](https://hyprmoncfg.dev/ipc/) for the matching and snapshot contracts.
+When a dock is still connecting, monitor and workspace reads have short deadlines and desktop clients can show a connecting state while retrying. Unique hardware identities skip DRM connector probing; ambiguous identities use one shared probe with bounded waiting. See [daemon behavior](https://hyprmoncfg.dev/daemon/) and the [editor IPC reference](https://hyprmoncfg.dev/ipc/) for the matching and draft-reuse contracts.
 
 Newly connected displays extend the matching layout to the right, touching its rightmost display. Automatically extended layouts appear as unsaved drafts in the editor and panel; save one to name and reuse it. Workspace planning follows the profile's settings, or defaults to sequential groups of three across nine workspaces when planning was disabled. In the TUI, press `U` to toggle disabling displays outside the profile, then save. The corresponding profile JSON setting is `disable_unknown_outputs` (default `false`). Displays explicitly saved as disabled stay disabled.
 

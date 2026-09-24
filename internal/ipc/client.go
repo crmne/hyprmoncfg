@@ -78,6 +78,12 @@ func (c *Client) EditProfile(ctx context.Context, params EditParams) (appstatus.
 	return result, err
 }
 
+func (c *Client) ReuseProfile(ctx context.Context, params ReuseParams) (appstatus.EditorDraft, error) {
+	var result appstatus.EditorDraft
+	err := c.call(ctx, MethodReuse, params, &result)
+	return result, err
+}
+
 func (c *Client) Preview(ctx context.Context, params PreviewParams) (Transaction, error) {
 	var result Transaction
 	if params.Profile != nil {

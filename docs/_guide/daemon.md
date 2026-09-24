@@ -122,7 +122,7 @@ For automatic switching, a profile must enable at least one connected display an
 
 Among eligible profiles, the highest score wins. Ties break alphabetically by profile name. A profile that mentions a monitor which is not plugged in pays for it either way, so the profile that describes exactly the connected displays beats a larger profile that happens to include them. The profiles tab shows every score, along with this breakdown for the selected profile.
 
-Another physical unit of the same model may have a different serial number and therefore a different identity. Extension treats it as a new display without copying another unit's calibration.
+Another physical unit of the same model may have a different serial number and therefore a different identity. Extension treats it as a new display without copying another unit's calibration. Desktop integrations can use [`reuse_profile`](../ipc/#reuse-a-saved-layout) to map saved display roles onto current hardware and obtain an unnamed draft for separate preview and saving.
 
 On laptops, the daemon also reads lid state. UPower is optional, but recommended: with UPower available, lid changes arrive as D-Bus events and the daemon can react immediately. Without UPower, the daemon falls back to polling `/proc/acpi/button/lid/*/state` at `--lid-poll-interval`, which defaults to `1s` and is not available on every system. If neither source exists, lid-aware switching is disabled and monitor hotplug still works.
 

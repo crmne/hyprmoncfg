@@ -29,6 +29,7 @@ const (
 	MethodSubscribe   = "subscribe"
 	MethodEditor      = "editor_state"
 	MethodEdit        = "edit_profile"
+	MethodReuse       = "reuse_profile"
 	MethodPreview     = "preview"
 	MethodConfirm     = "confirm"
 	MethodCommit      = "commit"
@@ -84,6 +85,11 @@ type PreviewParams struct {
 	ProfileName    string           `json:"profile_name,omitempty"`
 	TimeoutSeconds int              `json:"timeout_seconds,omitempty"`
 	SaveOnCommit   bool             `json:"save_on_commit,omitempty"`
+}
+
+type ReuseParams struct {
+	Name    string            `json:"name"`
+	Mapping map[string]string `json:"mapping"`
 }
 
 type EditParams struct {

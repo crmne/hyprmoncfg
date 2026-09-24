@@ -134,6 +134,7 @@ type MonitorSummary struct {
 // fetched when an editor is actually open.
 type EditorDocument struct {
 	MonitorSetHash                string                     `json:"monitor_set_hash,omitempty"`
+	Capabilities                  []string                   `json:"capabilities,omitempty"`
 	WorkspacePersistenceSupported bool                       `json:"workspace_persistence_supported"`
 	Profile                       profile.Profile            `json:"profile"`
 	Profiles                      []profile.Profile          `json:"profiles"`
@@ -145,8 +146,10 @@ type EditorDocument struct {
 }
 
 type EditorDraft struct {
-	Profile       profile.Profile `json:"profile"`
-	WorkspacePlan []WorkspacePlan `json:"workspace_plan"`
+	MonitorSetHash string          `json:"monitor_set_hash,omitempty"`
+	Warnings       []string        `json:"warnings,omitempty"`
+	Profile        profile.Profile `json:"profile"`
+	WorkspacePlan  []WorkspacePlan `json:"workspace_plan"`
 }
 
 type WorkspacePlan struct {

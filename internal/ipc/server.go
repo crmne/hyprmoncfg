@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+
+	"github.com/crmne/hyprmoncfg/internal/appstatus"
 )
 
 type Server struct {
@@ -200,6 +202,17 @@ func (s *Server) dispatch(owner string, client *serverClient, request Request) R
 		var params EditParams
 		if err = decodeParams(request.Params, &params); err == nil {
 			result, err = s.Handler.EditProfile(params)
+		}
+	case MethodReuse:
+		var params ReuseParams
+		if err = decodeParams(request.Params, &params); err == nil {
+			if handler, ok := s.Handler.(interface {
+				ReuseProfile(ReuseParams) (appstatus.EditorDraft, error)
+			}); ok {
+				result, err = handler.ReuseProfile(params)
+			} else {
+				err = fmt.Errorf("layout reuse is not supported by this backend")
+			}
 		}
 	case MethodPreview:
 		var params PreviewParams

@@ -159,8 +159,50 @@ func TestAutomaticApplyDoesNotWaitForInteractiveWriter(t *testing.T) {
 	}
 }
 
+func TestReuseProfileReturnsDraftWithoutChangingConfigOrStore(t *testing.T) {
+	env := newApplyBestTestEnvWithMonitors(t, applyBestDualBeforeJSON, applyBestDualBeforeJSON)
+	monitors := applyBestDualMonitors()
+	saved := profile.FromMonitors("Template", monitors)
+	saved.Exec = "must-not-run"
+	if err := env.store.Save(saved); err != nil {
+		t.Fatal(err)
+	}
+	before := readMonitorsConf(t, env)
+	svc := New(env.client, env.store, Config{MonitorsConf: env.monitorsConfPath, HyprConfig: env.hyprlandConfigPath})
+	editor, err := svc.EditorState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(editor.Capabilities) != 1 || editor.Capabilities[0] != "reuse_profile" {
+		t.Fatalf("capability missing: %+v", editor.Capabilities)
+	}
+	mapping := map[string]string{}
+	for _, output := range saved.Outputs {
+		mapping[output.Key] = output.Key
+	}
+	draft, err := svc.ReuseProfile(ipc.ReuseParams{Name: saved.Name, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Profile.Name != "" || draft.Profile.Exec != "" || len(draft.Profile.Outputs) != len(monitors) {
+		t.Fatalf("invalid draft: %+v", draft)
+	}
+	status, err := svc.Status()
+	if err != nil || draft.MonitorSetHash == "" || draft.MonitorSetHash != editor.MonitorSetHash || draft.MonitorSetHash != status.MonitorSetHash {
+		t.Fatalf("status/editor/reuse hardware snapshots differ: status=%q editor=%q reuse=%q error=%v", status.MonitorSetHash, editor.MonitorSetHash, draft.MonitorSetHash, err)
+	}
+	after, err := env.store.Load(saved.Name)
+	if err != nil || after.Exec != "must-not-run" || readMonitorsConf(t, env) != before || svc.pending != nil {
+		t.Fatalf("reuse changed state: %v", err)
+	}
+	data, _ := os.ReadFile(env.logPath)
+	if strings.Contains(string(data), "reload") || strings.Contains(string(data), "must-not-run") {
+		t.Fatalf("reuse applied commands: %s", data)
+	}
+}
+
 func TestHardwareSnapshotsRejectReplacementDuringWorkspaceRead(t *testing.T) {
-	for _, operation := range []string{"status", "editor"} {
+	for _, operation := range []string{"status", "editor", "reuse"} {
 		t.Run(operation, func(t *testing.T) {
 			monitors := applyBestDualMonitors()
 			before, _ := json.Marshal(monitors)
@@ -188,6 +230,12 @@ func TestHardwareSnapshotsRejectReplacementDuringWorkspaceRead(t *testing.T) {
 				_, err = svc.Status()
 			case "editor":
 				_, err = svc.EditorState()
+			case "reuse":
+				mapping := map[string]string{}
+				for _, output := range saved.Outputs {
+					mapping[output.Key] = output.Key
+				}
+				_, err = svc.ReuseProfile(ipc.ReuseParams{Name: saved.Name, Mapping: mapping})
 			}
 			if !errors.Is(err, ipc.ErrCompositorBusy) {
 				t.Fatalf("%s returned an internally mixed hardware snapshot: %v", operation, err)
@@ -198,6 +246,42 @@ func TestHardwareSnapshotsRejectReplacementDuringWorkspaceRead(t *testing.T) {
 				t.Fatalf("settled snapshot did not recover: hash=%q error=%v", document.MonitorSetHash, err)
 			}
 		})
+	}
+}
+
+func TestReuseProfileRecoversCurrentProfileCalibration(t *testing.T) {
+	monitors := applyBestDualMonitors()
+	data, _ := json.Marshal(monitors)
+	env := newApplyBestTestEnvWithMonitors(t, string(data), string(data))
+	current := profile.FromMonitors("Current", monitors)
+	for i := range current.Outputs {
+		current.Outputs[i].ICC = "/current/" + current.Outputs[i].Name + ".icc"
+	}
+	template := profile.FromMonitors("Template", monitors)
+	for i := range template.Outputs {
+		template.Outputs[i].Serial = "foreign-" + template.Outputs[i].Name
+		template.Outputs[i].ICC = "/foreign/calibration.icc"
+	}
+	template.Normalize()
+	for _, saved := range []profile.Profile{current, template} {
+		if err := env.store.Save(saved); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mapping := map[string]string{}
+	for i, output := range template.Outputs {
+		mapping[output.Key] = current.Outputs[i].Key
+	}
+	svc := New(env.client, env.store, Config{})
+	draft, err := svc.ReuseProfile(ipc.ReuseParams{Name: template.Name, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range draft.Profile.Outputs {
+		stored, _ := current.OutputByKey(output.Key)
+		if output.ICC != stored.ICC {
+			t.Fatalf("daemon failed to recover target calibration: %+v", output)
+		}
 	}
 }
 

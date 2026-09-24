@@ -40,6 +40,7 @@ Errors replace `result` with an object containing a stable `code`, a human-reada
 | `subscribe` | none | Current status document, followed by `status` events |
 | `editor_state` | none | Editable live profile, supported modes, and source-profile metadata |
 | `edit_profile` | full `profile` and one `edit` operation | Updated profile draft |
+| `reuse_profile` | saved profile `name` and `mapping` from saved output keys to current output keys | Unnamed profile draft, workspace plan, and optional warnings |
 | `preview` | `profile_name` or a full `profile`; optional `timeout_seconds` and `save_on_commit` | Transaction |
 | `confirm` | `transaction_id` | none |
 | `commit` | `transaction_id`; `save` boolean | none |
@@ -109,10 +110,30 @@ Monitor summaries include the connector, make, model, serial, output `key`, hard
 
 `edit_profile` applies one typed edit to a client-owned draft. Display mode, scale, VRR, transform, mirroring, position, enablement, color/HDR/ICC settings, and workspace settings are normalized and validated by the same profile geometry used by the bundled TUI. Resize edits reflow displays beyond the old right and bottom edges; dragged position edits can request edge snapping with `snap_distance`, and an overlapping drop is placed on the nearest clear outside edge. The method is stateless and does not touch the live displays until the returned profile is sent to `preview`.
 
+## Reuse a saved layout
+
+`editor_state` advertises optional operations in `capabilities`. Check for `"reuse_profile"` before offering layout reuse; an absent field means that an older daemon does not advertise it. This additive capability keeps protocol version 1 compatible with existing clients.
+
+`reuse_profile` maps roles from any saved layout onto explicitly chosen current displays. For example:
+
+```json
+{"type":"request","protocol_version":1,"id":"reuse-1","method":"reuse_profile","params":{"name":"desk","mapping":{"saved-left":"current-left","saved-right":"current-right","saved-extra":""}}}
+```
+
+Use actual output keys from the saved profile and the live `editor_state.profile`. Each current output can fill at most one saved role. Every enabled saved role needs an explicit target or an empty string to skip it; a disabled saved role may also be omitted. Unknown saved keys, disconnected targets, and duplicate target assignments fail validation. A stale mapping should prompt the client to refresh the current hardware and ask the user to review it again.
+
+The response has the same shape as an editor draft: `profile`, `workspace_plan`, optional `warnings: string[]`, and `monitor_set_hash` identifying the current hardware snapshot. The profile name is empty. The method reads fresh monitor and workspace state, copies the requested geometry onto current hardware identities, and remaps mirror targets and workspace output keys and names. Skipped roles lose their workspace references. Unassigned current displays retain their settings and move clear of reused roles if needed.
+
+Generated workspace plans retain the template's effective display order, including when `monitor_order` is omitted. Unassigned current displays follow the mapped roles in that order.
+
+Unsupported saved modes fall back to a current or available mode, with a warning; scale adjustments are reported too. If those adjustments enlarge a mapped display into another role, the adapted display moves to the right with a warning, and its mirrors follow it. Unchanged mapped positions are preserved; a remaining overlap is rejected before returning a draft. Color, HDR, ICC and VRR settings stay with current hardware unless the saved and current display have the same unambiguous serial identity. Settings Hyprland cannot report are recovered from a separate current exact/best profile by current output key, including unassigned outputs. The selected template supplies unreported settings only for an unambiguous matching serial, so an uncertain template cannot restore its own old calibration through this fallback. If no safe stored settings are available, the draft uses reported values and defaults for unreported settings. The selected template's `disable_unknown_outputs` policy is retained independently of calibration donors. Invalid mirror dependencies, including disabled sources, become independent displays with a warning. At least one independent output must remain enabled. Saved `Exec` hooks are never copied.
+
+Reuse is draft-only: it does not apply a layout, write a profile, execute a hook, or alter an existing preview transaction. Show the returned warnings, let the user review and name the draft, then use the normal preview and commit lifecycle. The original saved profile remains unchanged.
+
 ## Connecting displays and query timeouts
 
 Monitor and workspace-rule reads have a 750 ms deadline per query by default. A slow compositor or blocked DRM identity probe returns `error.code = "compositor_busy"` with a human-readable connecting message. No stale or partially enriched hardware snapshot is substituted for a successful response.
 
-Status and editor-state responses include an additive `monitor_set_hash`. Treat it as an opaque equality token for the output keys and their current connector bindings; it includes the connector paths used to distinguish otherwise identical outputs. It excludes layout, focus and power state. These daemon reads check hardware before and after reading workspace rules and return `compositor_busy` if the bindings changed. They therefore perform two monitor queries and one workspace-rule query; the 750 ms limit is per query, not a total response-time guarantee.
+Status, editor-state, and reuse responses include an additive `monitor_set_hash`. Treat it as an opaque equality token for the output keys and their current connector bindings; it includes the connector paths used to distinguish otherwise identical outputs. It excludes layout, focus and power state. These daemon reads check hardware before and after reading workspace rules and return `compositor_busy` if the bindings changed. They therefore perform two monitor queries and one workspace-rule query; the 750 ms limit is per query, not a total response-time guarantee.
 
-Clients should retain the last visible snapshot while connecting, show the message, and retry while visible with at most one request in flight. Do not treat a failed refresh as an empty display list. Compare editor hashes with the latest status hash when both are present, and discard mismatches. Also track observed topology changes locally and reject requests from an older generation, including a change away and back to the same hardware. The hash is not an event counter or an atomic snapshot guarantee. Older daemons omit it; clients can fall back to their available identity/signature fields. Stateless `edit_profile` replies do not include a fresh hardware hash. Known-profile apply and rollback retain their existing serialized lifecycle.
+Clients should retain the last visible snapshot while connecting, show the message, and retry while visible with at most one request in flight. Do not treat a failed refresh as an empty display list. Compare editor/reuse hashes with the latest status hash when both are present, and discard mismatches. Also track observed topology changes locally and reject requests from an older generation, including a change away and back to the same hardware. The hash is not an event counter or an atomic snapshot guarantee. Older daemons omit it; clients can fall back to their available identity/signature fields. Stateless `edit_profile` replies do not include a fresh hardware hash. Known-profile apply and rollback retain their existing serialized lifecycle.
