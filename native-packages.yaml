@@ -1,9 +1,9 @@
-# Binary packages and downstream repositories.
-# Go/Nix source recipes are prepared by scripts/package_sources.rb.
+# Binary packages, AUR recipes and downstream repositories.
+# Other distributions' source recipes are prepared by scripts/package_sources.rb.
 ---
 schema: 1
 tool:
-  version: 0.5.1
+  version: 0.7.0
   nfpm: 2.47.0
 nfpm:
   maintainer: Carmine Paolino <carmine@paolino.me>
@@ -77,6 +77,29 @@ targets:
 release:
   repository: crmne/hyprmoncfg
   checksums: checksums.txt
+# Local inputs serve snapshot builds; releases verify the published assets.
+assets:
+  SOURCE:
+    file: hyprmoncfg-@VERSION@.tar.gz
+    url: https://github.com/crmne/hyprmoncfg/archive/refs/tags/v@VERSION@.tar.gz
+    checksummed: false
+    local: dist/hyprmoncfg-@VERSION@.tar.gz
+  DEPS:
+    file: hyprmoncfg-@VERSION@-deps.tar.xz
+    local: dist/hyprmoncfg-@VERSION@-deps.tar.xz
+  AMD64:
+    file: hyprmoncfg_@VERSION@_linux_amd64.tar.gz
+    local: dist/hyprmoncfg_@VERSION@_linux_amd64.tar.gz
+  ARM64:
+    file: hyprmoncfg_@VERSION@_linux_arm64.tar.gz
+    local: dist/hyprmoncfg_@VERSION@_linux_arm64.tar.gz
+templates:
+  arch/hyprmoncfg/PKGBUILD: packaging/arch/hyprmoncfg/PKGBUILD.in
+  arch/hyprmoncfg/hyprmoncfg.install: packaging/arch/hyprmoncfg.install
+  arch/hyprmoncfg-bin/PKGBUILD: packaging/arch/hyprmoncfg-bin/PKGBUILD.in
+  arch/hyprmoncfg-bin/hyprmoncfg-bin.install: packaging/arch/hyprmoncfg.install
+  arch/hyprmoncfg-git/PKGBUILD: packaging/arch/hyprmoncfg-git/PKGBUILD.in
+  arch/hyprmoncfg-git/hyprmoncfg-git.install: packaging/arch/hyprmoncfg.install
 repositories:
   aur-source:
     group: aur

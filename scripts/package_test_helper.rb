@@ -15,7 +15,7 @@ module PackageTestHelpers
   def metadata
     result = {
       "VERSION" => "9.8.7", "COMMIT" => "abcdef0", "FULL_COMMIT" => "abcdef0" * 5 + "abcde",
-      "GIT_VERSION" => "r999.abcdef0", "GO_VERSION" => "1.26.1", "GO_MINOR" => "1.26",
+      "GO_VERSION" => "1.26.1", "GO_MINOR" => "1.26",
       "RPM_DATE" => "Sat Sep 12 2026", "DEBIAN_DATE" => "Sat, 12 Sep 2026 12:00:00 +0000",
       "MAN_DATE" => "September 2026", "NIX_VENDOR_SRI" => "sha256-#{'A' * 43}="
     }

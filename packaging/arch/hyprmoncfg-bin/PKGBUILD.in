@@ -1,5 +1,24 @@
+# Maintainer: Carmine Paolino <carmine@paolino.me>
+pkgname=hyprmoncfg-bin
+pkgver=@VERSION@
+pkgrel=@PKGREL@
+pkgdesc="Terminal-first monitor configurator and auto-switching daemon for Hyprland"
+arch=('x86_64' 'aarch64')
+url="https://github.com/crmne/hyprmoncfg"
+license=('MIT')
+install="${pkgname}.install"
+depends=('hyprland' 'xdg-terminal-exec')
+optdepends=('systemd: user service for automatic profile switching')
+provides=('hyprmoncfg')
+conflicts=('hyprmoncfg' 'hyprmoncfg-git')
+options=('!debug' '!strip')
+source_x86_64=("@AMD64_URL@")
+source_aarch64=("@ARM64_URL@")
+sha256sums_x86_64=('@AMD64_SHA256@')
+sha256sums_aarch64=('@ARM64_SHA256@')
+
 package() {
-  cd "@SOURCE_DIR@"
+  cd "${srcdir}"
 
   install -Dm755 "hyprmoncfg" "${pkgdir}/usr/bin/hyprmoncfg"
   install -Dm755 "hyprmoncfgd" "${pkgdir}/usr/bin/hyprmoncfgd"

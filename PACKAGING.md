@@ -5,10 +5,11 @@ recipes, and release automation. Edit packaging here and export the generated
 recipes to the distribution's publishing repository.
 
 The [native-packages](https://rubygems.org/gems/native-packages) gem builds binary
-packages and handles downstream repositories from `native-packages.yaml`.
-GoReleaser builds the Linux archives and offline Go dependency archive.
-Hyprmoncfg keeps the Go/Nix source-recipe generator in `scripts/package_sources.rb`;
-it uses the same gem's release helpers. No packaging Gemfile or wrapper is needed.
+packages, renders the AUR recipes, and handles downstream repositories from
+`native-packages.yaml`. GoReleaser builds the Linux archives and offline Go
+dependency archive. Hyprmoncfg keeps the generator for the other distributions'
+source recipes in `scripts/package_sources.rb`; it uses the same gem's release
+helpers. No packaging Gemfile or wrapper is needed.
 
 ## Layout
 
@@ -16,21 +17,23 @@ it uses the same gem's release helpers. No packaging Gemfile or wrapper is neede
 |---|---|
 | `.goreleaser.yml` | Linux binary and offline dependency archives |
 | `packaging/applications`, `icons`, `systemd` | Shared installation assets |
-| `packaging/arch` | Shared AUR build/install logic for stable, binary, and Git packages |
+| `packaging/arch` | AUR `PKGBUILD` templates for the stable, binary, and Git packages |
 | `packaging/debian` | Debian/Ubuntu source packaging, including changelog history |
 | `packaging/rpm` | One source RPM spec for Fedora COPR and openSUSE OBS |
 | `packaging/alpine`, `void`, `slackware` | Native source recipes |
 | `packaging/gentoo` | Source and binary ebuilds and maintainer metadata |
 | `packaging/nix` | Nix source package |
-| `native-packages.yaml` | Tool versions, DEB/RPM targets and contents, downstream repositories |
-| `scripts/package_sources.rb` | App-specific Go/Nix source-recipe generation |
+| `native-packages.yaml` | Tool versions, DEB/RPM targets and contents, AUR templates, downstream repositories |
+| `scripts/package_sources.rb` | Source recipes for Debian, RPM, Alpine, Void, Slackware, Gentoo, and Nix |
 
 Files ending in `.in` are templates. Release versions, commits, Go requirements,
 and checksums come from the requested tag and its published assets. There is no
-second version number to maintain. AUR variants share their metadata and build
-logic; the generator emits standalone `PKGBUILD` and `.SRCINFO` files.
+second version number to maintain. `native-packages build` renders each AUR
+template into a standalone `PKGBUILD` and generates `.SRCINFO` with `makepkg`
+(or an Arch container when `makepkg` is not installed). The three templates must
+install the same files; `scripts/packages_test.rb` checks this.
 
-Binary packages go under `dist/packages/<version>/`; use
+Binary packages and AUR recipes go under `dist/packages/<version>/`; use
 `native-packages publish --from dist/packages/<version> --to github` to attach a
 verified build to its release. Local archive inputs under `dist/` can be packaged
 with `native-packages build --version VERSION`. Generated source recipes go under
@@ -45,15 +48,15 @@ After the GitHub release has finished publishing:
 
 ```sh
 git fetch origin --tags
-gem install native-packages --version 0.5.1
+gem install native-packages --version 0.7.0
 native-packages validate
 native-packages build --release v1.18.3
 ruby scripts/package_sources.rb prepare 1.18.3
 ```
 
-Requirements: Ruby 3.2+, native-packages 0.5.1, nFPM 2.47.0, Git, curl, `bsdtar`, `readelf`, Go at least
-as new as the release's `go.mod`, and Nix (`nix hash path`, without a Nix daemon). Arch's `makepkg` is
-optional locally and adds native `.SRCINFO` validation. The Packaging GitHub
+Requirements: Ruby 3.2+, native-packages 0.7.0, nFPM 2.47.0, Git, curl, `bsdtar`, `readelf`, Go at least
+as new as the release's `go.mod`, Nix (`nix hash path`, without a Nix daemon), and Arch's `makepkg`
+or Docker for AUR metadata. The Packaging GitHub
 Actions workflow provides the required tools if you prefer to run this in CI.
 Install the test dependency and run the application's source-recipe tests with:
 
@@ -127,8 +130,16 @@ Generate recipes once, then choose one target, the `aur` group, or `all`:
 ```sh
 ruby scripts/package_sources.rb prepare 1.18.3
 native-packages stage all dist/packaging/1.18.3
-native-packages diff aur
 native-packages diff nixpkgs
+```
+
+AUR recipes come from the native-packages build rather than the source-recipe
+generator:
+
+```sh
+native-packages build --release v1.18.3 --output dist/packages/1.18.3
+native-packages stage aur dist/packages/1.18.3/recipes
+native-packages diff aur
 ```
 
 `stage` fetches the destination, creates a local working branch, and stages the
@@ -150,9 +161,9 @@ native-packages publish aur
 ```
 
 This commits and pushes changed recipes to the three independent AUR repositories.
-Use `aur-source`, `aur-bin`, or `aur-git` to target just one package. The compatibility
-command `native-packages publish-aur dist/packaging/1.18.3` performs both
-staging and publication for release CI.
+Use `aur-source`, `aur-bin`, or `aur-git` to target just one package. To stage and
+push a verified build in one step, as release CI does, run
+`native-packages publish --from dist/packages/1.18.3 --to aur`.
 
 For Nixpkgs, Alpine, or Blackhole, staging writes a submission draft under
 `.cache/packaging/submissions/`. Review it, update the native validation results,
@@ -223,25 +234,30 @@ future recipe edits and destination configuration belong here.
 
 Push a stable `vX.Y.Z` tag through the normal release process. GoReleaser publishes
 Linux archives, offline dependencies and `checksums.txt`. The Packaging workflow
-then invokes the pinned native-packages workflow for amd64/arm64 DEB/RPM files
-and prepares the source recipes with the Go/Nix generator. A following release
-job publishes the verified binary packages and the source-recipe archive.
+then invokes the pinned native-packages workflow, which builds amd64/arm64 DEB/RPM
+files and the AUR recipes, attaches them to the release, and pushes the AUR
+recipes. In parallel it prepares the other source recipes with the generator,
+and a following release job attaches that archive.
 
-`packaging-checksums.txt` covers the binary packages;
-`source-packaging-checksums.txt` covers `hyprmoncfg-<version>-packaging.tar.xz`.
+`packaging-checksums.txt` covers the binary packages and
+`hyprmoncfg-<version>-packaging.tar.xz` (the AUR recipes);
+`source-packaging-checksums.txt` covers `hyprmoncfg-<version>-source-recipes.tar.xz`.
 The original `checksums.txt` is preserved. No follow-up version commit or AI
 session is needed for packaging updates.
 
 Packaging changes also run the application generator tests, validate native shell
-recipes, compare AUR metadata with `makepkg`, and build/inspect snapshot Debian
-and RPM packages in CI. The Packaging workflow can be dispatched with a published
-version to regenerate recipes or retry generation independently of releasing.
+recipes, and build/inspect snapshot Debian and RPM packages and AUR recipes in CI.
+The Packaging workflow can be dispatched with a published version to regenerate
+recipes, and with `publish` also checked to attach packages and push the AUR
+recipes for that release. A dispatch replaces the release's native-packages assets
+but not the source-recipe archive.
 These checks do not replace each distribution's native package build and review.
 
 To publish AUR packages automatically after releases, configure repository secrets
 `AUR_SSH_KEY` and `AUR_KNOWN_HOSTS`
 (the verified AUR host-key entry), then set repository variable `PUBLISH_AUR=true`.
 Generation and binary package publication work without those credentials.
+Release tags must point to a commit on `main`; the release workflow stops otherwise.
 
 ## Upstream Release Assets
 
@@ -252,7 +268,7 @@ Each tagged release publishes:
 - `hyprmoncfg-<version>-deps.tar.xz`
 - Native `.deb` and `.rpm` packages for amd64/x86_64 and arm64/aarch64
 - `checksums.txt`
-- `hyprmoncfg-<version>-packaging.tar.xz`, `packaging-checksums.txt` and `source-packaging-checksums.txt` after stable release packaging succeeds
+- `hyprmoncfg-<version>-packaging.tar.xz` (AUR recipes), `hyprmoncfg-<version>-source-recipes.tar.xz` (other distributions), `packaging-checksums.txt` and `source-packaging-checksums.txt` after stable release packaging succeeds
 - GitHub's automatic source archive for the tag
 
 The binary archives contain:

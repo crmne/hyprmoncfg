@@ -55,7 +55,7 @@ class PackagingTest < Minitest::Test
   def test_new_version_updates_every_recipe_and_detects_drift
     in_temporary_directory do |output|
       Packages.generate(output, metadata)
-      Packages.check(output) # Also compares .SRCINFO with real makepkg when installed.
+      Packages.check(output)
       %w[alpine/APKBUILD debian/changelog rpm/hyprmoncfg.spec slackware/hyprmoncfg.info void/template nix/default.nix].each do |path|
         assert_includes (output / path).read, "9.8.7"
       end
@@ -64,11 +64,8 @@ class PackagingTest < Minitest::Test
       assert_includes (ebuild.dirname / "Manifest").read, "hyprmoncfg-9.8.7-deps.tar.xz"
       binary = output / "gentoo/gui-apps/hyprmoncfg-bin/hyprmoncfg-bin-9.8.7.ebuild"
       assert_includes binary.read, "doicon packaging/icons/hyprmoncfg.svg"
-      stable = (output / "arch/hyprmoncfg/PKGBUILD").read
-      assert_includes stable, 'GOMODCACHE="${srcdir}/go-mod" GOPROXY=off'
-      vcs = (output / "arch/hyprmoncfg-git/PKGBUILD").read
-      assert_includes vcs, '$(git rev-parse --short=7 HEAD)'
-      refute_includes vcs, "GOPROXY=off"
+      # AUR recipes are native-packages templates, not generated here.
+      refute_path_exists output / "arch"
       first = snapshot(output)
       Packages.generate(output, metadata)
       assert_equal first, snapshot(output)
@@ -76,6 +73,15 @@ class PackagingTest < Minitest::Test
       error = assert_raises(Packages::Error) { Packages.check(output) }
       assert_match "stale", error.message
     end
+  end
+
+  def test_aur_variants_install_the_same_files
+    installs = %w[hyprmoncfg hyprmoncfg-bin hyprmoncfg-git].map do |name|
+      recipe = (Packages::RECIPES / "arch" / name / "PKGBUILD.in").read
+      recipe[/^package\(\) \{\n  cd [^\n]+\n(.*?)^\}/m, 1] or flunk "#{name}: package() not found"
+    end
+    assert_equal 1, installs.uniq.length
+    assert_includes installs.first, "/usr/lib/systemd/user/hyprmoncfgd.service"
   end
 
   def test_archive_extraction_rejects_parent_traversal
@@ -100,10 +106,12 @@ class PackagingTest < Minitest::Test
       recipes, output = root / "recipes", root / "source assets"
       Packages.generate(recipes, metadata)
       Packages.artifacts(recipes, output: output)
-      archive = output / "hyprmoncfg-9.8.7-packaging.tar.xz"
+      # The AUR recipe archive from native-packages owns hyprmoncfg-VERSION-packaging.tar.xz.
+      archive = output / "hyprmoncfg-9.8.7-source-recipes.tar.xz"
       assert_path_exists archive
       assert_equal "#{Packages.sha256(archive)}  #{archive.basename}\n",
         (output / "source-packaging-checksums.txt").read
+      refute_path_exists output / "hyprmoncfg-9.8.7-packaging.tar.xz"
       refute_path_exists output / "packaging-checksums.txt"
       assert_raises(Packages::Error) { Packages.artifacts(recipes, output: output) }
     end

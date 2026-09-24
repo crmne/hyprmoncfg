@@ -11,7 +11,23 @@ permissions:
   contents: write
 
 jobs:
+  release-source:
+    name: tag is on main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require the release commit on main
+        run: |
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "Release tags must point to a commit already on origin/main." >&2
+            exit 1
+          fi
+
   goreleaser:
+    needs: release-source
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,69 +63,25 @@ jobs:
     uses: ./.github/workflows/packaging.yml
     with:
       version: ${{ github.ref_name }}
+    secrets: inherit
 
-  publish-packaging-assets:
+  publish-source-recipes:
     needs: packaging
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '4.0'
-      - name: Install packaging CLI
-        run: gem install native-packages --version 0.5.1 --no-document
       - uses: actions/download-artifact@v4
         with:
           name: package-assets
           path: dist/package-assets
-      - uses: actions/download-artifact@v4
-        with:
-          name: native-packages
-          path: dist/native-packages
-      - name: Attach binary packages and source recipes to the release
+      - name: Attach distribution source recipes to the release
         env:
           VERSION: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          native-packages publish --from dist/native-packages --to github
-          (cd dist/package-assets && sha256sum -c source-packaging-checksums.txt)
-          gh release upload "$VERSION" dist/package-assets/*.tar.xz \
-            dist/package-assets/source-packaging-checksums.txt --clobber
-
-  publish-aur:
-    if: vars.PUBLISH_AUR == 'true' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-    needs: publish-packaging-assets
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '4.0'
-      - name: Install packaging CLI
-        run: gem install native-packages --version 0.5.1 --no-document
-      - uses: actions/download-artifact@v4
-        with:
-          name: packaging
-          path: dist/packaging
-      - name: Configure AUR SSH credentials
-        env:
-          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
-          AUR_KNOWN_HOSTS: ${{ secrets.AUR_KNOWN_HOSTS }}
-        run: |
-          test -n "$AUR_SSH_KEY"
-          test -n "$AUR_KNOWN_HOSTS"
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/id_ed25519
-          printf '%s\n' "$AUR_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
-      - name: Publish generated AUR recipes
-        env:
-          GIT_AUTHOR_NAME: Carmine Paolino
-          GIT_AUTHOR_EMAIL: carmine@paolino.me
-          GIT_COMMITTER_NAME: Carmine Paolino
-          GIT_COMMITTER_EMAIL: carmine@paolino.me
-          GIT_SSH_COMMAND: ssh -o BatchMode=yes -o StrictHostKeyChecking=yes
-        run: native-packages publish-aur dist/packaging
+          cd dist/package-assets
+          sha256sum -c source-packaging-checksums.txt
+          gh release upload "$VERSION" ./*.tar.xz source-packaging-checksums.txt \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
   sync-docs-version:
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
