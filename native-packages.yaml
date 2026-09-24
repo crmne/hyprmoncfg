@@ -95,7 +95,7 @@ assets:
     local: dist/hyprmoncfg_@VERSION@_linux_arm64.tar.gz
 templates:
   arch/hyprmoncfg/PKGBUILD: packaging/arch/hyprmoncfg/PKGBUILD.in
-  arch/hyprmoncfg/hyprmoncfg.install: packaging/arch/hyprmoncfg.install
+  arch/hyprmoncfg/hyprmoncfg.install: packaging/arch/hyprmoncfg/hyprmoncfg.install
   arch/hyprmoncfg-bin/PKGBUILD: packaging/arch/hyprmoncfg-bin/PKGBUILD.in
   arch/hyprmoncfg-bin/hyprmoncfg-bin.install: packaging/arch/hyprmoncfg.install
   arch/hyprmoncfg-git/PKGBUILD: packaging/arch/hyprmoncfg-git/PKGBUILD.in
