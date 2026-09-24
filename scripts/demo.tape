@@ -52,7 +52,7 @@ Type "r"
 Sleep 1.5s
 
 # Browse saved hardware-aware profiles
-Type "2"
+Type "3"
 Sleep 1s
 Down 2
 Sleep 1s
@@ -60,7 +60,7 @@ Up
 Sleep 1s
 
 # Preview workspace planning
-Type "3"
+Type "2"
 Sleep 1s
 Down
 Sleep 1s

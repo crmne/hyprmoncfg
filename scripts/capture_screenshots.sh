@@ -183,6 +183,9 @@ capture_state() {
   address="$(printf '%s' "$client" | jq -r '.address')"
 
   fit_and_center_window "$address"
+  # Keep desktop content out of documentation captures even when the user's
+  # normal terminal rules use compositor transparency. Only this window changes.
+  hyprctl eval "hl.dispatch(hl.dsp.window.set_prop({ window = \"address:$address\", prop = \"opaque\", value = \"1\" }))" >/dev/null
   sleep 1
 
   if [[ -n "$key_action" ]]; then
@@ -211,8 +214,8 @@ capture_themed() {
   printf 'Capturing %s...\n' "$theme"
   capture_state "layout${suffix}" "$theme"
   capture_state "save-profile${suffix}" "$theme" "wtype -k s"
-  capture_state "profiles${suffix}" "$theme" "wtype -k 2"
-  capture_state "workspaces${suffix}" "$theme" "wtype -k 3"
+  capture_state "profiles${suffix}" "$theme" "wtype -k 3"
+  capture_state "workspaces${suffix}" "$theme" "wtype -k 2"
 }
 
 capture_themed "$light_theme" "-light"

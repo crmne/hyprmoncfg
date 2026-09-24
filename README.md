@@ -8,7 +8,7 @@
 <strong>Create multi-monitor layouts for Hyprland.</strong><br>
 Arrange visually. Save each setup. Switch automatically on hotplug and lid events.
 
-The 1.19 release candidate aligns display summaries and profile-command wording
+Version 1.19 aligns display summaries and profile-command wording
 with the Omarchy panel. See the [TUI guide](docs/_guide/tui.md) for hardware details
 and the [shared design](DESIGN.md) for accepted presentation conventions and scope.
 
@@ -27,17 +27,21 @@ and the [shared design](DESIGN.md) for accepted presentation conventions and sco
 
 </div>
 
-The 1.19 release candidate adds independent failed-apply retries, per-output health,
+Version 1.19 adds independent failed-apply retries, per-output health,
 bounded display discovery, visible small-terminal footer actions, workspace
 persistence choices in both editors, and opt-in `hyprmoncfgd --power-aware-refresh`
-for internal laptop panels. See the daemon guide for limits and defaults; these
-the RC is not proof of physical dock/projector testing.
+for internal laptop panels. See the [release notes](docs/releases/1.19.0.md) and
+daemon guide for highlights, limits, and defaults.
 
 ---
 
 hyprmoncfg is a visual multi-monitor layout editor and automatic profile switcher for Hyprland. Drag displays into place, save each setup as a hardware-aware profile, and let the daemon apply the right one when monitors or your laptop lid change.
 
-![hyprmoncfg demo](docs/assets/images/demo.gif)
+![hyprmoncfg 1.19 layout editor](docs/assets/images/screenshots/layout-dark.png)
+
+Actual TUI capture with synthetic display/profile data. See the
+[screenshot gallery](https://hyprmoncfg.dev/what-is-hyprmoncfg/#screenshots) for
+both themes, workspace planning, and profiles.
 
 ## What you get
 

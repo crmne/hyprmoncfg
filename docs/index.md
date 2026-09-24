@@ -12,8 +12,8 @@ hero:
       text: Install hyprmoncfg
       link: /getting-started/
     - theme: alt
-      text: Watch demo
-      link: /what-is-hyprmoncfg/#demo
+      text: See the editor
+      link: /what-is-hyprmoncfg/#screenshots
     - theme: alt
       text: GitHub
       link: https://github.com/crmne/hyprmoncfg
@@ -22,10 +22,10 @@ hero:
         <img class="theme-image light terminal-trove-badge-image" src="/assets/images/terminal-trove-tool-of-the-week-light.svg" alt="Terminal Trove Tool of the Week" width="220" height="58"><img class="theme-image dark terminal-trove-badge-image" src="/assets/images/terminal-trove-tool-of-the-week-dark.svg" alt="Terminal Trove Tool of the Week" width="220" height="58">
       link: https://terminaltrove.com/hyprmoncfg/
   image:
-    src: /assets/images/demo.gif
-    alt: hyprmoncfg demo
-    width: 1400
-    height: 800
+    src: /assets/images/screenshots/layout-dark.png
+    alt: hyprmoncfg 1.19 layout editor with sample displays
+    width: 1924
+    height: 1084
 features:
   - icon: 🖥️
     title: Visual Layout Editor
@@ -40,7 +40,7 @@ features:
     details: Plug in a monitor, close the lid, or undock. hyprmoncfg picks and applies the best profile.
   - icon: 🔁
     title: Safe Apply with Revert
-    details: Every apply writes the generated monitor config atomically, reloads Hyprland, and verifies the result. A 10-second confirmation window means you never get locked out.
+    details: Preview writes the generated monitor config atomically, reloads Hyprland, and verifies the result. You have 30 seconds by default to confirm; unconfirmed previews roll back.
   - icon: 🗂️
     title: Workspace Planning
     details: Assign workspaces with sequential, interleave, or manual strategies and apply them together with the monitor layout.

@@ -43,11 +43,18 @@ Existing tools try to help but bring their own problems. Some need a Python runt
 
 ## Demo
 
+Historical recording from before 1.19. The current page order and display
+presentation are shown in the screenshots below.
+
 <video class="screenshot" src="{{ '/assets/images/demo.mp4' | relative_url }}" autoplay loop muted playsinline controls style="width:100%; max-width:1400px; border-radius:8px;">
   Your browser does not support the video tag.
 </video>
 
 ## Screenshots
+
+Captured from the 1.19 TUI with isolated synthetic displays and profiles, in
+light and dark terminal themes. These are actual renderer captures, not mockups
+or evidence of physical hotplug testing.
 
 ### Dark theme
 
