@@ -42,6 +42,8 @@ const (
 
 const EventStatus = "status"
 
+var ErrCompositorBusy = errors.New("Displays are still connecting; try again shortly.")
+
 var ErrTransactionUnavailable = errors.New("interactive preview is no longer available")
 
 type Request struct {

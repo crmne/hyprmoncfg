@@ -267,6 +267,9 @@ func decodeParams(raw json.RawMessage, target any) error {
 }
 
 func encodeResponseError(err error) *ResponseError {
+	if errors.Is(err, ErrCompositorBusy) {
+		return &ResponseError{Code: "compositor_busy", Message: ErrCompositorBusy.Error()}
+	}
 	if errors.Is(err, ErrTransactionUnavailable) {
 		return &ResponseError{Code: "transaction_unavailable", Message: err.Error()}
 	}

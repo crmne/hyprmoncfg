@@ -39,7 +39,10 @@ const (
 )
 
 type Engine struct {
-	Client             *hypr.Client
+	Client *hypr.Client
+	// QueryTimeout bounds each compositor read, independently of the apply's
+	// writes, rollback, and post-apply command. Zero uses the caller's context.
+	QueryTimeout       time.Duration
 	LaptopToggle       *omarchywatch.LaptopToggle
 	WakeConfig         *omarchywatch.WakeConfig
 	MonitorsConfPath   string
@@ -192,11 +195,11 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		return RevertState{}, err
 	}
 
-	version, err := e.Client.Version(ctx)
+	version, err := query(ctx, e, "version", e.Client.Version)
 	if err != nil {
 		return RevertState{}, err
 	}
-	supportsV2, err := e.Client.SupportsMonitorV2(ctx)
+	supportsV2, err := query(ctx, e, "monitor-v2", e.Client.SupportsMonitorV2)
 	if err != nil {
 		return RevertState{}, err
 	}
@@ -209,11 +212,11 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 	if err != nil {
 		return RevertState{}, err
 	}
-	currentRules, err := e.Client.WorkspaceRules(ctx)
+	currentRules, err := query(ctx, e, "workspace-rules", e.Client.WorkspaceRules)
 	if err != nil {
 		return RevertState{}, err
 	}
-	currentWorkspaces, err := e.Client.Workspaces(ctx)
+	currentWorkspaces, err := query(ctx, e, "workspaces", e.Client.Workspaces)
 	if err != nil {
 		return RevertState{}, err
 	}
@@ -329,7 +332,12 @@ func addLuaExecutionProbe(rendered string) (string, string, error) {
 
 func (e Engine) verifyLuaExecutionProbe(ctx context.Context, probe string, rootPath string, targetPath string) error {
 	assertion := fmt.Sprintf(`assert(_G.%s == true, "hyprmoncfg generated monitor config did not run")`, probe)
-	response, evalErr := e.Client.Eval(ctx, assertion)
+	response, evalErr := query(ctx, e, "lua-probe", func(queryCtx context.Context) (string, error) {
+		return e.Client.Eval(queryCtx, assertion)
+	})
+	if errors.Is(evalErr, ErrQueryTimeout) || errors.Is(evalErr, context.Canceled) {
+		return evalErr
+	}
 	if evalErr == nil && response == "ok" {
 		return nil
 	}
@@ -358,8 +366,8 @@ func wrapRollbackError(action string, err error) error {
 }
 
 func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, before []hypr.Monitor) ([]hypr.Monitor, error) {
-	deadline := time.NewTimer(applyValidationTimeout)
-	defer deadline.Stop()
+	ctx, cancel := context.WithTimeout(ctx, applyValidationTimeout)
+	defer cancel()
 
 	ticker := time.NewTicker(applyValidationPollInterval)
 	defer ticker.Stop()
@@ -367,7 +375,12 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 	var lastErr error
 
 	for {
-		applied, err := e.Client.Monitors(ctx)
+		applied, err := query(ctx, e, "monitors", e.Client.Monitors)
+		if errors.Is(err, ErrQueryTimeout) {
+			// A stalled read is not a layout mismatch to poll through. Return to
+			// the caller so it can roll back and schedule a fresh reconciliation.
+			return nil, err
+		}
 		if err != nil {
 			lastErr = err
 		} else if err := ValidateAppliedProfile(p, before, applied); err != nil {
@@ -382,11 +395,6 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 				return nil, fmt.Errorf("%w: %v", ctx.Err(), lastErr)
 			}
 			return nil, ctx.Err()
-		case <-deadline.C:
-			if lastErr != nil {
-				return nil, lastErr
-			}
-			return nil, fmt.Errorf("timed out waiting for Hyprland monitor reload")
 		case <-ticker.C:
 		}
 	}

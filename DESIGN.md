@@ -54,6 +54,11 @@ even though it does not own a separate desktop rectangle.
 
 ## Connecting and disconnecting displays
 
+The 2026-09-24 [reliability integration](docs/reliability-integration-2026-09-24.md)
+implements bounded reads, snapshot correlation, and refresh/preview fencing
+independently of layout reuse. Reuse remains a separate product decision; the
+integration does not claim complete physical recovery or frontend parity.
+
 ### Selection and automatic extension
 
 Proposed selection order, evaluated by the backend after the hardware settles:

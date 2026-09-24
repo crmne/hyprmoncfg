@@ -348,6 +348,25 @@ func TestLoadLiveStateFallsBackToTheHighestScoringProfile(t *testing.T) {
 	}
 }
 
+func TestProfileRecommendationIncludesPartialBasesAndExplicitStrictProfiles(t *testing.T) {
+	saved := profile.FromMonitors("Laptop", []hypr.Monitor{paneTestLaptop})
+	m := Model{profiles: []profile.Profile{saved}, monitors: []hypr.Monitor{paneTestLaptop, paneTestDesk}}
+	summaries := m.profileMatchSummaries()
+	if !summaries[0].matches() || !summaries[0].recommended || summaries[0].active {
+		t.Fatalf("partial match must recommend the extension base without claiming it is active: %+v", summaries[0])
+	}
+	m.profiles[0].DisableUnknownOutputs = true
+	if summaries = m.profileMatchSummaries(); !summaries[0].recommended || summaries[0].active {
+		t.Fatalf("explicit strict profile must remain a recommendation: %+v", summaries[0])
+	}
+
+	// Removing the unfamiliar display retains the ordinary undocked fallback.
+	m.monitors = []hypr.Monitor{paneTestLaptop}
+	if summaries = m.profileMatchSummaries(); !summaries[0].recommended {
+		t.Fatalf("known laptop was not recommended after undocking: %+v", summaries[0])
+	}
+}
+
 func TestBusyDaemonIsNotReportedAsStopped(t *testing.T) {
 	m := Model{styles: newStyles(), daemonOK: true, profileOverride: "Desk Solo"}
 

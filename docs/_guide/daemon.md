@@ -65,7 +65,8 @@ physical-size scale recommendations, and explicit failed-wake/cold-start rescue
 remain separate follow-up work.
 
 Failed automatic applies retry independently of monitor-change events, starting
-after 2 seconds with capped exponential backoff up to 30 seconds. Successful
+after 2 seconds with capped exponential backoff up to 30 seconds. Transient busy
+reads and writer contention retry after the normal debounce interval. Successful
 application stops retries. Preview ownership defers retries; suspend, intentional
 display sleep and unmanaged mode stop them. Resume or a later wake/topology event
 restarts reconciliation. Verification reports all failed outputs, not just the
@@ -95,6 +96,16 @@ When the daemon is running, it is also the canonical writer. The TUI, CLI, and i
 
 Interactive profile changes are deliberate overrides. After you confirm one, the daemon keeps it in place until the monitor set or lid state changes. Automatic matching then resumes.
 
+### Slow or unfamiliar docks
+
+Connecting a dock can temporarily stall compositor reads. Each monitor or workspace-rule query uses a 750 ms deadline by default. The daemon's apply engine uses the same per-read limit for version, workspace, Lua verification, and post-reload monitor reads. A timed-out apply read returns a retryable error; if config was already written, the engine first attempts rollback with its separate recovery context. Topology checks run in a coalesced worker so the event loop can still consume new hotplug and suspend events while that read is pending. Each consumed hotplug cancels older pending debounce/retry timers; reconciliation waits for the newest probe and a fresh debounce, including when another trigger arrives during that probe. Results and queued triggers from an older topology, before suspend, or before an explicit lid-open wake are discarded. A hotplug awaiting a probe when the lid opens is checked again after waking, so an older DPMS-off snapshot cannot cancel wake reconciliation. Transient query failures retry without requiring another monitor event, and reconciliation defers while an interactive writer owns the display lock.
+
+Automatic reconciliation still runs serially, including its bounded reads and profile apply/rollback; event consumption can wait for that reconciliation to finish. The read deadlines are not an overall apply timeout: reloads, display writes, rollback, and post-apply commands retain their existing lifecycle. The terminal editor retains its separate asynchronous refresh with an eight-second overall context; the Omarchy panel uses the bounded daemon IPC queries.
+
+DRM connector paths are needed only to distinguish displays with the same hardware identity. Distinct identities, including different serial numbers of the same model, skip DRM entirely. Ambiguous sets share one process-wide probe: a stuck driver may occupy that worker until it returns, but subsequent callers wait only until their own deadlines. No canceled result or incomplete identity snapshot is returned as fresh state.
+
+An unfamiliar display can extend a partially matching profile; if no profile matches, the daemon builds a temporary layout from the connected displays. Query deadlines bound waiting for compositor responses; they do not speed up physical dock enumeration. Applying and reverting layouts still use the serialized apply engine.
+
 ## Profile matching
 
 Profiles are matched by hardware identity (make, model, serial) -- not connector name. This means your layout survives when monitors swap between `DP-1` and `DP-2` across reboots. Each profile is scored against the currently connected monitors:
@@ -107,13 +118,17 @@ Profiles are matched by hardware identity (make, model, serial) -- not connector
 | Monitor enabled in profile but not connected | −30 |
 | Monitor disabled in profile and not connected | −10 |
 
-Highest score wins. Ties break alphabetically by profile name. A profile that mentions a monitor which is not plugged in pays for it either way, so the profile that describes exactly the connected displays beats a larger profile that happens to include them. The profiles tab shows every score, along with this breakdown for the selected profile.
+For automatic switching, a profile must enable at least one connected display and have a positive score. A partial match can provide the base for a temporary extended layout: unfamiliar displays are added unless the profile explicitly sets `disable_unknown_outputs: true`. Deliberately disabled known displays remain off. Missing saved displays remain allowed, so undocking can still restore the laptop layout.
+
+Among eligible profiles, the highest score wins. Ties break alphabetically by profile name. A profile that mentions a monitor which is not plugged in pays for it either way, so the profile that describes exactly the connected displays beats a larger profile that happens to include them. The profiles tab shows every score, along with this breakdown for the selected profile.
+
+Another physical unit of the same model may have a different serial number and therefore a different identity. Extension treats it as a new display without copying another unit's calibration.
 
 On laptops, the daemon also reads lid state. UPower is optional, but recommended: with UPower available, lid changes arrive as D-Bus events and the daemon can react immediately. Without UPower, the daemon falls back to polling `/proc/acpi/button/lid/*/state` at `--lid-poll-interval`, which defaults to `1s` and is not available on every system. If neither source exists, lid-aware switching is disabled and monitor hotplug still works.
 
 Lid state is not a separate profile type. Save the profile for the monitor setup you actually have attached. When the lid is closed and an external output has an awake, nonzero mode and remains enabled in the target profile, hyprmoncfg treats internal laptop-panel outputs like `eDP-1`, `LVDS-1`, or `DSI-1` as forced off for that apply. Modeless, disabled, sleeping, and synthetic fallback outputs do not qualify. Saved profiles are not rewritten. If workspace rules target the forced-off internal panel, those workspaces are moved to the first enabled external output in the selected profile.
 
-{% include alert.html type="warning" title="Every Profile Is A Candidate" content="The daemon does not know which profiles are \"real\" and which were temporary experiments. It scores every JSON file in your profiles directory. An old throwaway profile with a high enough score will win over the one you actually want." %}
+{% include alert.html type="warning" title="Remove Throwaway Profiles" content="The daemon does not know which profiles are \"real\" and which were temporary experiments. Any profile with a positive hardware match can be eligible. An old throwaway profile with a high enough score can win over the one you actually want." %}
 
 If you want reliable auto-switching:
 
@@ -162,6 +177,8 @@ journalctl --user -u hyprmoncfgd -f
 ```
 
 The log shows every step: which profiles were scored, what each one scored, which one won, what generated monitor config was written, and whether verification passed. This is the first place to look when you want to understand why the daemon picked a particular profile.
+
+Raw monitor-event arrival, slow or failed compositor queries, and reconciliation duration are logged separately. Compare these timestamps to distinguish time spent before an event arrives from time spent querying or applying a profile. Query timing messages include the operation and elapsed time without adding monitor serial numbers.
 
 {% include alert.html type="tip" title="Separate Matching From Applying" content="If you're not sure whether the daemon picked the wrong profile or failed to apply the right one, test the profile directly with <code>hyprmoncfg apply &lt;name&gt;</code>. If the layout looks correct, the problem is matching, not applying -- check the logs and your profile directory." %}
 

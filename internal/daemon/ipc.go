@@ -13,6 +13,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/appstatus"
 	"github.com/crmne/hyprmoncfg/internal/buildinfo"
 	"github.com/crmne/hyprmoncfg/internal/config"
+	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/ipc"
 	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/profile"
@@ -40,11 +41,7 @@ func (s *Service) Status() (appstatus.Document, error) {
 	if err != nil {
 		return appstatus.Document{}, err
 	}
-	monitors, err := s.client.Monitors(ctx)
-	if err != nil {
-		return appstatus.Document{}, err
-	}
-	rules, err := s.client.WorkspaceRules(ctx)
+	monitors, rules, err := s.queryHardwareSnapshot(ctx)
 	if err != nil {
 		return appstatus.Document{}, err
 	}
@@ -76,15 +73,34 @@ func (s *Service) EditorState() (appstatus.EditorDocument, error) {
 	if err != nil {
 		return appstatus.EditorDocument{}, err
 	}
-	monitors, err := s.client.Monitors(ctx)
-	if err != nil {
-		return appstatus.EditorDocument{}, err
-	}
-	rules, err := s.client.WorkspaceRules(ctx)
+	monitors, rules, err := s.queryHardwareSnapshot(ctx)
 	if err != nil {
 		return appstatus.EditorDocument{}, err
 	}
 	return appstatus.BuildEditor(profiles, monitors, rules), nil
+}
+
+// Read workspace rules between two bounded hardware reads. A dock change in
+// that interval must not combine the old output keys with the new workspaces.
+// Clients also fence responses against their own observed topology generation:
+// this equality check cannot detect an unobserved change away and back again.
+func (s *Service) queryHardwareSnapshot(ctx context.Context) ([]hypr.Monitor, []hypr.WorkspaceRule, error) {
+	before, err := s.queryMonitors(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	rules, err := s.queryWorkspaceRules(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	after, err := s.queryMonitors(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if appstatus.HardwareSnapshotHash(before) != appstatus.HardwareSnapshotHash(after) {
+		return nil, nil, fmt.Errorf("%w (hardware changed during snapshot)", ipc.ErrCompositorBusy)
+	}
+	return after, rules, nil
 }
 
 func (s *Service) EditProfile(params ipc.EditParams) (appstatus.EditorDraft, error) {
@@ -216,11 +232,11 @@ func (s *Service) SetProfileAuto(params ipc.ProfileAutoParams) error {
 	if err != nil {
 		return err
 	}
-	monitors, err := s.client.Monitors(ctx)
+	monitors, err := s.queryMonitors(ctx)
 	if err != nil {
 		return err
 	}
-	rules, err := s.client.WorkspaceRules(ctx)
+	rules, err := s.queryWorkspaceRules(ctx)
 	if err != nil {
 		return err
 	}
@@ -263,7 +279,7 @@ func (s *Service) Preview(owner string, params ipc.PreviewParams) (ipc.Transacti
 
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	monitors, err := s.client.Monitors(ctx)
+	monitors, err := s.queryMonitors(ctx)
 	if err != nil {
 		return ipc.Transaction{}, err
 	}
@@ -273,7 +289,7 @@ func (s *Service) Preview(owner string, params ipc.PreviewParams) (ipc.Transacti
 	}
 	snapshot, err := s.engine.Apply(ctx, effective, monitors, apply.ApplyModeInteractive)
 	if err != nil {
-		return ipc.Transaction{}, err
+		return ipc.Transaction{}, applyQueryError(err)
 	}
 
 	id, err := transactionID()
@@ -350,7 +366,7 @@ func (s *Service) commitPreview(owner string, transactionID string, save bool) e
 	}
 	// Record what the confirmed profile left on screen, so the next automatic
 	// pass recognizes the current state instead of applying it a second time.
-	if monitors, err := s.client.Monitors(ctx); err != nil {
+	if monitors, err := s.queryMonitors(ctx); err != nil {
 		s.applied = nil
 		s.cfg.Logf("refresh monitors after confirm failed: %v", err)
 	} else {

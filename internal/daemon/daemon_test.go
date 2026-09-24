@@ -614,6 +614,11 @@ exit 1
 		MonitorsConf:    monitorsConfPath,
 		HyprConfig:      hyprlandConfigPath,
 	})
+	// The fake monitor fixture must not inherit the real laptop's closed lid
+	// or suspend events while testing display wake reconciliation.
+	svc.readLid = func(context.Context) (lid.State, error) { return lid.Open, nil }
+	svc.watchLid = func(context.Context, time.Duration) (<-chan lid.State, <-chan error) { return nil, nil }
+	svc.watchSuspend = func(context.Context) <-chan bool { return nil }
 	go func() { done <- svc.Run(ctx) }()
 	defer func() {
 		cancel()
@@ -714,6 +719,11 @@ func (r *logRecorder) all() string {
 // channels, against a fake hyprctl serving monitor state from a file.
 func newRunTestEnv(t *testing.T, monitors []hypr.Monitor, configure ...func(*Service)) runTestEnv {
 	t.Helper()
+	return newRunTestEnvConfigured(t, monitors, nil, configure...)
+}
+
+func newRunTestEnvConfigured(t *testing.T, monitors []hypr.Monitor, configure func(*Config), setupService ...func(*Service)) runTestEnv {
+	t.Helper()
 
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "hyprctl.log")
@@ -789,7 +799,7 @@ exit 1
 	}
 
 	logs := &logRecorder{}
-	svc := New(client, store, Config{
+	cfg := Config{
 		Debounce:        50 * time.Millisecond,
 		WakeSettle:      80 * time.Millisecond,
 		PollInterval:    time.Hour,
@@ -798,7 +808,11 @@ exit 1
 		MonitorsConf:    monitorsConfPath,
 		HyprConfig:      hyprlandConfigPath,
 		Logf:            logs.logf,
-	})
+	}
+	if configure != nil {
+		configure(&cfg)
+	}
+	svc := New(client, store, cfg)
 
 	var lidMu sync.Mutex
 	lidNow := lid.Open
@@ -816,7 +830,7 @@ exit 1
 		return suspendEvents
 	}
 
-	for _, setup := range configure {
+	for _, setup := range setupService {
 		setup(svc)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -876,7 +890,7 @@ func TestRunDropsStaleLidCloseAcrossSuspendAndWakesDisplaysOnResume(t *testing.T
 		}
 	}()
 
-	waitFor(t, time.Second, func() bool { return reloadCount(env.logPath) == 1 }, "startup profile apply")
+	waitFor(t, time.Second, func() bool { return env.logs.contains("applied profile: Home") }, "startup profile apply and validation")
 
 	// The lid closes; before the debounce elapses, the machine suspends.
 	env.setLid(lid.Closed)
@@ -925,7 +939,7 @@ func TestRunAppliesClosedLidPolicyWhenLidCloseDoesNotSuspend(t *testing.T) {
 		}
 	}()
 
-	waitFor(t, time.Second, func() bool { return reloadCount(env.logPath) == 1 }, "startup profile apply")
+	waitFor(t, time.Second, func() bool { return env.logs.contains("applied profile: Home") }, "startup profile apply and validation")
 
 	// The panel is still on when the lid closes; the reload the daemon issues
 	// is what turns it off, so stage that state as the post-reload result.

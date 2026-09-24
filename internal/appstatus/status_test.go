@@ -11,6 +11,57 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
+func TestHardwareSnapshotHashTracksIdentityAndConnectorBindings(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "DP-1", Make: "Example", Model: "Panel", Serial: "A"},
+		{Name: "DP-2", Make: "Example", Model: "Panel", Serial: "B"},
+	}
+	before := HardwareSnapshotHash(monitors)
+	reordered := []hypr.Monitor{monitors[1], monitors[0]}
+	reordered[0].Focused, reordered[0].Disabled, reordered[0].DPMSStatus = true, true, true
+	reordered[0].Width, reordered[0].X, reordered[0].Scale = 3840, 1920, 1.5
+	if got := HardwareSnapshotHash(reordered); got != before {
+		t.Fatal("hardware hash changed with enumeration order, focus, power or layout")
+	}
+	for _, change := range []string{"serial", "connector", "added"} {
+		changed := append([]hypr.Monitor(nil), monitors...)
+		switch change {
+		case "serial":
+			changed[0].Serial = "replacement"
+		case "connector":
+			changed[0].Name, changed[1].Name = changed[1].Name, changed[0].Name
+		case "added":
+			changed = append(changed, hypr.Monitor{Name: "eDP-1", Make: "Example", Model: "Laptop"})
+		}
+		if got := HardwareSnapshotHash(changed); got == before {
+			t.Fatalf("hardware hash missed %s change", change)
+		}
+	}
+	monitors[0].Serial, monitors[1].Serial = "", ""
+	monitors[0].ConnectorPath, monitors[1].ConnectorPath = "pci-0000:00:02.0-card1-DP-1", "pci-0000:00:02.0-card1-DP-2"
+	before = HardwareSnapshotHash(monitors)
+	monitors[0].ConnectorPath, monitors[1].ConnectorPath = monitors[1].ConnectorPath, monitors[0].ConnectorPath
+	if got := HardwareSnapshotHash(monitors); got == before {
+		t.Fatal("hardware hash missed ambiguous output path rebinding")
+	}
+}
+
+func TestStatusAndEditorExposeMatchingHardwareIdentity(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "DP-1", Make: "Example", Model: "Panel", Serial: "unit-a", Width: 1920, Height: 1080, Scale: 1}}
+	status := Build("test", true, nil, monitors, nil)
+	editor := BuildEditor(nil, monitors, nil)
+	if status.MonitorSetHash == "" || status.MonitorSetHash != editor.MonitorSetHash {
+		t.Fatalf("status/editor hardware hash mismatch: %q != %q", status.MonitorSetHash, editor.MonitorSetHash)
+	}
+	if status.Monitors[0].Key != editor.Profile.Outputs[0].Key || status.Monitors[0].MatchKey != monitors[0].HardwareKey() || status.Monitors[0].Serial != "unit-a" {
+		t.Fatalf("status omitted editor hardware identity: %+v", status.Monitors[0])
+	}
+	encoded, err := json.Marshal(status)
+	if err != nil || !strings.Contains(string(encoded), `"monitor_set_hash":`) || !strings.Contains(string(encoded), `"serial":"unit-a"`) {
+		t.Fatalf("identity not exposed over JSON: %s %v", encoded, err)
+	}
+}
+
 func TestBuildMarksActiveAndRecommendedProfile(t *testing.T) {
 	monitor := hypr.Monitor{
 		Name:        "eDP-1",
@@ -82,6 +133,34 @@ func TestBuildMarksProfilesWithoutConnectedEnabledOutputs(t *testing.T) {
 	}
 	if document.Profiles[1].ExactDisplayMatch {
 		t.Fatalf("unavailable profile should not exactly match: %#v", document.Profiles[1])
+	}
+}
+
+func TestBuildRecommendsPartialBasesAndExplicitDisplayPolicies(t *testing.T) {
+	laptop := hypr.Monitor{Name: "eDP-1", Make: "Example", Model: "Laptop"}
+	desk := hypr.Monitor{Name: "DP-1", Make: "Example", Model: "Desk"}
+	monitors := []hypr.Monitor{laptop, desk}
+	for _, policy := range []string{"extend", "strict", "known-disabled"} {
+		t.Run(policy, func(t *testing.T) {
+			savedMonitors := []hypr.Monitor{laptop}
+			if policy == "known-disabled" {
+				disabled := desk
+				disabled.Disabled = true
+				savedMonitors = append(savedMonitors, disabled)
+			}
+			saved := profile.FromMonitors("Laptop", savedMonitors)
+			saved.DisableUnknownOutputs = policy == "strict"
+			document := Build("test", true, []profile.Profile{saved}, monitors, nil)
+			if document.Profiles[0].MatchScore <= 0 {
+				t.Fatal("fixture must remain a positive hardware match")
+			}
+			if !document.Profiles[0].Recommended || document.RecommendedProfile == nil || document.RecommendedProfile.Name != saved.Name {
+				t.Fatalf("recommendation disagrees with automatic selection: %+v", document)
+			}
+			if document.ActiveProfile != nil {
+				t.Fatalf("recommended base was mistaken for the current saved state: %+v", document.ActiveProfile)
+			}
+		})
 	}
 }
 

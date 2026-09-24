@@ -227,5 +227,11 @@ func decodeResponseError(responseErr *ResponseError) error {
 	if responseErr.Code == "transaction_unavailable" {
 		return fmt.Errorf("%w: %s", ErrTransactionUnavailable, responseErr.Message)
 	}
+	if responseErr.Code == "compositor_busy" {
+		if responseErr.Message == "" || responseErr.Message == ErrCompositorBusy.Error() {
+			return ErrCompositorBusy
+		}
+		return fmt.Errorf("%w: %s", ErrCompositorBusy, responseErr.Message)
+	}
 	return fmt.Errorf("%s", responseErr.Message)
 }
