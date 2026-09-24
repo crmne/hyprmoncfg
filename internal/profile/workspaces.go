@@ -222,6 +222,18 @@ func inferGeneratedWorkspaceSettings(rules []WorkspaceRule) (WorkspaceSettings, 
 		GroupSize:     1,
 		MonitorOrder:  append([]string(nil), order...),
 	}
+	// One display cannot distinguish round-robin from grouped assignments.
+	// Prefer the default grouped plan so importing a solo setup does not
+	// unexpectedly alternate workspaces when another display is connected.
+	// Exact saved profiles retain their explicit strategy in EditorProfileFromState.
+	if len(outputs) == 1 {
+		sequentialSettings := interleaveSettings
+		sequentialSettings.Strategy = WorkspaceStrategySequential
+		sequentialSettings.GroupSize = 3
+		if rulesMatchGeneratedRules(rules, outputs, sequentialSettings, false) {
+			return sequentialSettings, true
+		}
+	}
 	if rulesMatchGeneratedRules(rules, outputs, interleaveSettings, true) {
 		return interleaveSettings, true
 	}

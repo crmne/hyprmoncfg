@@ -293,6 +293,58 @@ func TestWorkspaceSettingsFromHyprInfersInterleaveStrategy(t *testing.T) {
 	}
 }
 
+func TestSoloWorkspaceImportExtendsInSequentialGroups(t *testing.T) {
+	for _, persistAll := range []bool{false, true} {
+		monitors := []hypr.Monitor{{Name: "eDP-1", Width: 1920, Height: 1080, Scale: 1}}
+		original := FromMonitors("solo", monitors)
+		original.Workspaces = WorkspaceSettings{
+			Enabled: true, Strategy: WorkspaceStrategySequential,
+			MaxWorkspaces: 6, GroupSize: 3, PersistAll: persistAll,
+		}
+		var liveRules []hypr.WorkspaceRule
+		for _, rule := range ResolveWorkspaceRules(original, monitors) {
+			liveRules = append(liveRules, hypr.WorkspaceRule{
+				WorkspaceString: rule.Workspace, Monitor: rule.OutputName,
+				Default: rule.Default, Persistent: rule.Persistent,
+			})
+		}
+		draft, _, _ := EditorProfileFromState(nil, monitors, liveRules)
+		if draft.Workspaces.Strategy != WorkspaceStrategySequential || draft.Workspaces.GroupSize != 3 {
+			t.Fatalf("solo import guessed the wrong default: %+v", draft.Workspaces)
+		}
+		if draft.Workspaces.MaxWorkspaces != 6 || draft.Workspaces.PersistAll != persistAll {
+			t.Fatalf("solo import lost count or persistence: %+v", draft.Workspaces)
+		}
+		monitors = append(monitors, hypr.Monitor{Name: "HDMI-A-1", Width: 1920, Height: 1080, Scale: 1})
+		extended := ExtendConnected(draft, monitors)
+		for i, rule := range ResolveWorkspaceRules(extended, monitors) {
+			want := monitors[i/3].Name
+			if rule.OutputName != want {
+				t.Fatalf("workspace %s: got %s, want %s", rule.Workspace, rule.OutputName, want)
+			}
+		}
+	}
+}
+
+func TestSoloWorkspaceImportPreservesSavedInterleave(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "eDP-1", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1}}
+	saved := FromMonitors("solo", monitors)
+	saved.Workspaces = WorkspaceSettings{
+		Enabled: true, Strategy: WorkspaceStrategyInterleave, MaxWorkspaces: 6, GroupSize: 1,
+	}
+	var liveRules []hypr.WorkspaceRule
+	for _, rule := range ResolveWorkspaceRules(saved, monitors) {
+		liveRules = append(liveRules, hypr.WorkspaceRule{
+			WorkspaceString: rule.Workspace, Monitor: rule.OutputName,
+			Default: rule.Default, Persistent: rule.Persistent,
+		})
+	}
+	draft, source, _ := EditorProfileFromState([]Profile{saved}, monitors, liveRules)
+	if source != saved.Name || draft.Workspaces.Strategy != WorkspaceStrategyInterleave {
+		t.Fatalf("explicit saved strategy was replaced: source=%q, settings=%+v", source, draft.Workspaces)
+	}
+}
+
 func TestWorkspaceSettingsFromHyprPreservesCanonicalMonitorOrder(t *testing.T) {
 	monitors := []hypr.Monitor{
 		{Name: "DP-1", Make: "Dell", Model: "U2720Q", Serial: "A1", X: 0},

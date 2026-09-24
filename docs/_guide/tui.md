@@ -135,6 +135,11 @@ best match from the row currently selected for inspection.
 
 The second tab lets you distribute workspaces across monitors. Pick one of three strategies:
 
+Sequential is preferred for new plans. When importing consecutive rules from one
+display, the editor uses Sequential with groups of three and keeps the existing
+workspace total and persistence. Saved profiles retain their explicit strategy,
+including Interleaved; this default does not migrate existing profiles.
+
 | Strategy | What it does | When to use it |
 |----------|-------------|----------------|
 | `sequential` | Groups workspaces in chunks (e.g., 1-3 on monitor A, 4-6 on monitor B) | You think of each monitor as having "its own" workspaces |

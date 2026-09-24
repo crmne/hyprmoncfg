@@ -140,6 +140,12 @@ defaults. The current bool cannot distinguish unset from explicitly disabled, so
 introduce a backward-compatible representation before implementing that distinction.
 Do not guess intent from `enabled: false` in existing files.
 
+Sequential is the preferred strategy when creating a plan. Importing consecutive
+workspace rules on a single display cannot distinguish Sequential from Interleaved;
+prefer Sequential with groups of three, preserving the imported total and
+persistence. An exact saved profile takes precedence, including an explicitly saved
+Interleaved plan. Never silently migrate existing profiles to the preferred default.
+
 ### Disconnect, lid, sleep, and recovery
 
 Removing the temporary screen restores the original saved layout when that setup
@@ -303,6 +309,14 @@ terminal (target 80x24) and a 1366x768 logical desktop with bar/panel margins. A
 narrow sizes, stack or switch between canvas and inspector. Keep and Revert remain
 visible even below normal editor minimums. Test fractional scaling, long names,
 keyboard-only interaction, and enlarged fonts.
+
+The expanded panel carries the compact view's setup status and contextual Create
+profile action in a single full-width footer. Keep the secondary TUI launcher in
+the header beside Identify, Keys, and Compact. Do not duplicate setup status in
+the header or label normal automatic behavior repeatedly. A saved setup needs its
+name and display count; paused matching remains explicit and actionable. Creating a
+profile retains the current draft and reveals naming, Discard, and Preview & save.
+Keep explicit dirty/creating/browsing state distinct from the live setup status.
 
 ## Accepted display presentation (2026-09-22)
 
