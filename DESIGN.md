@@ -145,6 +145,13 @@ defaults. The current bool cannot distinguish unset from explicitly disabled, so
 introduce a backward-compatible representation before implementing that distinction.
 Do not guess intent from `enabled: false` in existing files.
 
+Both clients show turning planning off as the **Off** choice of the Strategy
+control, first in the order Off, Manual, Sequential, Interleaved. Off stores
+`enabled: false` and keeps the saved strategy and plan, so choosing a strategy
+again restores it; the other planner rows are inert while Off. This is for setups
+where another tool owns workspace placement (#70). It does not add the
+unset-versus-explicit distinction above.
+
 Sequential is the preferred strategy when creating a plan. Importing consecutive
 workspace rules on a single display cannot distinguish Sequential from Interleaved;
 prefer Sequential with groups of three, preserving the imported total and

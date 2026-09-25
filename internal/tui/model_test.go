@@ -542,8 +542,8 @@ func TestWorkspaceMouseSelectsVisibleField(t *testing.T) {
 	x, y := findVisiblePosition(t, m.renderMain(), "Max workspaces")
 	updated, _ := m.updateMouse(mousePressAt(x, y))
 	got := updated.(Model)
-	if got.workspaceEdit.SelectedField != 2 {
-		t.Fatalf("expected visible click on Max workspaces to select field 2, got %d", got.workspaceEdit.SelectedField)
+	if got.workspaceEdit.SelectedField != 1 {
+		t.Fatalf("expected visible click on Max workspaces to select field 1, got %d", got.workspaceEdit.SelectedField)
 	}
 	if got.workspaceEdit.MaxWorkspaces != 7 {
 		t.Fatalf("expected click on Max workspaces to increment value to 7, got %d", got.workspaceEdit.MaxWorkspaces)
@@ -585,6 +585,7 @@ func TestSyncSelectionsPreservesWorkspaceOrderSelection(t *testing.T) {
 	m := Model{
 		styles: newStyles(),
 		workspaceEdit: workspaceEditor{
+			Enabled:       true,
 			MonitorOrder:  []string{"mon-a", "mon-b"},
 			SelectedField: len(workspaceFields) + 1,
 			SelectedOrder: 1,
@@ -2480,7 +2481,9 @@ func TestSnapSelectedOutputWithoutAnchorDoesNotChangeLayout(t *testing.T) {
 	}
 }
 
-func TestRenderWorkspaceViewShowsPreviewWhenDisabled(t *testing.T) {
+// Off keeps the saved plan but writes no rules (#70), so the preview must not
+// suggest any workspace placement.
+func TestRenderWorkspaceViewWhenOff(t *testing.T) {
 	m := Model{
 		styles: newStyles(),
 		tab:    tabWorkspaces,
@@ -2497,14 +2500,11 @@ func TestRenderWorkspaceViewShowsPreviewWhenDisabled(t *testing.T) {
 		},
 	}
 
-	view := m.renderWorkspaceView(16)
-	for _, want := range []string{
-		"(workspace rules disabled; preview only)",
-		"DP-1      1, 2, 3",
-		"HDMI-A-1  4, 5, 6",
-	} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("expected workspace view to include %q, got:\n%s", want, view)
+	view := ansi.Strip(m.renderWorkspaceView(16))
+	requireContains(t, view, "Strategy        Off", "Off: hyprmoncfg writes no workspace rules.")
+	for _, unwanted := range []string{"1, 2, 3", "4, 5, 6", "Monitor order", "Group size     3"} {
+		if strings.Contains(view, unwanted) {
+			t.Fatalf("Off view should not show %q:\n%s", unwanted, view)
 		}
 	}
 }
@@ -2524,7 +2524,7 @@ func TestAdjustWorkspaceFieldRestoresSequentialPreviewAfterInterleave(t *testing
 			GroupSize:               1,
 			LastSequentialGroupSize: defaultWorkspaceGroupSize,
 			MonitorOrder:            []string{"mon-a", "mon-b"},
-			SelectedField:           1,
+			SelectedField:           0,
 		},
 	}
 
@@ -2547,10 +2547,11 @@ func TestAdjustWorkspaceFieldRestoresSequentialPreviewAfterInterleave(t *testing
 func TestAdjustWorkspaceFieldPreservesCustomSequentialGroupSize(t *testing.T) {
 	m := Model{
 		workspaceEdit: workspaceEditor{
+			Enabled:                 true,
 			Strategy:                profile.WorkspaceStrategySequential,
 			GroupSize:               2,
 			LastSequentialGroupSize: 2,
-			SelectedField:           1,
+			SelectedField:           0,
 		},
 	}
 
@@ -2628,7 +2629,7 @@ func TestEnteringManualWorkspaceStrategyMaterializesVisiblePlan(t *testing.T) {
 			MaxWorkspaces: 6,
 			GroupSize:     3,
 			MonitorOrder:  []string{"dell|desk", "lg|side"},
-			SelectedField: 1,
+			SelectedField: 0,
 		},
 	}
 
@@ -2721,10 +2722,11 @@ func TestManualWorkspaceCountAddsAndRemovesNumberedAssignments(t *testing.T) {
 			{Key: "mon-b", Name: "HDMI-A-1", Enabled: true, Scale: 1},
 		},
 		workspaceEdit: workspaceEditor{
+			Enabled:       true,
 			Strategy:      profile.WorkspaceStrategyManual,
 			MaxWorkspaces: 2,
 			MonitorOrder:  []string{"mon-a", "mon-b"},
-			SelectedField: 2,
+			SelectedField: 1,
 			Rules: []profile.WorkspaceRule{
 				{Workspace: "1", OutputKey: "mon-a", OutputName: "DP-1"},
 				{Workspace: "2", OutputKey: "mon-b", OutputName: "HDMI-A-1"},
@@ -2754,10 +2756,11 @@ func TestWorkspaceCountsHaveNoLegacyCeilingAndAcceptExactInput(t *testing.T) {
 	m := Model{
 		styles: newStyles(),
 		workspaceEdit: workspaceEditor{
+			Enabled:       true,
 			Strategy:      profile.WorkspaceStrategySequential,
 			MaxWorkspaces: 30,
 			GroupSize:     10,
-			SelectedField: 2,
+			SelectedField: 1,
 		},
 	}
 
@@ -2765,13 +2768,13 @@ func TestWorkspaceCountsHaveNoLegacyCeilingAndAcceptExactInput(t *testing.T) {
 	if m.workspaceEdit.MaxWorkspaces != 31 {
 		t.Fatalf("workspace count should move past the old ceiling: got %d", m.workspaceEdit.MaxWorkspaces)
 	}
-	m.workspaceEdit.SelectedField = 3
+	m.workspaceEdit.SelectedField = 2
 	m.adjustWorkspaceField(1)
 	if m.workspaceEdit.GroupSize != 11 {
 		t.Fatalf("group size should move past the old ceiling: got %d", m.workspaceEdit.GroupSize)
 	}
 
-	m.workspaceEdit.SelectedField = 2
+	m.workspaceEdit.SelectedField = 1
 	updated, _ := m.updateWorkspaceKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(Model)
 	if got.mode != modeNumericInput || got.input == nil || got.input.Kind != numericInputWorkspaceCount {
@@ -2787,7 +2790,7 @@ func TestWorkspaceCountsHaveNoLegacyCeilingAndAcceptExactInput(t *testing.T) {
 	}
 
 	got.dirty = false
-	got.workspaceEdit.SelectedField = 3
+	got.workspaceEdit.SelectedField = 2
 	updated, _ = got.updateWorkspaceKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got = updated.(Model)
 	if got.mode != modeNumericInput || got.input == nil || got.input.Kind != numericInputWorkspaceGroupSize {
@@ -2817,6 +2820,7 @@ func TestLongManualWorkspaceListHasPageAndBoundaryNavigation(t *testing.T) {
 			{Key: "mon-a", Name: "DP-1", Enabled: true, Scale: 1},
 		},
 		workspaceEdit: workspaceEditor{
+			Enabled:       true,
 			Strategy:      profile.WorkspaceStrategyManual,
 			SelectedField: len(workspaceFields),
 			Rules:         rules,
@@ -2871,6 +2875,7 @@ func TestWorkspaceMouseWheelScrollsWithoutEditingAssignments(t *testing.T) {
 			{Key: "mon-b", Name: "DP-2", Enabled: true, Scale: 1},
 		},
 		workspaceEdit: workspaceEditor{
+			Enabled:       true,
 			Strategy:      profile.WorkspaceStrategyManual,
 			SelectedField: len(workspaceFields) + 20,
 			SelectedOrder: 20,
@@ -3584,6 +3589,7 @@ func TestFooterTellsTheInspectorHowToChangeAValue(t *testing.T) {
 	workspaces := Model{
 		tab: tabWorkspaces,
 		workspaceEdit: workspaceEditor{
+			Enabled:  true,
 			Strategy: profile.WorkspaceStrategySequential,
 		},
 	}.footerHelpText()

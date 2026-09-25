@@ -26,7 +26,7 @@ hyprctl dispatch nextdesk
 
 hyprmoncfg's planner writes `workspace_rule` entries pinning workspace 1 to this monitor and workspace 2 to that one. virtual-desktops assigns workspaces to monitors itself, differently per desk. Leave both on and whichever ran last wins.
 
-So turn the planner off in the TUI's Workspaces tab, on every profile you use with the plugin. hyprmoncfg then writes no workspace rules at all, and the split is clean: hyprmoncfg puts the monitors where they belong, virtual-desktops decides what appears on them.
+So set **Strategy** to Off in the Workspaces tab, on every profile you use with the plugin. hyprmoncfg then writes no workspace rules at all, and the split is clean: hyprmoncfg puts the monitors where they belong, virtual-desktops decides what appears on them.
 
 You lose nothing. Spreading workspaces across displays is what the plugin does, and it does it per desk rather than once.
 
@@ -50,7 +50,7 @@ The command runs directly rather than through a shell, so a `&&` or a pipeline b
 
 1. Open the TUI, arrange your docked layout, save it as `desk`
 2. Undock, arrange the laptop on its own, save that as `mobile`
-3. Turn the workspace planner off on both, in the Workspaces tab
+3. Set **Strategy** to Off on both, in the Workspaces tab
 4. Set `plugin:virtual-desktops:rememberlayout = monitors` in your Hyprland config
 
 Dock the laptop and hyprmoncfg puts the monitors back where they belong. Press `SUPER+2` and all of them move together.

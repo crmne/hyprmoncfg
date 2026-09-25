@@ -1492,11 +1492,7 @@ func (m Model) updateWorkspaceMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	visualY := msg.Y + scrollOffset
 	if msg.Action == tea.MouseActionPress && visualY >= orderStart {
 		row := visualY - orderStart
-		itemCount := len(m.workspaceEdit.MonitorOrder)
-		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
-			itemCount = len(m.workspaceEdit.Rules)
-		}
-		if row >= 0 && row < itemCount {
+		if row >= 0 && row < m.workspaceListItemCount() {
 			m.workspaceEdit.SelectedField = len(workspaceFields) + row
 			m.workspaceEdit.SelectedOrder = row
 		}
@@ -1585,6 +1581,9 @@ func (m Model) workspaceSettingsRect() hitRect {
 }
 
 func (m Model) workspaceSettingsLineCount() int {
+	if !m.workspaceEdit.Enabled {
+		return len(workspaceFields)
+	}
 	count := len(workspaceFields) + 2
 	itemCount := m.workspaceListItemCount()
 	if itemCount == 0 {

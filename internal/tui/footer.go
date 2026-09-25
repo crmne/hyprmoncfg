@@ -53,6 +53,9 @@ func (m Model) footerHelpText() string {
 		}
 		return "`↑↓` browse | `Enter` preview | `l` edit | `e` post-apply command | `d` delete | `?` keys"
 	case tabWorkspaces:
+		if !m.workspaceEdit.Enabled {
+			return "`↑↓` select | `←→` adjust | `a` apply | `s` save | `?` keys"
+		}
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
 			return "`↑↓` select | `←→` assign | `Enter` type count | `a` apply | `s` save | `?` keys"
 		}

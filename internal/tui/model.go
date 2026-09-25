@@ -943,9 +943,9 @@ func (m Model) updateWorkspaceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.adjustWorkspaceField(1)
 		}
 	case "enter":
-		if !inItems {
+		if !inItems && m.workspaceEdit.Enabled {
 			switch m.workspaceEdit.SelectedField {
-			case 2:
+			case 1:
 				return m, m.openNumericInput(
 					numericInputWorkspaceCount,
 					-1,
@@ -953,7 +953,7 @@ func (m Model) updateWorkspaceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					"Type any positive number. Enter applies. Esc cancels.",
 					strconv.Itoa(m.workspaceEdit.MaxWorkspaces),
 				)
-			case 3:
+			case 2:
 				if m.workspaceEdit.Strategy == profile.WorkspaceStrategySequential {
 					return m, m.openNumericInput(
 						numericInputWorkspaceGroupSize,
@@ -1721,21 +1721,19 @@ func (m Model) renderWorkspacePreviewPanes(width, height int) string {
 	innerWidth := max(1, width-style.GetHorizontalFrameSize())
 
 	settings := m.workspaceEdit.settings()
-	disabled := !settings.Enabled
-	if disabled {
-		settings.Enabled = true
-	}
 	outputs := m.currentProfileOutputs()
-	rules := settings.Rules
-	if settings.Strategy != profile.WorkspaceStrategyManual && settings.Strategy != "" {
-		rules = m.workspacePlan(outputs, settings)
+	var rules []profile.WorkspaceRule
+	if settings.Enabled {
+		rules = settings.Rules
+		if settings.Strategy != profile.WorkspaceStrategyManual && settings.Strategy != "" {
+			rules = m.workspacePlan(outputs, settings)
+		}
 	}
 
 	planLines := make([]string, 0, len(outputs)+2)
-	if disabled {
-		planLines = append(planLines, m.styles.warning.Render("(workspace rules disabled; preview only)"), "")
-	}
-	if rows := m.workspacePlanRows(rules, outputs, innerWidth); len(rows) > 0 {
+	if !settings.Enabled {
+		planLines = append(planLines, m.styles.subtle.Render("Off: hyprmoncfg writes no workspace rules."))
+	} else if rows := m.workspacePlanRows(rules, outputs, innerWidth); len(rows) > 0 {
 		planLines = append(planLines, rows...)
 	} else {
 		planLines = append(planLines, m.styles.subtle.Render("(no workspace rules configured)"))
@@ -2466,27 +2464,57 @@ func (m *Model) adjustInspectorField(delta int) {
 	m.layoutChanged()
 }
 
+// workspaceStrategyChoices is the Strategy row's cycle. Off is not stored as a
+// strategy: it clears Enabled and keeps the plan, so choosing a strategy again
+// brings the saved settings back.
+var workspaceStrategyChoices = []profile.WorkspaceStrategy{
+	workspaceStrategyOff,
+	profile.WorkspaceStrategyManual,
+	profile.WorkspaceStrategySequential,
+	profile.WorkspaceStrategyInterleave,
+}
+
+const workspaceStrategyOff profile.WorkspaceStrategy = "off"
+
+func (m Model) workspaceStrategyChoice() profile.WorkspaceStrategy {
+	if !m.workspaceEdit.Enabled {
+		return workspaceStrategyOff
+	}
+	return blankStrategy(m.workspaceEdit.Strategy)
+}
+
+func workspaceStrategyLabel(strategy profile.WorkspaceStrategy) string {
+	switch strategy {
+	case workspaceStrategyOff:
+		return "Off"
+	case profile.WorkspaceStrategyManual:
+		return "Manual"
+	case profile.WorkspaceStrategyInterleave:
+		return "Interleaved"
+	default:
+		return "Sequential"
+	}
+}
+
 func (m *Model) adjustWorkspaceField(delta int) {
 	switch m.workspaceEdit.SelectedField {
 	case 0:
-		m.workspaceEdit.Enabled = !m.workspaceEdit.Enabled
-	case 1:
-		strategies := []profile.WorkspaceStrategy{
-			profile.WorkspaceStrategyManual,
-			profile.WorkspaceStrategySequential,
-			profile.WorkspaceStrategyInterleave,
-		}
 		current := 0
-		for idx, strategy := range strategies {
-			if strategy == m.workspaceEdit.Strategy {
+		for idx, strategy := range workspaceStrategyChoices {
+			if strategy == m.workspaceStrategyChoice() {
 				current = idx
 				break
 			}
 		}
+		next := workspaceStrategyChoices[wrapIndex(current+delta, len(workspaceStrategyChoices))]
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategySequential && m.workspaceEdit.GroupSize > 0 {
 			m.workspaceEdit.LastSequentialGroupSize = m.workspaceEdit.GroupSize
 		}
-		next := strategies[wrapIndex(current+delta, len(strategies))]
+		if next == workspaceStrategyOff {
+			m.workspaceEdit.Enabled = false
+			return
+		}
+		m.workspaceEdit.Enabled = true
 		if next == profile.WorkspaceStrategySequential && m.workspaceEdit.Strategy != profile.WorkspaceStrategySequential {
 			if m.workspaceEdit.LastSequentialGroupSize <= 0 {
 				m.workspaceEdit.LastSequentialGroupSize = defaultWorkspaceGroupSize
@@ -2498,20 +2526,23 @@ func (m *Model) adjustWorkspaceField(delta int) {
 			m.workspaceEdit.ManualRulesInitialized = len(m.workspaceEdit.Rules) > 0
 		}
 		m.workspaceEdit.Strategy = next
-	case 2:
+	case 1:
+		if !m.workspaceEdit.Enabled {
+			return
+		}
 		next := adjustPositiveInt(m.workspaceEdit.MaxWorkspaces, delta)
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
 			m.resizeManualWorkspaceRules(next)
 		}
 		m.workspaceEdit.MaxWorkspaces = next
-	case 3:
-		if m.workspaceEdit.Strategy != profile.WorkspaceStrategySequential {
+	case 2:
+		if !m.workspaceEdit.Enabled || m.workspaceEdit.Strategy != profile.WorkspaceStrategySequential {
 			return
 		}
 		m.workspaceEdit.GroupSize = adjustPositiveInt(m.workspaceEdit.GroupSize, delta)
 		m.workspaceEdit.LastSequentialGroupSize = m.workspaceEdit.GroupSize
-	case 4:
-		if m.workspaceEdit.Strategy != profile.WorkspaceStrategyManual {
+	case 3:
+		if m.workspaceEdit.Enabled && m.workspaceEdit.Strategy != profile.WorkspaceStrategyManual {
 			m.workspaceEdit.PersistAll = !m.workspaceEdit.PersistAll
 		}
 	}
@@ -2522,6 +2553,9 @@ func (m Model) workspaceItemCount() int {
 }
 
 func (m Model) workspaceListItemCount() int {
+	if !m.workspaceEdit.Enabled {
+		return 0
+	}
 	if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
 		return len(m.workspaceEdit.Rules)
 	}
@@ -3444,8 +3478,11 @@ func validStringOption(value string, allowed ...string) bool {
 }
 
 func (m Model) workspaceFieldValue(field int) string {
+	if field > 0 && !m.workspaceEdit.Enabled {
+		return "—"
+	}
 	switch field {
-	case 4:
+	case 3:
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
 			return "Custom (per rule)"
 		}
@@ -3454,12 +3491,10 @@ func (m Model) workspaceFieldValue(field int) string {
 		}
 		return "First per display"
 	case 0:
-		return boolText(m.workspaceEdit.Enabled)
+		return workspaceStrategyLabel(m.workspaceStrategyChoice())
 	case 1:
-		return string(blankStrategy(m.workspaceEdit.Strategy))
-	case 2:
 		return fmt.Sprintf("%d", m.workspaceEdit.MaxWorkspaces)
-	case 3:
+	case 2:
 		if m.workspaceEdit.Strategy != profile.WorkspaceStrategySequential {
 			return "—"
 		}
@@ -4508,7 +4543,6 @@ func layoutFieldShortLabel(field int) string {
 }
 
 var workspaceFields = []string{
-	"Enabled",
 	"Strategy",
 	"Max workspaces",
 	"Group size",

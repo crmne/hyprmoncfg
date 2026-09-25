@@ -6,12 +6,12 @@ import (
 )
 
 func TestWorkspacePersistenceEditor(t *testing.T) {
-	m := Model{workspaceEdit: workspaceEditor{Enabled: true, Strategy: profile.WorkspaceStrategySequential, MaxWorkspaces: 4, GroupSize: 2, SelectedField: 4}}
-	if m.workspaceFieldValue(4) != "First per display" {
+	m := Model{workspaceEdit: workspaceEditor{Enabled: true, Strategy: profile.WorkspaceStrategySequential, MaxWorkspaces: 4, GroupSize: 2, SelectedField: 3}}
+	if m.workspaceFieldValue(3) != "First per display" {
 		t.Fatal("legacy default changed")
 	}
 	m.adjustWorkspaceField(1)
-	if m.workspaceFieldValue(4) != "All assigned" {
+	if m.workspaceFieldValue(3) != "All assigned" {
 		t.Fatal("persistence action failed")
 	}
 	w := workspaceEditorFromSettings(m.workspaceEdit.settings(), nil)
@@ -20,7 +20,7 @@ func TestWorkspacePersistenceEditor(t *testing.T) {
 	}
 	m.workspaceEdit.Strategy = profile.WorkspaceStrategyManual
 	m.adjustWorkspaceField(1)
-	if !m.workspaceEdit.PersistAll || m.workspaceFieldValue(4) != "Custom (per rule)" {
+	if !m.workspaceEdit.PersistAll || m.workspaceFieldValue(3) != "Custom (per rule)" {
 		t.Fatal("manual policy changed")
 	}
 	rules := normalizeManualWorkspaceDefaults([]profile.WorkspaceRule{{Workspace: "1", OutputKey: "a", Persistent: true}, {Workspace: "2", OutputKey: "a", Persistent: true}})

@@ -133,7 +133,7 @@ best match from the row currently selected for inspection.
 
 ## Workspace planner
 
-The second tab lets you distribute workspaces across monitors. Pick one of three strategies:
+The second tab lets you distribute workspaces across monitors. **Strategy** is the first row: pick Off or one of three plans.
 
 Sequential is preferred for new plans. When importing consecutive rules from one
 display, the editor uses Sequential with groups of three and keeps the existing
@@ -142,17 +142,19 @@ including Interleaved; this default does not migrate existing profiles.
 
 | Strategy | What it does | When to use it |
 |----------|-------------|----------------|
+| Off | Writes no workspace rules. The profile keeps its plan, so choosing a strategy again brings it back | Another tool manages workspaces, such as [virtual-desktops](virtual-desktops.md) or hyprsplit |
 | `sequential` | Groups workspaces in chunks (e.g., 1-3 on monitor A, 4-6 on monitor B) | You think of each monitor as having "its own" workspaces |
 | `interleave` | Round-robins workspaces across monitors (1 on A, 2 on B, 3 on A, ...) | You want next/previous workspace to alternate screens |
 | `manual` | Shows every workspace as an assignment you can move between monitors | You need full control over exactly which workspace lives where |
 
 You can also configure:
 
-- **Workspace rules on/off** -- disable them entirely if you manage workspaces yourself
 - **Max workspaces** -- how many workspaces to generate rules for
 - **Group size** (sequential only) -- how many consecutive workspaces to assign to each monitor before moving to the next. With 2 monitors and a group size of 3, monitor A gets 1-3, monitor B gets 4-6, and so on
 - **Monitor order** -- which monitor gets the first batch of generated workspaces. Applied assignments preserve this order when the editor reads the live configuration back, independently of the monitors' physical positions. Save the profile to reuse it later.
 - **Workspace → display** (manual only) -- select a workspace and press `←` or `→` to assign it to a different monitor
+
+While the strategy is Off, the other rows show `—` and the workspace plan is empty.
 
 There is no fixed workspace or group-size limit. Select **Max workspaces** or **Group size** and press `Enter` to type an exact count; `←` and `→` still make one-step adjustments.
 
