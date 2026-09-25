@@ -29,7 +29,6 @@ func TestApplyBestBoundsEngineReadsAndCanRetry(t *testing.T) {
 		{"version", 2, "monitor-v2"},             // SupportsMonitorV2 performs its own version read.
 		{"workspacerules", 2, "workspace-rules"}, // The daemon's first read succeeds; the engine's stalls.
 		{"workspaces", 1, "workspaces"},
-		{"monitors", 2, "monitors"}, // Post-reload validation, after the config has been written.
 	} {
 		t.Run(fmt.Sprintf("%s-%d", tc.operation, tc.call), func(t *testing.T) {
 			env := newApplyBestTestEnvWithMonitors(t, applyBestDualBeforeJSON, applyBestDualBeforeJSON)
@@ -86,6 +85,55 @@ fi
 				t.Fatal("recovered compositor did not complete the apply")
 			}
 		})
+	}
+}
+
+// A post-reload monitor read can stall while Hyprland removes or adds a head.
+// That read is retried inside the validation window instead of rolling back,
+// because the rollback reload would re-add the head and start another apply.
+func TestApplyBestWaitsOutSlowPostReloadRead(t *testing.T) {
+	env := newApplyBestTestEnvWithMonitors(t, applyBestDualBeforeJSON, applyBestDualBeforeJSON)
+	if err := env.store.Save(profile.FromMonitors("Desk", applyBestDualMonitors())); err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(filepath.Dir(env.logPath), "hyprctl")
+	source, err := os.ReadFile(helper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The second monitors read is the first one after the reload.
+	stall := `
+if [[ "${1-}" == "-j" && "${2-}" == "monitors" ]]; then
+  count=0
+  if [[ -f "$HYPRCTL_LOG.count" ]]; then read -r count < "$HYPRCTL_LOG.count"; fi
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$HYPRCTL_LOG.count"
+  if [[ "$count" == 2 ]]; then exec sleep 20; fi
+fi
+`
+	anchor := `printf '%s\n' "$*" >> "$HYPRCTL_LOG"`
+	if !strings.Contains(string(source), anchor) {
+		t.Fatal("fake compositor script changed")
+	}
+	if err := os.WriteFile(helper, []byte(strings.Replace(string(source), anchor, anchor+stall, 1)), 0755); err != nil {
+		t.Fatal(err)
+	}
+	logs := &logRecorder{}
+	svc := New(env.client, env.store, Config{
+		QueryTimeout: 500 * time.Millisecond,
+		MonitorsConf: env.monitorsConfPath, HyprConfig: env.hyprlandConfigPath, Logf: logs.logf,
+	})
+	if err := svc.applyBest(context.Background()); err != nil {
+		t.Fatalf("slow post-reload read failed the apply: %v\n%s", err, logs.all())
+	}
+	if !logs.contains("apply query operation=monitors ") {
+		t.Fatal("the post-reload monitor read did not stall")
+	}
+	if !logs.contains("applied profile: Desk") {
+		t.Fatalf("apply did not complete:\n%s", logs.all())
+	}
+	if got := reloadCount(env.logPath); got != 1 {
+		t.Fatalf("expected one reload and no rollback, got %d", got)
 	}
 }
 

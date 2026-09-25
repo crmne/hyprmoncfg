@@ -33,10 +33,14 @@ const (
 const (
 	// DefaultPreviewTimeout starts after apply verification, not at request time.
 	DefaultPreviewTimeout       = 30 * time.Second
-	applyValidationTimeout      = 3 * time.Second
 	applyValidationPollInterval = 100 * time.Millisecond
 	luaProbePrefix              = "__hyprmoncfg_probe_"
 )
+
+// applyValidationTimeout bounds each post-reload check. Hyprland can stall
+// reads while it tears down or adds a head, so a single slow read inside this
+// window is an unanswered question, not a failed apply.
+var applyValidationTimeout = 3 * time.Second
 
 type Engine struct {
 	Client *hypr.Client
@@ -332,11 +336,31 @@ func addLuaExecutionProbe(rendered string) (string, string, error) {
 
 func (e Engine) verifyLuaExecutionProbe(ctx context.Context, probe string, rootPath string, targetPath string) error {
 	assertion := fmt.Sprintf(`assert(_G.%s == true, "hyprmoncfg generated monitor config did not run")`, probe)
-	response, evalErr := query(ctx, e, "lua-probe", func(queryCtx context.Context) (string, error) {
-		return e.Client.Eval(queryCtx, assertion)
-	})
-	if errors.Is(evalErr, ErrQueryTimeout) || errors.Is(evalErr, context.Canceled) {
-		return evalErr
+	ctx, cancel := context.WithTimeout(ctx, applyValidationTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(applyValidationPollInterval)
+	defer ticker.Stop()
+
+	var response string
+	var evalErr error
+	for {
+		response, evalErr = query(ctx, e, "lua-probe", func(queryCtx context.Context) (string, error) {
+			return e.Client.Eval(queryCtx, assertion)
+		})
+		if errors.Is(evalErr, context.Canceled) {
+			return evalErr
+		}
+		if !errors.Is(evalErr, ErrQueryTimeout) {
+			break
+		}
+		// Hyprland is still busy with the reload. Ask again until the window
+		// closes; only then is the missing answer treated as a failure.
+		select {
+		case <-ctx.Done():
+			return evalErr
+		case <-ticker.C:
+		}
 	}
 	if evalErr == nil && response == "ok" {
 		return nil
@@ -376,9 +400,12 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 
 	for {
 		applied, err := query(ctx, e, "monitors", e.Client.Monitors)
-		if errors.Is(err, ErrQueryTimeout) {
-			// A stalled read is not a layout mismatch to poll through. Return to
-			// the caller so it can roll back and schedule a fresh reconciliation.
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
+		if errors.Is(err, ErrQueryTimeout) && ctx.Err() != nil {
+			// The window closed without an answer. Keep the timeout visible so
+			// the daemon treats it as a busy compositor and retries later.
 			return nil, err
 		}
 		if err != nil {
@@ -392,7 +419,7 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 		select {
 		case <-ctx.Done():
 			if lastErr != nil {
-				return nil, fmt.Errorf("%w: %v", ctx.Err(), lastErr)
+				return nil, fmt.Errorf("%w: %w", ctx.Err(), lastErr)
 			}
 			return nil, ctx.Err()
 		case <-ticker.C:
