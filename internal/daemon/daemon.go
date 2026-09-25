@@ -34,6 +34,9 @@ type Config struct {
 	ForcedProfile       string
 	MonitorsConf        string
 	HyprConfig          string
+	// DisableLid skips all lid handling: no lid watch is started, the lid
+	// state stays Unknown, and the closed-lid policy is never applied.
+	DisableLid bool
 	// ConfigDir is where the managed/unmanaged choice is recorded, so it
 	// outlives a daemon restart. Empty means always managed.
 	ConfigDir string
@@ -211,7 +214,11 @@ func (s *Service) Run(ctx context.Context) error {
 
 	var lidStates <-chan lid.State
 	var lidErrs <-chan error
-	if state, err := s.readLid(ctx); err != nil {
+	if s.cfg.DisableLid {
+		// Lid state stays Unknown, so no lid events are watched and the
+		// closed-lid policy in the apply path never triggers.
+		s.cfg.Logf("lid events disabled: --disable-lid")
+	} else if state, err := s.readLid(ctx); err != nil {
 		s.cfg.Logf("lid events disabled: %v", err)
 	} else {
 		s.lidSupported = true
@@ -846,7 +853,9 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 			effective = profile.WithPowerRefresh(effective, monitors, battery)
 		}
 	}
-	if s.lidState == lid.Closed {
+	// Defense in depth: even if a lid state somehow reaches Closed, an explicit
+	// --disable-lid must never apply the closed-lid policy.
+	if !s.cfg.DisableLid && s.lidState == lid.Closed {
 		adjusted, adjustment := profile.ApplyClosedLidPolicy(effective, monitors)
 		effective = adjusted
 		if adjustment.Applied {

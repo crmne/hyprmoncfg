@@ -86,6 +86,16 @@ External displays, saved profile files and OS power profiles are not changed.
 Manual profile overrides and interactive previews take precedence. The option
 is off by default; frontend preference controls are not implemented yet.
 
+### Optional opt-out of lid handling
+
+Start the daemon with `--disable-lid` to turn lid handling off entirely: the
+lid switch is never read, lid changes are never watched, and the closed-lid
+policy never runs. The daemon behaves as if the machine had no lid, so the
+saved profile for the attached displays is applied and left alone when the lid
+closes. This suits setups that drive their own DPMS-based clamshell handler
+(see issue #72 for the remove/add apply loop this avoids). The option is off by
+default, and `--lid-poll-interval` has no effect while it is set.
+
 When every enabled display is DPMS-off, the daemon treats monitor add/remove events as part of display sleep rather than physical hotplug. It keeps the current profile in place, waits for the displays to wake, and then waits for two seconds without another monitor event before matching once. A real dock or undock that happened while the machine slept is still applied after the monitor set stabilizes.
 
 Suspend gets the same respect. The daemon listens for logind's sleep signal, and a lid close that suspends the machine is treated as suspend, not clamshell: the pending switch is discarded instead of being carried across the nap, because by the time it would run, the lid is open again and acting on the stale close would turn the panel off in your face. On resume the daemon re-reads the physical lid switch, tells Hyprland to wake every display -- so both screens light up from the lid opening, not from your first keypress -- and re-matches once the monitor set settles. Opening the lid wakes the displays the same way. As a last line of defense, every apply re-reads the lid switch first, so a stale cached lid state can never decide what happens to your panel.
@@ -154,6 +164,7 @@ hyprmoncfgd --wake-settle 2s      # quiet period after displays wake
 hyprmoncfgd --poll-interval 5s    # how often to run fallback monitor checks
 hyprmoncfgd --lid-poll-interval 1s # how often to run fallback lid checks
 hyprmoncfgd --profile desk        # always apply this specific profile
+hyprmoncfgd --disable-lid         # never read or react to the lid switch
 hyprmoncfgd --quiet               # suppress log output
 ```
 

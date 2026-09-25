@@ -963,6 +963,76 @@ func TestRunAppliesClosedLidPolicyWhenLidCloseDoesNotSuspend(t *testing.T) {
 	}
 }
 
+// A daemon started with --disable-lid never probes the lid and never applies
+// the closed-lid policy: setups that run their own DPMS-based clamshell
+// handler own that decision.
+func TestRunDisableLidSkipsLidProbeAndClosedLidPolicy(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "eDP-1", Description: "Framework Panel", Make: "Framework", Model: "Panel", Serial: "A1", Width: 2880, Height: 1800, RefreshRate: 120, Scale: 1.5, DPMSStatus: true},
+		{Name: "DP-1", Description: "Dell U2720Q", Make: "Dell", Model: "U2720Q", Serial: "B1", Width: 3840, Height: 2160, RefreshRate: 60, X: 2880, Scale: 2, DPMSStatus: true},
+	}
+
+	var probeMu sync.Mutex
+	readLidCalls := 0
+	watchLidCalls := 0
+	env := newRunTestEnvConfigured(t, monitors, func(c *Config) {
+		c.DisableLid = true
+	}, func(svc *Service) {
+		svc.readLid = func(context.Context) (lid.State, error) {
+			probeMu.Lock()
+			readLidCalls++
+			probeMu.Unlock()
+			return lid.Closed, nil
+		}
+		svc.watchLid = func(context.Context, time.Duration) (<-chan lid.State, <-chan error) {
+			probeMu.Lock()
+			watchLidCalls++
+			probeMu.Unlock()
+			return make(chan lid.State, 1), nil
+		}
+	})
+	defer env.stop()
+	defer func() {
+		if t.Failed() {
+			t.Logf("daemon logs:\n%s", env.logs.all())
+		}
+	}()
+
+	waitFor(t, time.Second, func() bool { return env.logs.contains("lid events disabled: --disable-lid") }, "lid events disabled log")
+	waitFor(t, time.Second, func() bool { return env.logs.contains("applied profile: Home") }, "startup profile apply and validation")
+
+	if env.svc.lidSupported {
+		t.Fatalf("lid was reported as supported with --disable-lid:\n%s", env.logs.all())
+	}
+	if env.svc.lidState != lid.Unknown {
+		t.Fatalf("lid state = %v, want %v with --disable-lid", env.svc.lidState, lid.Unknown)
+	}
+
+	// The lid closes. Nothing watches it, so no trigger fires, the
+	// closed-lid policy never runs, and nothing is reloaded.
+	env.setLid(lid.Closed)
+	env.lidStates <- lid.Closed
+	time.Sleep(3 * env.svc.cfg.WakeSettle)
+	if env.logs.contains("lid closed: forced internal outputs off") {
+		t.Fatalf("closed-lid policy ran with --disable-lid:\n%s", env.logs.all())
+	}
+	if env.logs.contains("triggered: lid:closed") {
+		t.Fatalf("lid close produced a trigger with --disable-lid:\n%s", env.logs.all())
+	}
+	if got := reloadCount(env.logPath); got != 1 {
+		t.Fatalf("lid close reloaded Hyprland with --disable-lid: reload count = %d, want 1\nlogs:\n%s", got, env.logs.all())
+	}
+
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	if readLidCalls != 0 {
+		t.Fatalf("readLid was called %d times with --disable-lid", readLidCalls)
+	}
+	if watchLidCalls != 0 {
+		t.Fatalf("watchLid was called %d times with --disable-lid", watchLidCalls)
+	}
+}
+
 func writeMonitorState(path string, monitors []hypr.Monitor) error {
 	data, err := json.Marshal(monitors)
 	if err != nil {

@@ -39,6 +39,7 @@ func newRootCmd() *cobra.Command {
 	var forceProfile string
 	var quiet bool
 	var powerAwareRefresh bool
+	var disableLid bool
 	var monitorsConf string
 	var hyprConfig string
 
@@ -77,6 +78,7 @@ func newRootCmd() *cobra.Command {
 
 			svc := daemon.New(client, store, daemon.Config{
 				PowerAwareRefresh: powerAwareRefresh,
+				DisableLid:        disableLid,
 				Debounce:          debounce,
 				WakeSettle:        wakeSettle,
 				PollInterval:      poll,
@@ -144,6 +146,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().StringVar(&hyprConfig, "hypr-config", "", "Hyprland root config for include verification (overrides HYPRLAND_CONFIG)")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "Suppress logs")
 	cmd.Flags().BoolVar(&powerAwareRefresh, "power-aware-refresh", false, "Adapt internal-panel refresh to AC/battery power (preserves resolution)")
+	cmd.Flags().BoolVar(&disableLid, "disable-lid", false, "Disable lid monitoring and the closed-lid policy")
 	cmd.AddCommand(newVersionCmd("hyprmoncfgd"))
 
 	return cmd

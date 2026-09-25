@@ -29,8 +29,9 @@ and the [shared design](DESIGN.md) for accepted presentation conventions and sco
 
 Version 1.19 adds independent failed-apply retries, per-output health,
 bounded display discovery, visible small-terminal footer actions, workspace
-persistence choices in both editors, and opt-in `hyprmoncfgd --power-aware-refresh`
-for internal laptop panels. See the [release notes](docs/releases/1.19.0.md) and
+persistence choices in both editors, and the opt-in `hyprmoncfgd --power-aware-refresh`
+for internal laptop panels and `hyprmoncfgd --disable-lid` for setups that run
+their own clamshell handling. See the [release notes](docs/releases/1.19.0.md) and
 daemon guide for highlights, limits, and defaults.
 
 ---
