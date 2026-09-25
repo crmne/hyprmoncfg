@@ -106,7 +106,7 @@ func ReuseLayout(saved Profile, profiles []Profile, monitors []hypr.Monitor, rul
 					return Profile{}, nil, fmt.Errorf("no usable mode is available for %s yet; wait for the display to finish connecting", current.Name)
 				}
 			}
-			warnings = append(warnings, fmt.Sprintf("%s: saved mode is unavailable; kept current mode %s.", current.Name, output.NormalizedMode()))
+			warnings = append(warnings, fmt.Sprintf("%s: saved mode is unavailable; using mode %s.", current.Name, output.NormalizedMode()))
 		}
 		if adjusted, ok := scaling.ClosestSharp(output.Width, output.Height, output.Scale); ok && math.Abs(adjusted-output.Scale) > 0.00001 {
 			output.Scale = adjusted

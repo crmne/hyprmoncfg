@@ -146,24 +146,28 @@ func TestReuseAcceptsConfiguredModesForInactiveTargets(t *testing.T) {
 		mode          string
 		wantWidth     int
 		wantHeight    int
+		wantWarning   string
 	}{
-		{"disabled-supported-mode", true, 0, 0, "1920x1080@60Hz", 1920, 1080},
-		{"modeless-supported-mode", false, 0, 0, "1920x1080@60Hz", 1920, 1080},
-		{"disabled-fallback-mode", true, 0, 0, "1280x720@60Hz", 1280, 720},
-		{"sleeping-current-mode", false, 1920, 1080, "", 1920, 1080},
+		{"disabled-supported-mode", true, 0, 0, "1920x1080@60Hz", 1920, 1080, ""},
+		{"modeless-supported-mode", false, 0, 0, "1920x1080@60Hz", 1920, 1080, ""},
+		{"disabled-fallback-mode", true, 0, 0, "1280x720@60Hz", 1280, 720, "saved mode is unavailable; using mode 1280x720@60Hz."},
+		{"sleeping-current-mode", false, 1920, 1080, "", 1920, 1080, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			monitor := hypr.Monitor{Name: "DP-1", Make: "Example", Model: "Current", Disabled: tc.disabled, Width: tc.width, Height: tc.height, RefreshRate: 60, Scale: 1, DPMSStatus: false}
 			if tc.mode != "" {
 				monitor.AvailableModes = []string{tc.mode}
 			}
-			draft, _, err := ReuseLayout(saved, nil, []hypr.Monitor{monitor}, nil, map[string]string{saved.Outputs[0].Key: monitor.HardwareKey()})
+			draft, warnings, err := ReuseLayout(saved, nil, []hypr.Monitor{monitor}, nil, map[string]string{saved.Outputs[0].Key: monitor.HardwareKey()})
 			if err != nil {
 				t.Fatalf("reuse rejected a configurable display: %v", err)
 			}
 			output := draft.Outputs[0]
 			if !output.Enabled || output.MirrorOf != "" || output.Width != tc.wantWidth || output.Height != tc.wantHeight {
 				t.Fatalf("draft did not configure an independent display: %+v", output)
+			}
+			if tc.wantWarning != "" && !strings.Contains(strings.Join(warnings, " "), tc.wantWarning) {
+				t.Fatalf("selected advertised mode was not accurately disclosed: %v", warnings)
 			}
 		})
 	}
