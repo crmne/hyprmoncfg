@@ -70,17 +70,24 @@ func (o editableOutput) maximumResolutionLabel() string {
 }
 
 func (m Model) hardwareDetailLines(output editableOutput) []string {
+	return m.renderDetailRows(m.hardwareDetailRows(output))
+}
+
+// hardwareDetailRows are the six facts the hardware box always shows. Rows
+// run down the first column, then the second, so reading order is the same
+// in one column or two.
+func (m Model) hardwareDetailRows(output editableOutput) []detailRow {
 	panelSize := "Not reported"
 	if output.PhysicalWidth > 0 && output.PhysicalHeight > 0 {
 		size := math.Round(math.Hypot(float64(output.PhysicalWidth), float64(output.PhysicalHeight)) / 25.4)
 		panelSize = fmt.Sprintf("%.0f\" (%dx%dmm)", size, output.PhysicalWidth, output.PhysicalHeight)
 	}
-	return m.renderDetailRows([]detailRow{
+	return []detailRow{
 		{label: "Connector", value: output.Name},
 		{label: "Model", value: output.displayModelLabel()},
 		{label: "Max resolution", value: output.maximumResolutionLabel()},
 		{label: "Panel size", value: panelSize},
 		{label: "Type", value: outputTypeLabel(output)},
 		{label: "Serial", value: blankFallback(strings.TrimSpace(output.Serial), "Not reported")},
-	})
+	}
 }

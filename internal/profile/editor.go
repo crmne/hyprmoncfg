@@ -304,8 +304,8 @@ func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 
 		ReflowAfterResize(draft.Outputs, index, oldWidth, oldHeight)
 		if (edit.X != nil || edit.Y != nil) && edit.SnapDistance > 0 {
-			ApplySnap(draft.Outputs, index, edit.SnapDistance)
-			PlaceOutsideOverlaps(draft.Outputs, index)
+			// The panel's drag release; the TUI drops through MoveOutput.
+			ResolveDrop(draft.Outputs, index, edit.SnapDistance)
 		}
 	}
 

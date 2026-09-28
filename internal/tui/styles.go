@@ -59,6 +59,15 @@ type palette struct {
 	cardSelectedFg     string
 	cardSelectedMuted  string
 	snapHighlight      string
+	stageDot           string
+	cardFill           string
+	cardSelectedFill   string
+	chipFg             string
+	chipBg             string
+	chipStrongFg       string
+	chipStrongBg       string
+	tabPillBg          string
+	meterEmpty         string
 }
 
 type styles struct {
@@ -99,7 +108,13 @@ type styles struct {
 }
 
 func newStyles() styles {
-	p := newPalette()
+	return newStylesFrom(termenv.ForegroundColor(), termenv.BackgroundColor())
+}
+
+// newStylesFrom derives every style from the terminal's own foreground and
+// background, so light and dark themes get the same hierarchy.
+func newStylesFrom(fgColor, bgColor termenv.Color) styles {
+	p := newPaletteFrom(fgColor, bgColor)
 
 	return styles{
 		palette:          p,
@@ -139,9 +154,7 @@ func newStyles() styles {
 	}
 }
 
-func newPalette() palette {
-	fgColor := termenv.ForegroundColor()
-	bgColor := termenv.BackgroundColor()
+func newPaletteFrom(fgColor, bgColor termenv.Color) palette {
 	defaultFG := terminalColorString(fgColor, "7")
 	defaultBG := terminalColorString(bgColor, "0")
 	supportText := blendedTerminalColor(fgColor, bgColor, 0.42, "7")
@@ -151,6 +164,12 @@ func newPalette() palette {
 	// chrome and the body text, so they read clearly without taking the accent.
 	presence := blendedTerminalColor(fgColor, bgColor, 0.5, "7")
 	canvasAxis := blendedTerminalColor(fgColor, bgColor, 0.55, "7")
+	// The stage is a quiet dotted field; cards are faintly lit screens on it,
+	// so the arrangement reads before any text does. Without a known terminal
+	// background the fills fall back to none rather than guessing a color.
+	stageDot := blendedTerminalColor(fgColor, bgColor, 0.74, "8")
+	cardFill := blendedTerminalColor(fgColor, bgColor, 0.94, "")
+	cardSelectedFill := blendedTerminalColor(fgColor, bgColor, 0.89, "")
 
 	return palette{
 		text:               "",
@@ -192,7 +211,7 @@ func newPalette() palette {
 		canvasAxis:         canvasAxis,
 		cardBorder:         chrome,
 		cardStaticBorder:   presence,
-		cardBg:             "",
+		cardBg:             cardFill,
 		cardFg:             "",
 		cardMuted:          supportText,
 		cardDisabledBorder: "1",
@@ -200,10 +219,19 @@ func newPalette() palette {
 		cardDisabledFg:     supportText,
 		cardDisabledMuted:  supportText,
 		cardSelectedBorder: "2",
-		cardSelectedBg:     "",
+		cardSelectedBg:     cardSelectedFill,
 		cardSelectedFg:     "",
 		cardSelectedMuted:  supportText,
 		snapHighlight:      "3",
+		stageDot:           stageDot,
+		cardFill:           cardFill,
+		cardSelectedFill:   cardSelectedFill,
+		chipFg:             "2",
+		chipBg:             softFill,
+		chipStrongFg:       defaultBG,
+		chipStrongBg:       "2",
+		tabPillBg:          softFill,
+		meterEmpty:         chrome,
 	}
 }
 

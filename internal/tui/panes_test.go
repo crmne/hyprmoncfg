@@ -311,8 +311,9 @@ func TestLayoutCanvasIncludesTheDraftWorkspacePlan(t *testing.T) {
 	m.workspaceEdit.MaxWorkspaces = 6
 	m.workspaceEdit.GroupSize = 3
 
+	// The canvas draws workspace IDs as chips, like the panel's stage.
 	view := ansi.Strip(m.renderCanvas(100, 20))
-	requireContains(t, view, "1, 2, 3", "4, 5, 6")
+	requireContains(t, view, " 1   2   3 ", " 4   5   6 ")
 }
 
 func TestLoadLiveStateSelectsTheActiveProfile(t *testing.T) {
@@ -426,7 +427,7 @@ func TestOriginShortcutMovesTheSelectedMonitorToZeroZero(t *testing.T) {
 		layoutFocus: layoutFocusCanvas,
 		editOutputs: []editableOutput{
 			{Key: "a", Name: "DP-1", Enabled: true, Scale: 1, Width: 3840, Height: 2160, X: 3820, Y: 927},
-			{Key: "b", Name: "DP-2", Enabled: true, Scale: 1, Width: 2560, Height: 1440, X: 0, Y: 0},
+			{Key: "b", Name: "DP-2", Enabled: true, Scale: 1, Width: 2560, Height: 1440, X: -2560, Y: 0},
 		},
 	}
 
@@ -435,7 +436,7 @@ func TestOriginShortcutMovesTheSelectedMonitorToZeroZero(t *testing.T) {
 	if got.editOutputs[0].X != 0 || got.editOutputs[0].Y != 0 {
 		t.Fatalf("expected the selected monitor at 0,0, got %d,%d", got.editOutputs[0].X, got.editOutputs[0].Y)
 	}
-	if got.editOutputs[1].X != 0 || got.editOutputs[1].Y != 0 {
+	if got.editOutputs[1].X != -2560 || got.editOutputs[1].Y != 0 {
 		t.Fatal("expected the other monitor to be left where it was")
 	}
 	if !got.dirty {

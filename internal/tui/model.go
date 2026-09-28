@@ -139,7 +139,10 @@ type pendingApply struct {
 	snapshot      apply.RevertState
 	transactionID string
 	deadline      time.Time
-	remote        bool
+	// total is the confirmation window as it stood when the preview became
+	// live, so the countdown meter can show how much of it is left.
+	total  time.Duration
+	remote bool
 }
 
 type pendingRevertGuard struct {
@@ -338,7 +341,17 @@ type Model struct {
 	width  int
 	height int
 
+	// now is the clock for preview countdowns; nil means time.Now.
+	now func() time.Time
+
 	layoutErr error
+}
+
+func (m Model) clock() time.Time {
+	if m.now != nil {
+		return m.now()
+	}
+	return time.Now()
 }
 
 const defaultWorkspaceGroupSize = 3
@@ -557,13 +570,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		deadline := msg.deadline
 		if deadline.IsZero() {
-			deadline = time.Now().Add(apply.DefaultPreviewTimeout)
+			deadline = m.clock().Add(apply.DefaultPreviewTimeout)
 		}
 		m.pending = &pendingApply{
 			profile:       msg.profile,
 			snapshot:      msg.snapshot,
 			transactionID: msg.transactionID,
 			deadline:      deadline,
+			total:         deadline.Sub(m.clock()),
 			remote:        msg.remote,
 		}
 		if msg.remote {
@@ -585,7 +599,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.mode = modeConfirm
 			if m.pending != nil {
-				m.pending.deadline = time.Now().Add(apply.DefaultPreviewTimeout)
+				m.pending.deadline = m.clock().Add(apply.DefaultPreviewTimeout)
+				m.pending.total = apply.DefaultPreviewTimeout
 			}
 			m.setStatusErr(fmt.Sprintf("Revert failed: %v", msg.err))
 			return m, nil
@@ -613,7 +628,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if m.mode == modeConfirm && m.pending != nil {
-			if time.Now().After(m.pending.deadline) {
+			if m.clock().After(m.pending.deadline) {
 				return m, m.revertCmd(*m.pending, "timeout")
 			}
 		}
@@ -828,6 +843,17 @@ func (m *Model) updateLayoutKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.adjustInspectorField(-1)
 	case "right", "l", "+", "=":
 		m.adjustInspectorField(1)
+	case "shift+left", "shift+right":
+		// Position fields take single-pixel steps; everything else steps as usual.
+		delta := 1
+		if msg.String() == "shift+left" {
+			delta = -1
+		}
+		if m.inspectorField == 7 || m.inspectorField == 8 {
+			m.nudgeInspectorPosition(delta)
+		} else {
+			m.adjustInspectorField(delta)
+		}
 	case " ", "enter":
 		return m, m.activateInspectorField()
 	default:
@@ -1057,6 +1083,10 @@ func (m Model) View() string {
 		return m.renderModalScreen(m.renderModalFrame("Delete profile?", []string{
 			m.styles.warning.Render(fmt.Sprintf("Delete %q?", m.deleteProfileName)),
 			"Your live layout will not change.",
+			"",
+			// Cancel carries the focus: it is what Enter does.
+			m.styles.focused.UnsetPadding().Render(deleteCancelLabel) + "  " + m.styles.warning.Render(deleteConfirmLabel),
+			"",
 			m.styles.help.Render("y deletes. Enter, Esc or n cancels."),
 		}))
 	case modeConfirm:
@@ -1064,6 +1094,9 @@ func (m Model) View() string {
 	case modeModePicker:
 		return m.renderModalScreen(m.renderModePicker())
 	case modeNumericInput:
+		if m.inlineEntryActive(m.input.FieldIndex) {
+			return m.renderMain()
+		}
 		return m.renderModalScreen(m.renderNumericInput())
 	case modeProfileExecInput:
 		return m.renderModalScreen(m.renderProfileExecInput())
@@ -1128,7 +1161,9 @@ func (m Model) renderTabs() string {
 	for idx, label := range labels {
 		number := fmt.Sprintf("%d", idx+1)
 		if int(m.tab) == idx {
-			parts = append(parts, m.styles.tabActive.Render(fmt.Sprintf(" %s %s ", number, label)))
+			// The current page is a filled pill, so it reads without color too.
+			pill := withBG(lipgloss.NewStyle().Bold(true), m.styles.palette.tabPillBg)
+			parts = append(parts, pill.Render(" ")+withFG(pill, m.styles.palette.tabActiveFg).Render(number)+pill.Render(" "+label+" "))
 		} else {
 			numStyle := withFG(lipgloss.NewStyle().Bold(true), m.styles.palette.tabInactiveFg)
 			parts = append(parts, m.styles.tabInactive.Render(fmt.Sprintf(" %s %s ", numStyle.Render(number), label)))
@@ -1152,18 +1187,91 @@ func (m Model) renderTabs() string {
 }
 
 func (m Model) renderLayoutView(height int) string {
-	if m.useCompactLayout(height) {
-		canvasHeight, inspectorHeight := m.compactLayoutHeights(height)
-		width := m.terminalWidth() - m.styles.app.GetHorizontalFrameSize()
-		canvas := m.renderCanvasPane(width, canvasHeight)
-		inspector := m.renderInspectorColumn(width, inspectorHeight, true)
-		return lipgloss.JoinVertical(lipgloss.Left, canvas, inspector)
+	g := m.layoutGeometry(hitRect{w: m.footerContentWidth(), h: height})
+	canvas := m.renderCanvasPane(g.stage.w, g.stage.h)
+	left := canvas
+	if g.hardware.h > 0 {
+		left = lipgloss.JoinVertical(lipgloss.Left, canvas, m.renderHardwarePane(g.hardware.w, g.hardware.h))
+	}
+	inspector := m.renderInspectorPane(g.inspector.w, g.inspector.h, g.compact)
+	if g.compact {
+		return lipgloss.JoinVertical(lipgloss.Left, left, inspector)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", paneGapWidth), inspector)
+}
+
+// layoutGeometry is the single source of truth for where the layout tab's
+// panes sit, shared by rendering and pointer hit-testing. The stage and the
+// hardware facts for the pictured display share one column, as in the panel;
+// the Display and Color controls own the other. Stacked on small terminals,
+// the stage takes only the rows the arrangement needs.
+type layoutPanes struct {
+	stage, hardware, inspector hitRect
+	compact                    bool
+}
+
+func (m Model) layoutGeometry(body hitRect) layoutPanes {
+	if m.useCompactLayout(body.h) {
+		hardware := m.hardwarePaneHeight(body.w)
+		frame := m.styles.inactivePane.GetVerticalFrameSize()
+		const inspectorMin = 6
+		stage := clampInt(m.stageFitRows(body.w)+frame, 5, max(5, body.h-hardware-inspectorMin))
+		if body.h-stage-hardware < 3 {
+			// Too short for everything: keep a small stage and the controls,
+			// and let the hardware box give up rows first.
+			stage = clampInt(body.h/3, 3, stage)
+			hardware = clampInt(body.h-stage-3, 0, hardware)
+		}
+		inspector := max(1, body.h-stage-hardware)
+		return layoutPanes{
+			stage:     hitRect{x: body.x, y: body.y, w: body.w, h: stage},
+			hardware:  hitRect{x: body.x, y: body.y + stage, w: body.w, h: hardware},
+			inspector: hitRect{x: body.x, y: body.y + stage + hardware, w: body.w, h: inspector},
+			compact:   true,
+		}
 	}
 
 	canvasWidth, inspectorWidth := m.layoutPaneWidths()
-	canvas := m.renderCanvasPane(canvasWidth, height)
-	inspector := m.renderInspectorColumn(inspectorWidth, height, false)
-	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, strings.Repeat(" ", paneGapWidth), inspector)
+	hardware := min(m.hardwarePaneHeight(canvasWidth), max(0, body.h-8))
+	return layoutPanes{
+		stage:     hitRect{x: body.x, y: body.y, w: canvasWidth, h: body.h - hardware},
+		hardware:  hitRect{x: body.x, y: body.y + body.h - hardware, w: canvasWidth, h: hardware},
+		inspector: hitRect{x: body.x + canvasWidth + paneGapWidth, y: body.y, w: inspectorWidth, h: body.h},
+	}
+}
+
+// stageFitRows is how many canvas rows the arrangement needs at this pane
+// width: the width-limited scale, the stage margin, and the rows for displays
+// drawn outside the geometry.
+func (m Model) stageFitRows(paneWidth int) int {
+	inner := max(1, paneWidth-m.styles.inactivePane.GetHorizontalFrameSize())
+	rows := len(m.hiddenDisplayRows(max(1, inner-4), 99))
+	return stageRowsFor(m.editOutputs, inner) + rows
+}
+
+// stageRowsFor mirrors canvasLayoutFor: the height at which the arrangement's
+// width, not its height, limits the scale.
+func stageRowsFor(outputs []editableOutput, width int) int {
+	const cellW = 2.2
+	canvasW := max(20, width-2)
+	minX, minY, maxX, maxY, ok := 0, 0, 0, 0, false
+	for _, output := range outputs {
+		if !output.spatial() {
+			continue
+		}
+		w, h := output.logicalSize()
+		if !ok {
+			minX, minY, maxX, maxY, ok = output.X, output.Y, output.X+w, output.Y+h, true
+			continue
+		}
+		minX, minY = min(minX, output.X), min(minY, output.Y)
+		maxX, maxY = max(maxX, output.X+w), max(maxY, output.Y+h)
+	}
+	if !ok {
+		return 3
+	}
+	scale := float64(canvasW-4) / (float64(max(1, maxX-minX)) * cellW)
+	return int(math.Ceil(float64(max(1, maxY-minY))*scale)) + 4
 }
 
 func (m Model) renderCanvasPane(width int, height int) string {
@@ -1174,7 +1282,7 @@ func (m Model) renderCanvasPane(width int, height int) string {
 	panel := m.paneStyle(tone)
 	innerWidth := max(1, width-panel.GetHorizontalFrameSize())
 	innerHeight := max(1, height-panel.GetVerticalFrameSize())
-	body := fitBlock(m.renderCanvas(innerWidth, innerHeight), innerWidth, innerHeight)
+	body := padBlock(m.renderCanvas(innerWidth, innerHeight), innerWidth, innerHeight)
 	return m.renderTitledPaneWithMeta(tone, "Monitor Layout", m.canvasPaneMeta(), body, width)
 }
 
@@ -1255,6 +1363,9 @@ func (m Model) renderCanvas(width, height int) string {
 type inspectorLayout struct {
 	lines     []string
 	fieldRows map[int]int // field index → index into lines
+	// choices holds each choice row's option spans, in columns from the
+	// start of its line, for pointer selection.
+	choices map[int][]choiceSpan
 }
 
 func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compact bool) inspectorLayout {
@@ -1271,6 +1382,7 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 	}
 
 	fieldRows := make(map[int]int, len(layoutFields))
+	choices := make(map[int][]choiceSpan)
 	for _, idx := range inspectorFieldsForTab(m.inspectorTab) {
 		if idx == advancedFieldStart {
 			lines = append(lines, "")
@@ -1279,13 +1391,38 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 		if shortLabels {
 			labelText = layoutFieldShortLabel(idx)
 		}
-		valueText := fieldOptionLabel(idx, m.layoutFieldValue(output, idx))
+		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
+		focused := m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout
+		raw := m.layoutFieldValue(output, idx)
 		issue, hasIssue := m.layoutFieldIssue(output, idx)
+		fieldRows[idx] = len(lines)
+
+		if !hasIssue {
+			if row, spans, ok := m.renderChoiceRow(idx, raw, innerWidth-labelWidth-1, focused); ok {
+				for i := range spans {
+					spans[i].start += labelWidth + 1
+					spans[i].end += labelWidth + 1
+				}
+				choices[idx] = spans
+				lines = append(lines, label+" "+row)
+				continue
+			}
+		}
+
+		if m.inlineEntryActive(idx) {
+			lines = append(lines, label+" "+m.renderInlineEntry(innerWidth-labelWidth-1))
+			continue
+		}
+
+		valueText := fieldOptionLabel(idx, raw)
+		if idx == 2 {
+			valueText += "x"
+		}
 		valueStyle := m.styles.value
 		if hasIssue {
 			valueStyle = m.styles.warning
 		}
-		if m.layoutFocus == layoutFocusInspector && idx == m.inspectorField && m.tab == tabLayout {
+		if focused {
 			valueStyle = m.styles.focused
 			if hasIssue {
 				valueStyle = withFG(valueStyle, m.styles.palette.warning)
@@ -1295,12 +1432,10 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 		if hasIssue {
 			value = lipgloss.JoinHorizontal(lipgloss.Left, value, " ", m.styles.warning.Render("⚠ "+issue))
 		}
-		label := m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, labelText))
-		fieldRows[idx] = len(lines)
 		lines = append(lines, fmt.Sprintf("%s %s", label, value))
 	}
 
-	return inspectorLayout{lines: lines, fieldRows: fieldRows}
+	return inspectorLayout{lines: lines, fieldRows: fieldRows, choices: choices}
 }
 
 func inspectorFieldsForTab(tab inspectorTab) []int {
@@ -1403,60 +1538,57 @@ func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 	return m.renderInspectorTabbedPane(tone, body, width)
 }
 
-func (m Model) renderInspectorColumn(width, height int, compact bool) string {
-	preferencesHeight, infoHeight := m.inspectorPaneHeights(height, width)
-	info := m.renderInfoPane(width, infoHeight)
-	preferences := m.renderInspectorPane(width, preferencesHeight, compact)
-	return lipgloss.JoinVertical(lipgloss.Left, info, preferences)
+// hardwarePaneHeight fits the six hardware facts: two columns of three rows
+// when the pane is wide enough, one column of six otherwise.
+func (m Model) hardwarePaneHeight(width int) int {
+	inner := max(1, width-m.styles.staticPane.GetHorizontalFrameSize())
+	return len(m.hardwareGridLines(inner)) + m.styles.staticPane.GetVerticalFrameSize()
 }
 
-func (m Model) inspectorPaneHeights(height, width int) (int, int) {
-	if height <= 8 {
-		preferences := max(3, (height+1)/2)
-		return preferences, max(2, height-preferences)
-	}
-	needed := 6
-	if len(m.editOutputs) > 0 {
-		innerWidth := max(1, width-m.styles.staticPane.GetHorizontalFrameSize())
-		needed = m.styles.staticPane.GetVerticalFrameSize()
-		for _, line := range m.inspectorDetailLines(m.editOutputs[m.selectedOutput]) {
-			needed += max(1, (lipgloss.Width(line)+innerWidth-1)/innerWidth)
-		}
-	}
-	info := clampInt(needed, 5, max(5, height-4))
-	return height - info, info
-}
-
-func (m Model) renderInfoPane(width, height int) string {
+func (m Model) renderHardwarePane(width, height int) string {
 	panel := m.paneStyle(paneToneStatic)
 	innerWidth := max(1, width-panel.GetHorizontalFrameSize())
 	innerHeight := max(1, height-panel.GetVerticalFrameSize())
-	body := "(none)"
-	if len(m.editOutputs) > 0 {
-		body = strings.Join(m.inspectorDetailLines(m.editOutputs[m.selectedOutput]), "\n")
+	body := fitBlock(strings.Join(m.hardwareGridLines(innerWidth), "\n"), innerWidth, innerHeight)
+	return m.renderTitledPane(paneToneStatic, "Hardware", body, width)
+}
+
+// hardwareGridLines lays the selected display's hardware facts out in two
+// columns when they fit, so the stage keeps the rows.
+func (m Model) hardwareGridLines(width int) []string {
+	if len(m.editOutputs) == 0 {
+		return []string{m.styles.subtle.Render("(none)")}
 	}
-	body = fitBlock(body, innerWidth, innerHeight)
-	return m.renderTitledPane(paneToneStatic, "Info", body, width)
+	rows := m.hardwareDetailRows(m.editOutputs[m.selectedOutput])
+	labelWidth := 0
+	valueWidth := 0
+	for _, row := range rows {
+		labelWidth = max(labelWidth, lipgloss.Width(row.label))
+		valueWidth = max(valueWidth, lipgloss.Width(row.value))
+	}
+	columnWidth := labelWidth + 1 + valueWidth
+	if width < columnWidth*2+4 {
+		return m.renderDetailRows(rows)
+	}
+	half := (len(rows) + 1) / 2
+	lines := make([]string, 0, half)
+	column := max(columnWidth+4, width/2)
+	for idx := 0; idx < half; idx++ {
+		cell := func(row detailRow) string {
+			return m.styles.label.Render(fmt.Sprintf("%-*s", labelWidth, row.label)) + " " + m.styles.value.Render(row.value)
+		}
+		line := cell(rows[idx])
+		if idx+half < len(rows) {
+			line += strings.Repeat(" ", max(1, column-lipgloss.Width(line))) + cell(rows[idx+half])
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func (m Model) renderInspectorTabbedPane(tone paneTone, body string, width int) string {
-	labels := []string{"Display", "Color"}
-	parts := make([]string, 0, len(labels))
-	plainWidth := 0
-	for idx, label := range labels {
-		text := label
-		plainWidth += lipgloss.Width(text)
-		if idx < len(labels)-1 {
-			plainWidth += 3
-		}
-		style := m.styles.subtle
-		if int(m.inspectorTab) == idx {
-			style = withFG(lipgloss.NewStyle().Bold(true), m.styles.palette.paneActiveBorder)
-		}
-		parts = append(parts, style.Render(text))
-	}
-	title := strings.Join(parts, m.styles.subtle.Render(" - "))
-	return m.renderPaneWithTitle(tone, title, plainWidth, "", body, width)
+	title, titleWidth := m.renderInspectorTabs()
+	return m.renderPaneWithTitle(tone, title, titleWidth, "", body, width)
 }
 
 // paneTone is how loud a pane's chrome should be. Only the pane your keys act
@@ -1596,21 +1728,32 @@ func (m Model) renderProfileDetailPanes(summaries []profileMatchSummary, width, 
 
 	selected := m.profiles[m.selectedProfile]
 	infoLines := m.renderDetailRows(m.profileDetailRows(selected, summaries[m.selectedProfile], innerWidth))
-
-	infoHeight := clampInt(len(infoLines)+style.GetVerticalFrameSize(), 3, height)
-	canvasHeight := height - infoHeight
-	if canvasHeight < profileCanvasMinHeight {
+	stage, info := m.stageAndTextHeights(m.profileEditableOutputs(selected), width, height, len(infoLines))
+	if stage == 0 {
 		body := fitBlock(strings.Join(infoLines, "\n"), innerWidth, max(1, height-style.GetVerticalFrameSize()))
 		return m.renderTitledPane(paneToneStatic, "Profile Details", body, width)
 	}
 
-	info := fitBlock(strings.Join(infoLines, "\n"), innerWidth, max(1, infoHeight-style.GetVerticalFrameSize()))
-	canvasInner := max(1, canvasHeight-style.GetVerticalFrameSize())
+	canvasInner := max(1, stage-style.GetVerticalFrameSize())
 	canvas := fitBlock(m.renderProfileCanvas(selected, innerWidth, canvasInner), innerWidth, canvasInner)
+	details := fitBlock(strings.Join(infoLines, "\n"), innerWidth, max(1, info-style.GetVerticalFrameSize()))
 	return lipgloss.JoinVertical(lipgloss.Left,
-		m.renderTitledPane(paneToneStatic, "Profile Details", info, width),
 		m.renderTitledPane(paneToneStatic, "Monitor Layout", canvas, width),
+		m.renderTitledPane(paneToneStatic, "Profile Details", details, width),
 	)
+}
+
+// stageAndTextHeights splits a preview column between a stage on top and
+// the text below it. The text gets the rows it needs, up to half the column;
+// the stage gets the rest and centres the arrangement in it. A column too
+// short for a readable stage keeps only the text.
+func (m Model) stageAndTextHeights(outputs []editableOutput, width, height, textLines int) (int, int) {
+	frame := m.styles.staticPane.GetVerticalFrameSize()
+	text := clampInt(textLines+frame, 1+frame, max(1+frame, height/2))
+	if height-text < profileCanvasMinHeight {
+		return 0, height
+	}
+	return height - text, text
 }
 
 func (m Model) renderWorkspaceView(height int) string {
@@ -1653,7 +1796,6 @@ func (m Model) workspaceSettingsLine(line int) string {
 		value := m.workspaceFieldValue(line)
 		prefix := "  "
 		if line == m.workspaceEdit.SelectedField {
-			prefix = m.styles.statusOK.Render("> ")
 			value = m.styles.focused.Render(value)
 		} else {
 			value = m.styles.value.Render(value)
@@ -1679,7 +1821,6 @@ func (m Model) workspaceSettingsLine(line int) string {
 		label := m.manualWorkspaceRuleOutputLabel(rule)
 		prefix := "  "
 		if len(workspaceFields)+item == m.workspaceEdit.SelectedField {
-			prefix = m.styles.statusOK.Render("> ")
 			label = m.styles.focused.Render(label)
 		} else {
 			label = m.styles.value.Render(label)
@@ -1745,19 +1886,18 @@ func (m Model) renderWorkspacePreviewPanes(width, height int) string {
 		planLines = append(planLines, m.styles.subtle.Render("(no workspace rules configured)"))
 	}
 
-	planHeight := clampInt(len(planLines)+style.GetVerticalFrameSize(), 3, height)
-	canvasHeight := height - planHeight
-	if canvasHeight < profileCanvasMinHeight {
+	stage, planHeight := m.stageAndTextHeights(m.editOutputs, width, height, len(planLines))
+	if stage == 0 {
 		body := fitBlock(strings.Join(planLines, "\n"), innerWidth, max(1, height-style.GetVerticalFrameSize()))
 		return m.renderTitledPane(paneToneStatic, "Workspace Plan", body, width)
 	}
 
 	plan := fitBlock(strings.Join(planLines, "\n"), innerWidth, max(1, planHeight-style.GetVerticalFrameSize()))
-	canvasInner := max(1, canvasHeight-style.GetVerticalFrameSize())
+	canvasInner := max(1, stage-style.GetVerticalFrameSize())
 	canvas := fitBlock(m.renderWorkspaceCanvas(workspacePlanByConnector(rules), innerWidth, canvasInner), innerWidth, canvasInner)
 	return lipgloss.JoinVertical(lipgloss.Left,
-		m.renderTitledPane(paneToneStatic, "Workspace Plan", plan, width),
 		m.renderTitledPane(paneToneStatic, "Monitor Layout", canvas, width),
+		m.renderTitledPane(paneToneStatic, "Workspace Plan", plan, width),
 	)
 }
 
@@ -1793,7 +1933,13 @@ func (m Model) renderSavePrompt() string {
 	if status := m.renderErrorStatus(); status != "" {
 		body = append(body, status, "")
 	}
-	body = append(body, m.styles.help.MaxWidth(max(20, m.modalMaxWidth()-6)).Render("Type to filter names. Up/Down selects an existing profile. Left/Right or Tab switches action. Enter confirms. Esc cancels."))
+	// Wrap the help instead of cutting it off. Tall terminals keep the dialog
+	// narrow; short ones spend width to save rows.
+	helpWidth := max(20, m.modalMaxWidth()-6)
+	if m.terminalHeight() >= 30 {
+		helpWidth = min(helpWidth, 56)
+	}
+	body = append(body, m.styles.help.Width(helpWidth).Render("Type to filter names. Up/Down selects an existing profile. Left/Right or Tab switches action. Enter confirms. Esc cancels."))
 	return m.renderModalFrame(title, body)
 }
 
@@ -1814,24 +1960,116 @@ func (m Model) renderSaveConfirm() string {
 	return m.renderModalFrame("Confirm Overwrite", body)
 }
 
+// renderConfirm is the Keep/Revert step of a preview. It says what is being
+// kept, drains a meter toward the daemon's deadline, and keeps both actions
+// visible as buttons at every terminal size. The deadline is authoritative;
+// the meter only shows it.
 func (m Model) renderConfirm() string {
 	if m.pending == nil {
-		return m.renderModalFrame("Confirm Apply", nil)
+		return m.renderModalFrame("Keep this layout?", nil)
 	}
 
-	remaining := int(time.Until(m.pending.deadline).Seconds())
+	remaining := m.pending.deadline.Sub(m.clock())
 	if remaining < 0 {
 		remaining = 0
 	}
-
-	body := []string{
-		m.styles.warning.Render(fmt.Sprintf("%s is live now.", targetLabel(m.pending.profile.Name))),
-		m.styles.subtle.Render(fmt.Sprintf("Keep it within %ds or the previous state will be restored.", remaining)),
-		"",
-		m.renderStatus(),
-		m.styles.help.MaxWidth(max(20, m.modalMaxWidth()-6)).Render(m.confirmApplyHelp()),
+	seconds := int(math.Ceil(remaining.Seconds()))
+	total := m.pending.total
+	if total < remaining || total <= 0 {
+		total = apply.DefaultPreviewTimeout
+		if remaining > total {
+			total = remaining
+		}
 	}
-	return m.renderModalFrame("Confirm Apply", body)
+
+	title := "Keep this layout?"
+	subject := "Your changes"
+	if name := strings.TrimSpace(m.pending.profile.Name); name != "" && name != "draft" {
+		title = "Keep this profile?"
+		subject = name
+	}
+
+	width := clampInt(m.modalMaxWidth()-6, 20, 58)
+	unit := "seconds"
+	if seconds == 1 {
+		unit = "second"
+	}
+	// Short terminals drop the spacing rows and the modal padding, so Keep
+	// and Revert stay on screen below the editor's normal minimum size.
+	compact := m.terminalHeight() < 20
+	gap := func() []string {
+		if compact {
+			return nil
+		}
+		return []string{""}
+	}
+	body := []string{m.styles.value.Render(fitString(subject+" · the previous layout returns in "+strconv.Itoa(seconds)+" "+unit, width))}
+	body = append(body, gap()...)
+	body = append(body, m.renderCountdownMeter(remaining, total, width))
+
+	if stage := m.confirmStageRows(width); stage > 0 {
+		outputs := m.profileEditableOutputs(m.pending.profile)
+		canvas := m.renderStaticCanvas(outputs, width, stage, func(output editableOutput) canvasCard {
+			colors := m.staticCardStyle()
+			return canvasCard{colors: colors, body: func(maxLines, maxWidth int) []cardLine {
+				return m.monitorCardLines(output, nil, monitorCardProfile, maxLines, maxWidth, colors, "", m.styles.palette.warning)
+			}}
+		})
+		body = append(body, "", fitBlock(canvas, width, stage))
+	}
+
+	body = append(body, gap()...)
+	body = append(body, m.renderConfirmButtons(width))
+	if status := m.renderErrorStatus(); status != "" {
+		body = append(body, status)
+	}
+	body = append(body, gap()...)
+	body = append(body, m.styles.help.Width(width).Render(m.confirmApplyHelp()))
+	if compact {
+		lines := append([]string{m.styles.modalTitle.Render(title)}, body...)
+		return m.styles.modal.Padding(0, 1).MaxWidth(m.modalMaxWidth()).Render(strings.Join(lines, "\n"))
+	}
+	return m.renderModalFrame(title, body)
+}
+
+// confirmStageRows sizes the miniature of the layout being kept, which only
+// appears when the terminal has rows to spare for it.
+func (m Model) confirmStageRows(width int) int {
+	spare := m.terminalHeight() - 20
+	if spare < 6 || m.pending == nil {
+		return 0
+	}
+	return clampInt(stageRowsFor(m.profileEditableOutputs(m.pending.profile), width), 5, min(12, spare))
+}
+
+// renderCountdownMeter drains from left to right as the deadline nears and
+// ends with the seconds left, so the countdown does not rely on color.
+func (m Model) renderCountdownMeter(remaining, total time.Duration, width int) string {
+	seconds := int(math.Ceil(remaining.Seconds()))
+	label := fmt.Sprintf(" %2ds", seconds)
+	bar := max(4, width-lipgloss.Width(label))
+	filled := 0
+	if total > 0 {
+		filled = int(math.Round(float64(bar) * float64(remaining) / float64(total)))
+	}
+	filled = clampInt(filled, 0, bar)
+	fill := m.styles.statusOK
+	if seconds <= 5 {
+		fill = m.styles.warning
+	}
+	return fill.Render(strings.Repeat("━", filled)) +
+		withFG(lipgloss.NewStyle(), m.styles.palette.meterEmpty).Render(strings.Repeat("─", bar-filled)) +
+		fill.Render(label)
+}
+
+const (
+	confirmKeepLabel   = "[Keep]"
+	confirmRevertLabel = "[Revert]"
+)
+
+func (m Model) renderConfirmButtons(width int) string {
+	buttons := m.styles.value.Render(confirmRevertLabel) + "  " + m.styles.focused.UnsetPadding().Render(confirmKeepLabel)
+	return lipgloss.PlaceHorizontal(width, lipgloss.Right, buttons)
 }
 
 // answerKey normalizes a yes/no keypress. A prompt like "Press y" is answered
@@ -1847,9 +2085,9 @@ func answerKey(msg tea.KeyMsg) string {
 
 func (m Model) confirmApplyHelp() string {
 	if m.quitAfterApply {
-		return "Enter or y keeps the change and quits. Esc or n reverts it."
+		return "Enter or y keeps it and quits. Esc or n reverts."
 	}
-	return "Enter or y keeps the change. Esc or n reverts it."
+	return "Enter or y keeps it. Esc or n reverts."
 }
 
 func (m Model) renderToast() string {
@@ -1889,29 +2127,6 @@ func (m Model) useCompactLayout(bodyHeight int) bool {
 	return bodyHeight < 14 || m.terminalWidth() < 96
 }
 
-func (m Model) compactLayoutHeights(total int) (int, int) {
-	if total <= 6 {
-		canvas := max(2, (total+1)/2)
-		return canvas, max(1, total-canvas)
-	}
-
-	inspector := max(min(13, total-4), (total*7)/12)
-	canvas := total - inspector
-	if canvas < 4 {
-		canvas = 4
-		inspector = total - canvas
-	}
-	if inspector < 4 {
-		inspector = 4
-		canvas = total - inspector
-	}
-	if canvas < 3 {
-		canvas = max(2, total/2)
-		inspector = total - canvas
-	}
-	return max(2, canvas), max(1, inspector)
-}
-
 func (m Model) inspectorDetailLines(output editableOutput) []string {
 	return m.hardwareDetailLines(output)
 }
@@ -1942,6 +2157,33 @@ func fitBlock(text string, width int, height int) string {
 	}
 	for len(lines) < height {
 		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// padBlock sizes a block whose lines never need wrapping, such as the canvas
+// grid: it pads or cuts each line and the line count. It is the cheap
+// counterpart of fitBlock, which re-wraps every line, and it runs on every
+// frame of a drag.
+func padBlock(text string, width int, height int) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	for idx, line := range lines {
+		w := ansi.StringWidth(line)
+		switch {
+		case w > width:
+			lines[idx] = ansi.Truncate(line, width, "")
+		case w < width:
+			lines[idx] = line + strings.Repeat(" ", width-w)
+		}
 	}
 	return strings.Join(lines, "\n")
 }
@@ -2142,10 +2384,7 @@ func (m *Model) moveSelectedOutputToOrigin() {
 	if m.editOutputs[m.selectedOutput].X == 0 && m.editOutputs[m.selectedOutput].Y == 0 {
 		return
 	}
-
-	m.editOutputs[m.selectedOutput].X = 0
-	m.editOutputs[m.selectedOutput].Y = 0
-	m.layoutChanged()
+	m.placeSelected(0, 0, 0)
 }
 
 // canMoveSelectedOutput reports whether moving the selection means anything. A
@@ -2162,21 +2401,23 @@ func (m *Model) canMoveSelectedOutput() bool {
 	return false
 }
 
+// moveSelectedOutput nudges the selected display. Like the panel, a nudge
+// that would cover another display is refused and says why.
 func (m *Model) moveSelectedOutput(dx, dy int) {
 	if len(m.editOutputs) == 0 || !m.canMoveSelectedOutput() {
 		return
 	}
-	m.editOutputs[m.selectedOutput].X += dx
-	m.editOutputs[m.selectedOutput].Y += dy
-	m.layoutChanged()
+	output := m.editOutputs[m.selectedOutput]
+	m.placeSelected(output.X+dx, output.Y+dy, 0)
 }
 
 func (m *Model) toggleSelectedOutput() {
 	if len(m.editOutputs) == 0 {
 		return
 	}
-	m.editOutputs[m.selectedOutput].Enabled = !m.editOutputs[m.selectedOutput].Enabled
-	m.layoutChanged()
+	m.guardLayoutEdit(func() {
+		m.editOutputs[m.selectedOutput].Enabled = !m.editOutputs[m.selectedOutput].Enabled
+	})
 }
 
 func (m Model) analyzeSelectedSnap(threshold int) snapAnalysis {
@@ -2209,117 +2450,58 @@ func (m Model) previewSelectedSnap(threshold int) *snapHintState {
 	return &snapHintState{Marks: marks}
 }
 
-func (m *Model) applySelectedSnap(threshold int) *snapHintState {
-	analysis := m.analyzeSelectedSnap(threshold)
-	if len(m.editOutputs) == 0 || m.selectedOutput < 0 || m.selectedOutput >= len(m.editOutputs) {
-		return nil
-	}
-
-	selected := &m.editOutputs[m.selectedOutput]
-	var marks []snapMark
-	if analysis.x.dist <= threshold {
-		selected.X = analysis.x.pos
-		marks = append(marks, analysis.x.marks...)
-	}
-	if analysis.y.dist <= threshold {
-		selected.Y = analysis.y.pos
-		marks = append(marks, analysis.y.marks...)
-	}
-	if len(marks) == 0 {
-		return nil
-	}
-	return &snapHintState{Marks: marks}
-}
-
+// snapSelectedOutput is Place beside: flush against the nearest display on
+// one side, centred on the other axis, through the shared placement rules.
 func (m *Model) snapSelectedOutput(direction snapDirection) tea.Cmd {
 	if len(m.editOutputs) == 0 || m.selectedOutput < 0 || m.selectedOutput >= len(m.editOutputs) {
 		return nil
 	}
 
-	selected := &m.editOutputs[m.selectedOutput]
+	selected := m.editOutputs[m.selectedOutput]
 	if !selected.Enabled || selected.MirrorOf != "" {
 		m.setStatusErr("Selected monitor must be enabled and not mirrored to snap")
 		return nil
 	}
 
-	anchorIndex := m.nearestSnapOutput()
-	if anchorIndex < 0 {
+	x, y, anchorIndex, ok := profile.BesidePosition(m.currentProfileOutputs(), m.selectedOutput, direction.place())
+	if !ok {
 		m.setStatusErr("No other enabled monitor available for snapping")
 		return nil
 	}
-
-	anchor := m.editOutputs[anchorIndex]
-	selectedW, selectedH := selected.logicalSize()
-	anchorW, anchorH := anchor.logicalSize()
-	marks := make([]snapMark, 0, 2)
-
-	switch direction {
-	case snapDirectionLeft:
-		selected.X = anchor.X - selectedW
-		selected.Y = anchor.Y + (anchorH-selectedH)/2
-		marks = append(marks,
-			snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeRight},
-			snapMark{OutputIndex: anchorIndex, Edge: snapEdgeLeft},
-		)
-	case snapDirectionRight:
-		selected.X = anchor.X + anchorW
-		selected.Y = anchor.Y + (anchorH-selectedH)/2
-		marks = append(marks,
-			snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeLeft},
-			snapMark{OutputIndex: anchorIndex, Edge: snapEdgeRight},
-		)
-	case snapDirectionUp:
-		selected.X = anchor.X + (anchorW-selectedW)/2
-		selected.Y = anchor.Y - selectedH
-		marks = append(marks,
-			snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeBottom},
-			snapMark{OutputIndex: anchorIndex, Edge: snapEdgeTop},
-		)
-	case snapDirectionDown:
-		selected.X = anchor.X + (anchorW-selectedW)/2
-		selected.Y = anchor.Y + anchorH
-		marks = append(marks,
-			snapMark{OutputIndex: m.selectedOutput, Edge: snapEdgeTop},
-			snapMark{OutputIndex: anchorIndex, Edge: snapEdgeBottom},
-		)
-	default:
+	if _, placed := m.placeSelected(x, y, 0); !placed {
 		return nil
 	}
 
-	m.layoutChanged()
-	m.setStatusOK(fmt.Sprintf("Snapped %s %s %s", selected.Name, direction.relation(), anchor.Name))
+	var marks []snapMark
+	switch direction {
+	case snapDirectionLeft:
+		marks = []snapMark{{m.selectedOutput, snapEdgeRight}, {anchorIndex, snapEdgeLeft}}
+	case snapDirectionRight:
+		marks = []snapMark{{m.selectedOutput, snapEdgeLeft}, {anchorIndex, snapEdgeRight}}
+	case snapDirectionUp:
+		marks = []snapMark{{m.selectedOutput, snapEdgeBottom}, {anchorIndex, snapEdgeTop}}
+	case snapDirectionDown:
+		marks = []snapMark{{m.selectedOutput, snapEdgeTop}, {anchorIndex, snapEdgeBottom}}
+	}
+	m.setStatusOK(fmt.Sprintf("Snapped %s %s %s", selected.Name, direction.relation(), m.editOutputs[anchorIndex].Name))
 	return m.showSnapHint(&snapHintState{Marks: marks})
 }
 
 func (m Model) nearestSnapOutput() int {
-	if len(m.editOutputs) == 0 || m.selectedOutput < 0 || m.selectedOutput >= len(m.editOutputs) {
-		return -1
+	return profile.NearestAnchor(m.currentProfileOutputs(), m.selectedOutput)
+}
+
+func (d snapDirection) place() profile.PlaceDirection {
+	switch d {
+	case snapDirectionLeft:
+		return profile.PlaceLeft
+	case snapDirectionRight:
+		return profile.PlaceRight
+	case snapDirectionUp:
+		return profile.PlaceAbove
+	default:
+		return profile.PlaceBelow
 	}
-
-	selected := m.editOutputs[m.selectedOutput]
-	selectedW, selectedH := selected.logicalSize()
-	selectedCenterX := int64(selected.X)*2 + int64(selectedW)
-	selectedCenterY := int64(selected.Y)*2 + int64(selectedH)
-
-	nearestIndex := -1
-	var nearestDistance int64
-	for index, output := range m.editOutputs {
-		if index == m.selectedOutput || !output.Enabled || output.MirrorOf != "" {
-			continue
-		}
-
-		width, height := output.logicalSize()
-		centerX := int64(output.X)*2 + int64(width)
-		centerY := int64(output.Y)*2 + int64(height)
-		dx := selectedCenterX - centerX
-		dy := selectedCenterY - centerY
-		distance := dx*dx + dy*dy
-		if nearestIndex < 0 || distance < nearestDistance {
-			nearestIndex = index
-			nearestDistance = distance
-		}
-	}
-	return nearestIndex
 }
 
 func (d snapDirection) relation() string {
@@ -2356,7 +2538,23 @@ func (m *Model) adjustInspectorField(delta int) {
 	if len(m.editOutputs) == 0 {
 		return
 	}
+	switch m.inspectorField {
+	case 7, 8:
+		if !m.canMoveSelectedOutput() {
+			return
+		}
+		output := m.editOutputs[m.selectedOutput]
+		if m.inspectorField == 7 {
+			m.placeSelected(output.X+delta*10, output.Y, 0)
+		} else {
+			m.placeSelected(output.X, output.Y+delta*10, 0)
+		}
+		return
+	}
+	m.guardLayoutEdit(func() { m.adjustInspectorFieldUnguarded(delta) })
+}
 
+func (m *Model) adjustInspectorFieldUnguarded(delta int) {
 	output := &m.editOutputs[m.selectedOutput]
 	oldWidth, oldHeight := output.logicalSize()
 	switch m.inspectorField {
@@ -2372,7 +2570,7 @@ func (m *Model) adjustInspectorField(delta int) {
 		}
 		output.applyMode(output.Modes[output.ModeIndex])
 	case 2:
-		output.Scale = scaling.Round(clampFloat(output.Scale+float64(delta)*0.05, scaling.MinScale, scaling.MaxScale))
+		output.Scale = nextSharpScale(output.Width, output.Height, output.Scale, delta)
 	case 3:
 		// Hyprland's bitdepth is a boolean in disguise: its parser only asks
 		// whether the value is "10", so anything else means 10-bit off. There is
@@ -2400,10 +2598,6 @@ func (m *Model) adjustInspectorField(delta int) {
 		output.VRR = wrapValue(output.VRR+delta, 0, 2)
 	case 6:
 		output.Transform = wrapValue(output.Transform+delta, 0, 7)
-	case 7:
-		output.X += delta * 10
-	case 8:
-		output.Y += delta * 10
 	case 9:
 		targets := []string{""}
 		for i, other := range m.editOutputs {
@@ -3885,10 +4079,28 @@ func isInternalOutputName(name string) bool {
 	return hypr.IsInternalConnector(name)
 }
 
+// cardLineRole says where a line belongs on a monitor card: identity at the
+// top, the mode and placement at the bottom, workspaces as chips on the right.
+type cardLineRole int
+
+const (
+	cardRoleName cardLineRole = iota
+	cardRoleIssue
+	cardRoleModel
+	cardRoleMode
+	cardRolePlacement
+	cardRoleWorkspaces
+)
+
 type cardLine struct {
 	text string
 	fg   string
+	bg   string
 	bold bool
+	role cardLineRole
+	// workspaces carries the bare IDs behind a workspace line, which the
+	// canvas draws as chips; text keeps the shared "1, 2, 3" form.
+	workspaces []string
 }
 
 func (o editableOutput) cardModelLabel() string { return o.modelSizeLabel() }
@@ -3905,34 +4117,28 @@ func (o editableOutput) cardLinesWithIssue(maxLines int, fg string, muted string
 	if issue != "" {
 		name += " ⚠"
 	}
-	lines := []cardLine{{text: name, fg: fg, bold: true}}
+	lines := []cardLine{{text: name, fg: fg, bold: true, role: cardRoleName}}
 	if issue != "" {
-		lines = append(lines, cardLine{text: "⚠ " + issue, fg: issueFG, bold: true})
+		lines = append(lines, cardLine{text: "⚠ " + issue, fg: issueFG, bold: true, role: cardRoleIssue})
 	}
 	lines = append(lines,
-		cardLine{text: o.modelSizeLabel(), fg: muted},
-		cardLine{text: displayModeLabel(o.DisplayMode()), fg: muted},
-		cardLine{text: o.placementLabel(), fg: muted})
+		cardLine{text: o.modelSizeLabel(), fg: muted, role: cardRoleModel},
+		cardLine{text: displayModeLabel(o.DisplayMode()), fg: muted, role: cardRoleMode},
+		cardLine{text: o.placementLabel(), fg: muted, role: cardRolePlacement})
 	return lines[:min(maxLines, len(lines))]
 }
 
+// newCanvasCells lays out the stage: a quiet dotted field the displays sit
+// on. The dots mark space without competing with the cards or their text.
 func (m Model) newCanvasCells(width, height int) [][]canvasCell {
 	grid := make([][]canvasCell, height)
 	p := m.styles.palette
 	for y := 0; y < height; y++ {
 		row := make([]canvasCell, width)
 		for x := 0; x < width; x++ {
-			cell := canvasCell{ch: ' ', fg: p.canvasGrid, bg: p.canvasBg}
-			switch {
-			case y%4 == 0 && x%8 == 0:
-				cell.ch = '┼'
-				cell.fg = p.canvasAxis
-			case y%4 == 0:
-				cell.ch = '─'
-				cell.fg = p.canvasGrid
-			case x%8 == 0:
-				cell.ch = '│'
-				cell.fg = p.canvasGrid
+			cell := canvasCell{ch: ' ', fg: p.stageDot, bg: p.canvasBg}
+			if y%3 == 1 && x%6 == 2 {
+				cell.ch = '·'
 			}
 			row[x] = cell
 		}
@@ -4004,7 +4210,10 @@ func (m Model) liveWithoutMode(name string) bool {
 	return false
 }
 
-// paintCard draws one monitor rectangle. The caller supplies the body lines
+// paintCard draws one monitor as a screen on the stage. The connector and
+// model sit at the top left with workspace chips on the right; the mode and
+// placement sit at the bottom. The selected card takes a heavy border, so
+// selection never depends on color alone. The caller supplies the body lines
 // once the card knows how much room it can spare for them.
 func paintCard(grid [][]canvasCell, rect canvasRect, emphasized bool, colors canvasCardColors, body func(maxLines, maxWidth int) []cardLine) {
 	if len(grid) == 0 || len(grid[0]) == 0 {
@@ -4025,28 +4234,185 @@ func paintCard(grid [][]canvasCell, rect canvasRect, emphasized bool, colors can
 		}
 	}
 
+	h, v, tl, tr, bl, br := '─', '│', '╭', '╮', '╰', '╯'
+	if emphasized {
+		h, v, tl, tr, bl, br = '━', '┃', '┏', '┓', '┗', '┛'
+	}
+	// Border cells keep the stage behind them: a card fill under the line
+	// would show as a halo outside it, because a terminal draws box lines
+	// through the middle of the cell.
+	edge := func(ch rune) canvasCell {
+		return canvasCell{ch: ch, fg: colors.border, bold: emphasized}
+	}
 	for x := x1 + 1; x < x2; x++ {
-		grid[y1][x] = canvasCell{ch: '─', fg: colors.border, bg: colors.bg, bold: emphasized}
-		grid[y2][x] = canvasCell{ch: '─', fg: colors.border, bg: colors.bg, bold: emphasized}
+		grid[y1][x] = edge(h)
+		grid[y2][x] = edge(h)
 	}
 	for y := y1 + 1; y < y2; y++ {
-		grid[y][x1] = canvasCell{ch: '│', fg: colors.border, bg: colors.bg, bold: emphasized}
-		grid[y][x2] = canvasCell{ch: '│', fg: colors.border, bg: colors.bg, bold: emphasized}
+		grid[y][x1] = edge(v)
+		grid[y][x2] = edge(v)
 	}
-	grid[y1][x1] = canvasCell{ch: '╭', fg: colors.border, bg: colors.bg, bold: emphasized}
-	grid[y1][x2] = canvasCell{ch: '╮', fg: colors.border, bg: colors.bg, bold: emphasized}
-	grid[y2][x1] = canvasCell{ch: '╰', fg: colors.border, bg: colors.bg, bold: emphasized}
-	grid[y2][x2] = canvasCell{ch: '╯', fg: colors.border, bg: colors.bg, bold: emphasized}
+	grid[y1][x1], grid[y1][x2], grid[y2][x1], grid[y2][x2] = edge(tl), edge(tr), edge(bl), edge(br)
 
-	availableHeight := y2 - y1 - 1
-	lines := body(max(1, availableHeight), max(1, x2-x1-1))
-	startY := y1 + 1 + max(0, (availableHeight-len(lines))/2)
-	for idx, line := range lines {
-		y := startY + idx
-		if y <= y1 || y >= y2 {
-			continue
+	innerW := x2 - x1 - 1
+	innerH := y2 - y1 - 1
+	pad := 0
+	if innerW >= 14 {
+		pad = 1
+	}
+	left, right := x1+1+pad, x2-1-pad
+	textW := right - left + 1
+
+	lines := body(max(1, innerH), max(1, textW))
+	chips, chipsOnNameRow := cardChipPlacement(lines, textW)
+	if chipsOnNameRow {
+		// The chips share the name row, which frees a row for the bottom block.
+		lines = body(innerH+1, max(1, textW))
+		chips, chipsOnNameRow = cardChipPlacement(lines, textW)
+	}
+
+	// Narrow cards cannot hold a left/right split; center what fits instead.
+	if textW < 12 {
+		rows := make([]cardLine, 0, len(lines))
+		for _, line := range lines {
+			if line.role == cardRoleWorkspaces {
+				line.text = strings.Join(line.workspaces, ",")
+			}
+			rows = append(rows, line)
 		}
-		paintCanvasTextCentered(grid, x1+1, x2-1, y, fitString(line.text, x2-x1-1), line.fg, colors.bg, line.bold)
+		rows = rows[:min(len(rows), innerH)]
+		startY := y1 + 1 + max(0, (innerH-len(rows))/2)
+		for idx, line := range rows {
+			paintCanvasTextCentered(grid, x1+1, x2-1, startY+idx, fitString(line.text, innerW), line.fg, colors.bg, line.bold)
+		}
+		return
+	}
+
+	var top, bottom []cardLine
+	for _, line := range lines {
+		switch line.role {
+		case cardRoleWorkspaces:
+			if !chipsOnNameRow {
+				top = append(top, line)
+			}
+		case cardRoleMode, cardRolePlacement:
+			bottom = append(bottom, line)
+		default:
+			top = append(top, line)
+		}
+	}
+	for len(top)+len(bottom) > innerH && len(bottom) > 0 {
+		bottom = bottom[:len(bottom)-1]
+	}
+	top = top[:min(len(top), innerH)]
+
+	paintRow := func(y int, line cardLine) {
+		if line.role == cardRoleWorkspaces {
+			paintChips(grid, y, left, right, line, colors.bg, false)
+			return
+		}
+		paintCanvasText(grid, left, right, y, fitString(line.text, textW), line.fg, colors.bg, line.bold)
+	}
+	for idx, line := range top {
+		y := y1 + 1 + idx
+		paintRow(y, line)
+		if idx == 0 && chipsOnNameRow {
+			paintChips(grid, y, left, right, chips, colors.bg, true)
+		}
+	}
+	for idx, line := range bottom {
+		paintRow(y2-len(bottom)+idx, line)
+	}
+}
+
+// cardChipPlacement finds the workspace line and reports whether its chips fit
+// to the right of the connector name.
+func cardChipPlacement(lines []cardLine, width int) (cardLine, bool) {
+	var name, chips cardLine
+	haveName, haveChips := false, false
+	for _, line := range lines {
+		switch line.role {
+		case cardRoleName:
+			name, haveName = line, true
+		case cardRoleWorkspaces:
+			chips, haveChips = line, true
+		}
+	}
+	if !haveName || !haveChips || len(chips.workspaces) == 0 {
+		return chips, false
+	}
+	return chips, lipgloss.Width(name.text)+2+chipRunWidth(chips.workspaces, len(chips.workspaces)) <= width
+}
+
+// chipRunWidth is the width of the first n chips drawn side by side.
+func chipRunWidth(ids []string, n int) int {
+	width := 0
+	for idx := 0; idx < n && idx < len(ids); idx++ {
+		if idx > 0 {
+			width++
+		}
+		width += lipgloss.Width(ids[idx]) + 2
+	}
+	return width
+}
+
+// paintChips draws workspace IDs as chips, left aligned or right aligned
+// against the card edge, and ends with +N when they do not all fit.
+func paintChips(grid [][]canvasCell, y, left, right int, line cardLine, cardBg string, alignRight bool) {
+	ids := line.workspaces
+	if len(ids) == 0 {
+		return
+	}
+	width := right - left + 1
+	shown := len(ids)
+	overflow := ""
+	for shown > 0 {
+		overflow = ""
+		if shown < len(ids) {
+			overflow = fmt.Sprintf(" +%d", len(ids)-shown)
+		}
+		if chipRunWidth(ids, shown)+len(overflow) <= width {
+			break
+		}
+		shown--
+	}
+	if shown == 0 {
+		paintCanvasText(grid, left, right, y, fitString(fmt.Sprintf("+%d", len(ids)), width), line.fg, cardBg, true)
+		return
+	}
+	total := chipRunWidth(ids, shown) + len(overflow)
+	x := left
+	if alignRight {
+		x = right - total + 1
+	}
+	for idx := 0; idx < shown; idx++ {
+		if idx > 0 {
+			paintCanvasText(grid, x, right, y, " ", line.fg, cardBg, false)
+			x++
+		}
+		chip := " " + ids[idx] + " "
+		paintCanvasText(grid, x, right, y, chip, line.fg, blankFallback(line.bg, cardBg), true)
+		x += lipgloss.Width(chip)
+	}
+	if overflow != "" {
+		paintCanvasText(grid, x, right, y, overflow, line.fg, cardBg, true)
+	}
+}
+
+// paintCanvasText writes left-aligned text between left and right.
+func paintCanvasText(grid [][]canvasCell, left, right, y int, text string, fg string, bg string, bold bool) {
+	if y < 0 || y >= len(grid) || left > right {
+		return
+	}
+	x := left
+	for _, r := range text {
+		if x > right || x >= len(grid[y]) {
+			return
+		}
+		if x >= 0 {
+			grid[y][x] = canvasCell{ch: r, fg: fg, bg: bg, bold: bold}
+		}
+		x++
 	}
 }
 
@@ -4556,7 +4922,8 @@ const advancedFieldStart = 10
 func layoutFieldShortLabel(field int) string {
 	switch field {
 	case 0:
-		return "On"
+		// "On" would read as a value beside the On/Off choice row.
+		return "Enabled"
 	case 3:
 		return "Depth (bpc)"
 	case 4:

@@ -104,6 +104,23 @@ func (d arrowDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	}
 }
 
+// plainDelegate indents list rows like arrowDelegate without drawing an arrow,
+// so both lists keep the same columns.
+type plainDelegate struct {
+	list.DefaultDelegate
+}
+
+func (d plainDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	var buf strings.Builder
+	d.DefaultDelegate.Render(&buf, m, index, item)
+	for i, line := range strings.Split(buf.String(), "\n") {
+		if i > 0 {
+			fmt.Fprint(w, "\n")
+		}
+		fmt.Fprintf(w, "  %s", line)
+	}
+}
+
 type saveDialogState struct {
 	Input   textinput.Model
 	List    list.Model
@@ -130,12 +147,6 @@ const (
 	saveDialogQuit
 )
 
-type canvasDragState struct {
-	OutputIndex int
-	LastX       int
-	LastY       int
-}
-
 type canvasRect struct {
 	index int
 	x     int
@@ -145,6 +156,9 @@ type canvasRect struct {
 }
 
 type canvasGeometry struct {
+	// originX, originY are the logical coordinates drawn at offsetX, offsetY.
+	originX int
+	originY int
 	ok      bool
 	width   int
 	height  int
@@ -197,7 +211,7 @@ func (m Model) renderModalScreen(overlay string) string {
 	}
 
 	tabs := m.renderTabs()
-	bodyHeight := max(12, height-lipgloss.Height(tabs)-2-toastHeight)
+	bodyHeight := max(3, height-lipgloss.Height(tabs)-toastHeight)
 	centered := lipgloss.Place(width-2, bodyHeight, lipgloss.Center, lipgloss.Center, overlay)
 	body := m.styles.modalBackdrop.Width(width).Height(bodyHeight).Render(centered)
 	if toast != "" {
@@ -221,7 +235,7 @@ func (m Model) monitorStateBadge(output editableOutput) string {
 
 func (m Model) unsavedBadge() string {
 	if m.dirty && !m.draftSaved {
-		return m.styles.badgeAccent.Render("Unsaved Changes")
+		return m.styles.warning.Render("Changes not applied")
 	}
 	if m.dirty && m.draftSaved {
 		return m.styles.badgeOn.Render("Saved Draft")
@@ -231,6 +245,12 @@ func (m Model) unsavedBadge() string {
 
 func (m *Model) activateInspectorField() tea.Cmd {
 	if len(m.editOutputs) == 0 {
+		return nil
+	}
+
+	// Choice rows cycle in place: every option is already on screen.
+	if len(inspectorChoiceValues(m.inspectorField)) > 0 {
+		m.cycleInspectorChoice(m.inspectorField, 1)
 		return nil
 	}
 
@@ -295,14 +315,8 @@ func (m *Model) activateInspectorField() tea.Cmd {
 			value = strconv.Itoa(output.Y)
 		}
 		return m.openNumericInput(kind, m.selectedOutput, title, hint, value)
-	case 3:
-		m.openFieldPicker(layoutFields[3], m.inspectorField, []string{"8", "10"})
-		return nil
 	case 4:
 		m.openFieldPicker(layoutFields[4], m.inspectorField, []string{"srgb", "auto", "wide", "hdr", "hdredid", "dcip3", "dp3", "adobe", "edid"})
-		return nil
-	case 5:
-		m.openFieldPicker("VRR", m.inspectorField, []string{"off", "on", "fullscreen"})
 		return nil
 	case 6:
 		m.openFieldPicker("Rotation", m.inspectorField, []string{"normal", "90", "180", "270", "flipped", "flipped+90", "flipped+180", "flipped+270"})
@@ -328,9 +342,6 @@ func (m *Model) activateInspectorField() tea.Cmd {
 	case 13:
 		output := m.editOutputs[m.selectedOutput]
 		return m.openNumericInput(numericInputInt, m.selectedOutput, layoutFields[13], "SDR-to-HDR white level, 0–1000 cd/m². Enter applies. Esc cancels.", fmt.Sprintf("%d", output.SDRMaxLuminance))
-	case 14:
-		m.openFieldPicker(layoutFields[14], m.inspectorField, []string{"default", "gamma22", "srgb"})
-		return nil
 	case 15:
 		output := m.editOutputs[m.selectedOutput]
 		return m.openNumericInput(numericInputFloat, m.selectedOutput, layoutFields[15], "Display black-level metadata in cd/m². All-zero overrides use EDID.", fmt.Sprintf("%.3f", output.MinLuminance))
@@ -340,12 +351,6 @@ func (m *Model) activateInspectorField() tea.Cmd {
 	case 17:
 		output := m.editOutputs[m.selectedOutput]
 		return m.openNumericInput(numericInputInt, m.selectedOutput, layoutFields[17], "Maximum frame-average luminance metadata in cd/m². Zero uses EDID.", fmt.Sprintf("%d", output.MaxAvgLuminance))
-	case 18:
-		m.openFieldPicker(layoutFields[18], m.inspectorField, []string{"off", "auto", "on"})
-		return nil
-	case 19:
-		m.openFieldPicker(layoutFields[19], m.inspectorField, []string{"off", "auto", "on"})
-		return nil
 	case 20:
 		output := m.editOutputs[m.selectedOutput]
 		return m.openNumericInput(
@@ -475,7 +480,10 @@ func (m Model) renderNumericInput() string {
 		m.styles.label.Render("Value"),
 		inputBox,
 	}
-	if m.input.Input.Err != nil && m.input.Kind != numericInputScale {
+	_, scaleParseErr := parseScaleInput(m.input.Input.Value())
+	// Scale explains its own parse errors below; other refusals, such as an
+	// overlap, still need saying.
+	if m.input.Input.Err != nil && (m.input.Kind != numericInputScale || scaleParseErr == nil) {
 		body = append(body, "", m.styles.statusError.Render(m.input.Input.Err.Error()))
 	}
 	if m.input.Kind == numericInputScale {
@@ -626,7 +634,8 @@ func (m *Model) openSaveDialogFor(purpose saveDialogPurpose) (tea.Model, tea.Cmd
 	inner.Styles.DimmedTitle = m.styles.subtle
 	inner.Styles.DimmedDesc = m.styles.subtle
 	inner.Styles.FilterMatch = m.styles.badgeAccent
-	delegate := arrowDelegate{inner}
+	// Highlighting marks the selected profile; an arrow beside it would repeat it.
+	delegate := plainDelegate{inner}
 
 	listHeight := clampInt(defaultHeight(m.height)-18, 3, 10)
 	profileList := list.New(nil, delegate, m.saveDialogListWidth()-2, listHeight)
@@ -729,13 +738,13 @@ func (m Model) renderSaveActionButtons() string {
 	actions := saveActionsForPurpose(purpose)
 	parts := make([]string, 0, len(actions))
 	for _, action := range actions {
-		style := m.styles.field
+		style := m.styles.value
 		if action == m.selectedSaveAction() {
-			style = m.styles.focused
+			style = m.styles.focused.UnsetPadding()
 		}
-		parts = append(parts, style.Render(m.saveActionLabel(action)))
+		parts = append(parts, style.Render("["+m.saveActionLabel(action)+"]"))
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Left, parts...)
+	return strings.Join(parts, "  ")
 }
 
 func defaultSaveAction(purpose saveDialogPurpose) saveAction {
@@ -968,33 +977,35 @@ func (m *Model) commitModePicker() tea.Cmd {
 		return nil
 	}
 
-	output := &m.editOutputs[m.picker.OutputIndex]
 	value := selected.Value()
-	oldWidth, oldHeight := output.logicalSize()
-
-	if m.picker.FieldIndex >= 0 {
-		m.applyFieldPickerValue(output, m.picker.FieldIndex, value)
-		m.reflowAfterResize(m.picker.OutputIndex, oldWidth, oldHeight)
-		m.layoutChanged()
-		m.setStatusOK(fmt.Sprintf("Set %s to %s for %s", layoutFields[m.picker.FieldIndex], fieldOptionLabel(m.picker.FieldIndex, value), output.Name))
-		m.picker = nil
-		m.mode = modeMain
-		return nil
-	}
-
-	output.ModeIndex = indexOf(output.Modes, value)
-	if output.ModeIndex < 0 {
-		output.ModeIndex = 0
-	}
-	if output.ModeUnsupported && output.ModeIndex > 0 {
-		output.ModeUnsupported = false
-	}
-	output.applyMode(output.Modes[output.ModeIndex])
-	m.reflowAfterResize(m.picker.OutputIndex, oldWidth, oldHeight)
-	m.layoutChanged()
-	m.setStatusOK(fmt.Sprintf("Selected %s for %s", output.DisplayMode(), output.Name))
+	picker := m.picker
 	m.picker = nil
 	m.mode = modeMain
+
+	// A new mode or rotation can grow the display into a neighbour; that
+	// edit is refused, as the panel's editor refuses it.
+	status := ""
+	m.guardLayoutEdit(func() {
+		output := &m.editOutputs[picker.OutputIndex]
+		oldWidth, oldHeight := output.logicalSize()
+		if picker.FieldIndex >= 0 {
+			m.applyFieldPickerValue(output, picker.FieldIndex, value)
+			status = fmt.Sprintf("Set %s to %s for %s", layoutFields[picker.FieldIndex], fieldOptionLabel(picker.FieldIndex, value), output.Name)
+		} else {
+			output.ModeIndex = indexOf(output.Modes, value)
+			if output.ModeIndex < 0 {
+				output.ModeIndex = 0
+			}
+			if output.ModeUnsupported && output.ModeIndex > 0 {
+				output.ModeUnsupported = false
+			}
+			output.applyMode(output.Modes[output.ModeIndex])
+			status = fmt.Sprintf("Selected %s for %s", output.DisplayMode(), output.Name)
+		}
+		m.reflowAfterResize(picker.OutputIndex, oldWidth, oldHeight)
+		m.layoutChanged()
+		m.setStatusOK(status)
+	})
 	return nil
 }
 
@@ -1130,6 +1141,8 @@ func (m *Model) commitNumericInput() tea.Cmd {
 		return nil
 	}
 
+	before := m.currentProfileOutputs()
+	original := m.editOutputs[m.input.OutputIndex]
 	output := &m.editOutputs[m.input.OutputIndex]
 	oldWidth, oldHeight := output.logicalSize()
 	var status string
@@ -1153,22 +1166,27 @@ func (m *Model) commitNumericInput() tea.Cmd {
 		} else if !scaling.Sharp(output.Width, output.Height, value) {
 			status += " (fractional logical size may look blurry)"
 		}
-	case numericInputPositionX:
+	case numericInputPositionX, numericInputPositionY:
 		value, err := strconv.Atoi(strings.TrimSpace(m.input.Input.Value()))
 		if err != nil {
 			m.input.Input.Err = fmt.Errorf("position must be an integer")
 			return nil
 		}
-		output.X = value
-		status = fmt.Sprintf("Position X set to %d for %s", value, output.Name)
-	case numericInputPositionY:
-		value, err := strconv.Atoi(strings.TrimSpace(m.input.Input.Value()))
-		if err != nil {
-			m.input.Input.Err = fmt.Errorf("position must be an integer")
-			return nil
+		// Typed coordinates are exact: taken as given, or refused when they
+		// would overlap another display, and the entry stays open to fix.
+		x, y, axis := value, output.Y, "X"
+		if m.input.Kind == numericInputPositionY {
+			x, y, axis = output.X, value, "Y"
 		}
-		output.Y = value
-		status = fmt.Sprintf("Position Y set to %d for %s", value, output.Name)
+		if output.MirrorOf == "" {
+			moved := m.currentProfileOutputs()
+			if _, err := profile.MoveOutput(moved, m.input.OutputIndex, x, y, 0); err != nil {
+				m.input.Input.Err = err
+				return nil
+			}
+		}
+		output.X, output.Y = x, y
+		status = fmt.Sprintf("Position %s set to %d for %s", axis, value, output.Name)
 	case numericInputICC:
 		output.ICC = strings.TrimSpace(m.input.Input.Value())
 		if output.ICC == "" {
@@ -1194,6 +1212,15 @@ func (m *Model) commitNumericInput() tea.Cmd {
 		status = fmt.Sprintf("%s set for %s", m.input.Title, output.Name)
 	}
 	m.reflowAfterResize(m.input.OutputIndex, oldWidth, oldHeight)
+	if err := profile.RejectNewOverlap(before, m.currentProfileOutputs()); err != nil {
+		// A scale that grows the display into a neighbour is refused.
+		m.editOutputs[m.input.OutputIndex] = original
+		for idx := range m.editOutputs {
+			m.editOutputs[idx].X, m.editOutputs[idx].Y = before[idx].X, before[idx].Y
+		}
+		m.input.Input.Err = err
+		return nil
+	}
 	m.layoutChanged()
 	m.setStatusOK(status)
 	m.input = nil
@@ -1231,19 +1258,32 @@ func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.updateSaveMouse(msg)
 	case modeModePicker:
 		return m.updateModePickerMouse(msg)
-	case modeNumericInput, modeProfileExecInput, modeSaveConfirm, modeConfirm, modeDeleteConfirm:
+	case modeConfirm:
+		return m.updateConfirmMouse(msg)
+	case modeDeleteConfirm:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			switch {
+			case m.visibleActionAt(msg.X, msg.Y, deleteConfirmLabel):
+				return m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+			case m.visibleActionAt(msg.X, msg.Y, deleteCancelLabel):
+				return m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			}
+		}
+		return m, nil
+	case modeNumericInput, modeProfileExecInput, modeSaveConfirm:
 		return m, nil
 	}
 
 	if msg.Action == tea.MouseActionRelease {
 		if m.drag != nil {
-			m.selectedOutput = m.drag.OutputIndex
-			cmd := m.showSnapHint(m.applySelectedSnap(36))
-			m.layoutChanged()
-			m.drag = nil
-			return m, cmd
+			return m, m.dragRelease(msg.X, msg.Y)
 		}
-		m.drag = nil
+		return m, nil
+	}
+	// Motion during a drag touches nothing but the dragged position: no hit
+	// testing, layout, or validation per event.
+	if msg.Action == tea.MouseActionMotion && m.drag != nil {
+		m.dragMotion(msg.X, msg.Y)
 		return m, nil
 	}
 
@@ -1356,19 +1396,11 @@ func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.selectedOutput = rect.index
 			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 				m.snap = nil
-				m.drag = &canvasDragState{OutputIndex: rect.index, LastX: msg.X, LastY: msg.Y}
-			}
-		}
-		if msg.Action == tea.MouseActionMotion && m.drag != nil && m.drag.OutputIndex >= 0 && m.drag.OutputIndex < len(m.editOutputs) {
-			dxCells := msg.X - m.drag.LastX
-			dyCells := msg.Y - m.drag.LastY
-			if dxCells != 0 || dyCells != 0 {
-				worldDX := cellsToWorldX(dxCells, layout.scale, layout.cellW)
-				worldDY := cellsToWorldY(dyCells, layout.scale)
-				m.selectedOutput = m.drag.OutputIndex
-				m.moveSelectedOutput(worldDX, worldDY)
-				m.drag.LastX = msg.X
-				m.drag.LastY = msg.Y
+				output := m.editOutputs[rect.index]
+				if output.MirrorOf == "" {
+					m.drag = &canvasDragState{OutputIndex: rect.index, StartX: msg.X, StartY: msg.Y,
+						OrigX: output.X, OrigY: output.Y, Geometry: layout}
+				}
 			}
 		}
 		return m, nil
@@ -1386,6 +1418,13 @@ func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.inspectorField = field
 			switch msg.Button {
 			case tea.MouseButtonLeft:
+				if value, ok := m.inspectorChoiceAt(msg.X, field, inspectorRect, compact); ok {
+					m.setInspectorChoice(field, value)
+					return m, nil
+				}
+				if len(inspectorChoiceValues(field)) > 0 {
+					return m, nil
+				}
 				return m, m.activateInspectorField()
 			case tea.MouseButtonWheelUp:
 				m.adjustInspectorField(1)
@@ -1404,15 +1443,30 @@ func (m Model) inspectorTabAt(x, y int, inspectorRect hitRect) (inspectorTab, bo
 	}
 	localX := x - inspectorRect.x
 	cursor := 3 // rounded corner, border segment, and title padding
-	labels := []string{"Display", "Color"}
-	for idx, label := range labels {
-		width := lipgloss.Width(label)
+	for idx, label := range inspectorTabLabels {
+		width := lipgloss.Width(label) + 2
 		if localX >= cursor && localX < cursor+width {
 			return inspectorTab(idx), true
 		}
-		cursor += width + 3 // " - "
+		cursor += width
 	}
 	return inspectorTabDisplay, false
+}
+
+// inspectorChoiceAt finds the option of a choice row under the pointer.
+func (m Model) inspectorChoiceAt(x, field int, inspectorRect hitRect, compact bool) (string, bool) {
+	if len(m.editOutputs) == 0 {
+		return "", false
+	}
+	inner := inspectorRect.inner(m.styles.inactivePane)
+	layout := m.buildInspectorLayout(m.editOutputs[m.selectedOutput], inner.w, compact)
+	localX := x - inner.x
+	for _, span := range layout.choices[field] {
+		if localX >= span.start && localX < span.end {
+			return span.value, true
+		}
+	}
+	return "", false
 }
 
 func (m Model) paneTitleContains(x, y int, pane hitRect, title string) bool {
@@ -1524,27 +1578,13 @@ func (m Model) bodyRect() hitRect {
 }
 
 func (m Model) layoutCanvasRect() (hitRect, bool) {
-	body := m.bodyRect()
-	if m.useCompactLayout(body.h) {
-		canvasHeight, _ := m.compactLayoutHeights(body.h)
-		return hitRect{x: body.x, y: body.y, w: body.w, h: canvasHeight}, true
-	}
-
-	canvasWidth, _ := m.layoutPaneWidths()
-	return hitRect{x: body.x, y: body.y, w: canvasWidth, h: body.h}, false
+	g := m.layoutGeometry(m.bodyRect())
+	return g.stage, g.compact
 }
 
 func (m Model) layoutInspectorRect() (hitRect, bool) {
-	body := m.bodyRect()
-	if m.useCompactLayout(body.h) {
-		canvasHeight, inspectorHeight := m.compactLayoutHeights(body.h)
-		preferencesHeight, infoHeight := m.inspectorPaneHeights(inspectorHeight, body.w)
-		return hitRect{x: body.x, y: body.y + canvasHeight + infoHeight, w: body.w, h: preferencesHeight}, true
-	}
-
-	canvasWidth, inspectorWidth := m.layoutPaneWidths()
-	preferencesHeight, infoHeight := m.inspectorPaneHeights(body.h, inspectorWidth)
-	return hitRect{x: body.x + canvasWidth + paneGapWidth, y: body.y + infoHeight, w: inspectorWidth, h: preferencesHeight}, false
+	g := m.layoutGeometry(m.bodyRect())
+	return g.inspector, g.compact
 }
 
 func (m Model) profileAutomaticRect() hitRect {
@@ -1600,7 +1640,7 @@ func (m Model) modalOverlayRect(overlay string) hitRect {
 	}
 
 	tabsHeight := lipgloss.Height(m.renderTabs())
-	bodyHeight := max(12, m.terminalHeight()-tabsHeight-2)
+	bodyHeight := max(3, m.terminalHeight()-tabsHeight)
 	bodyWidth := m.terminalWidth() - m.styles.modalBackdrop.GetHorizontalFrameSize()
 
 	return hitRect{
@@ -1772,6 +1812,13 @@ func (m Model) inspectorFieldAt(y int, inspectorRect hitRect, compact bool, wasF
 }
 
 func (m Model) canvasLayout(width, height int) canvasGeometry {
+	// A drag keeps the transform it started with, so the stage neither
+	// rescales nor recentres under the pointer; the stage refits on drop.
+	if m.drag != nil && m.drag.Geometry.ok && m.drag.Geometry.width == max(20, width-2) {
+		layout := m.drag.Geometry
+		layout.rects = layout.rectsFor(m.editOutputs)
+		return layout
+	}
 	rows := len(m.hiddenDisplayRows(max(1, width-4), height))
 	layout := canvasLayoutFor(m.editOutputs, width, max(3, height-rows))
 	layout.height = max(3, height)
@@ -1816,7 +1863,13 @@ func canvasLayoutFor(outputs []editableOutput, width, height int) canvasGeometry
 	rangeW := max(1, maxX-minX)
 	rangeH := max(1, maxY-minY)
 	scaleX := float64(layout.width-4) / (float64(rangeW) * layout.cellW)
-	scaleY := float64(layout.height-4) / float64(rangeH)
+	// Short stages keep one row of margin instead of two, so the cards get
+	// the rows for their workspaces.
+	marginY := 4
+	if layout.height < 12 {
+		marginY = 2
+	}
+	scaleY := float64(layout.height-marginY) / float64(rangeH)
 	layout.scale = math.Min(scaleX, scaleY)
 	if layout.scale <= 0 {
 		layout.scale = 1
@@ -1826,27 +1879,35 @@ func canvasLayoutFor(outputs []editableOutput, width, height int) canvasGeometry
 	layout.offsetX = max(1, 1+(layout.width-2-contentW)/2)
 	layout.offsetY = max(1, 1+(layout.height-2-contentH)/2)
 	layout.ok = true
+	layout.originX, layout.originY = minX, minY
+	layout.rects = layout.rectsFor(outputs)
+	return layout
+}
 
+// rectsFor places outputs with this transform. A frozen drag transform uses
+// it too, so a card follows the pointer while the stage stays still.
+func (g canvasGeometry) rectsFor(outputs []editableOutput) []canvasRect {
+	rects := make([]canvasRect, 0, len(outputs))
 	for idx, output := range outputs {
 		if !output.spatial() {
 			continue
 		}
 		w, h := output.logicalSize()
-		rx := layout.offsetX + int(math.Round(float64(output.X-minX)*layout.scale*layout.cellW))
-		ry := layout.offsetY + int(math.Round(float64(output.Y-minY)*layout.scale))
-		rw := max(8, int(math.Round(float64(w)*layout.scale*layout.cellW)))
-		rh := max(3, int(math.Round(float64(h)*layout.scale)))
+		rx := g.offsetX + int(math.Round(float64(output.X-g.originX)*g.scale*g.cellW))
+		ry := g.offsetY + int(math.Round(float64(output.Y-g.originY)*g.scale))
+		rw := max(8, int(math.Round(float64(w)*g.scale*g.cellW)))
+		rh := max(3, int(math.Round(float64(h)*g.scale)))
 
-		if rx+rw >= layout.width {
-			rw = max(4, layout.width-rx-1)
+		if rx+rw >= g.width {
+			rw = max(4, g.width-rx-1)
 		}
-		if ry+rh >= layout.height {
-			rh = max(3, layout.height-ry-1)
+		if ry+rh >= g.height {
+			rh = max(3, g.height-ry-1)
 		}
 
-		layout.rects = append(layout.rects, canvasRect{index: idx, x: rx, y: ry, w: rw, h: rh})
+		rects = append(rects, canvasRect{index: idx, x: rx, y: ry, w: rw, h: rh})
 	}
-	return layout
+	return rects
 }
 
 func (g canvasGeometry) rectAt(x, y int) (canvasRect, bool) {
@@ -1856,43 +1917,6 @@ func (g canvasGeometry) rectAt(x, y int) (canvasRect, bool) {
 		}
 	}
 	return canvasRect{}, false
-}
-
-func cellsToWorldX(delta int, scale float64, cellW float64) int {
-	if delta == 0 {
-		return 0
-	}
-	if scale <= 0 {
-		scale = 1
-	}
-	if cellW <= 0 {
-		cellW = 1
-	}
-	value := int(math.Round(float64(delta) / (scale * cellW)))
-	if value == 0 {
-		if delta > 0 {
-			return 1
-		}
-		return -1
-	}
-	return value
-}
-
-func cellsToWorldY(delta int, scale float64) int {
-	if delta == 0 {
-		return 0
-	}
-	if scale <= 0 {
-		scale = 1
-	}
-	value := int(math.Round(float64(delta) / scale))
-	if value == 0 {
-		if delta > 0 {
-			return 1
-		}
-		return -1
-	}
-	return value
 }
 
 func modalHeight(lines int) int {
@@ -1940,8 +1964,13 @@ func (m Model) saveDialogListWidth() int {
 	return clampInt(m.modalMaxWidth()-6, 24, 52)
 }
 
+// layoutPaneWidths gives the controls their natural width and the stage the
+// rest, so a wide terminal widens the arrangement instead of the form.
 func (m Model) layoutPaneWidths() (int, int) {
-	return splitPaneWidths(m.terminalWidth(), 66, 18)
+	total := m.terminalWidth()
+	inspector := clampInt(total*34/100, 18, 58)
+	left, right := splitPaneWidths(total, 100-(inspector*100+total-1)/total, 18)
+	return left, right
 }
 
 func (m Model) sidePaneWidths(leftPercent int) (int, int) {
@@ -1966,3 +1995,22 @@ func splitPaneWidths(total int, leftPercent int, minPane int) (int, int) {
 	}
 	return max(1, left), max(1, right)
 }
+
+// updateConfirmMouse gives Keep and Revert pointer parity with y and n.
+func (m Model) updateConfirmMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft || m.pending == nil {
+		return m, nil
+	}
+	switch {
+	case m.visibleActionAt(msg.X, msg.Y, confirmKeepLabel):
+		return m.updateConfirmKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	case m.visibleActionAt(msg.X, msg.Y, confirmRevertLabel):
+		return m.updateConfirmKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	}
+	return m, nil
+}
+
+const (
+	deleteCancelLabel  = "[Cancel]"
+	deleteConfirmLabel = "[Delete profile]"
+)

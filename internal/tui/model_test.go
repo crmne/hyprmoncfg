@@ -63,7 +63,7 @@ func TestRenderMainUsesPaneTitlesWithoutMastheadOrCanvasChrome(t *testing.T) {
 			t.Fatalf("expected %q to be removed from editor chrome, got:\n%s", unwanted, view)
 		}
 	}
-	for _, want := range []string{"Monitor Layout", "Display", "Color", "Info"} {
+	for _, want := range []string{"Monitor Layout", "Display", "Color", "Hardware"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected pane border title %q in view, got:\n%s", want, view)
 		}
@@ -657,7 +657,8 @@ func TestLayoutMouseOpensScaleEditorAtVisibleFieldInCompactLayout(t *testing.T) 
 		}},
 	}
 
-	x, y := findVisiblePosition(t, m.renderMain(), "Scale")
+	inspector, _ := m.layoutInspectorRect()
+	x, y := findVisiblePositionBelow(t, m.renderMain(), "Scale", inspector.y)
 	updated, cmd := m.updateMouse(mousePressAt(x, y))
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
@@ -1793,7 +1794,7 @@ func TestQuitAfterApplyQuitsOnlyAfterConfirmation(t *testing.T) {
 	}
 
 	view := m.renderConfirm()
-	if !strings.Contains(view, "keeps the change and quits") {
+	if !strings.Contains(view, "keeps it and quits") {
 		t.Fatalf("expected confirm dialog to explain keep-and-quit, got:\n%s", view)
 	}
 
@@ -2164,8 +2165,8 @@ func TestRenderMainFitsShortTerminalHeight(t *testing.T) {
 	if height := lipgloss.Height(view); height != m.height {
 		t.Fatalf("expected short main view to fill height %d, got %d", m.height, height)
 	}
-	if !strings.Contains(view, "Display") || !strings.Contains(view, "Info") {
-		t.Fatalf("expected display and info panes to be visible, got:\n%s", view)
+	if !strings.Contains(view, "Display") || !strings.Contains(view, "Hardware") {
+		t.Fatalf("expected display and hardware panes to be visible, got:\n%s", view)
 	}
 }
 
@@ -2217,18 +2218,26 @@ func TestInspectorModeOmitsPickerPosition(t *testing.T) {
 	}
 }
 
-func TestCompactLayoutHeightsReserveSpaceForInspector(t *testing.T) {
-	m := Model{}
-
-	canvas, inspector := m.compactLayoutHeights(18)
-	if inspector < 10 {
-		t.Fatalf("expected compact layout to reserve at least 10 rows for the inspector, got canvas=%d inspector=%d", canvas, inspector)
+func TestCompactStageTakesOnlyTheRowsTheArrangementNeeds(t *testing.T) {
+	m := paneTestModel(t, tabLayout, []hypr.Monitor{paneTestDesk, paneTestSide}, nil)
+	m.width, m.height = 80, 40
+	g := m.layoutGeometry(m.bodyRect())
+	if !g.compact {
+		t.Fatal("80 columns must stack the layout")
 	}
-	if canvas < 4 {
-		t.Fatalf("expected compact layout to preserve a usable canvas, got canvas=%d inspector=%d", canvas, inspector)
+	body := m.bodyRect()
+	if g.stage.h+g.hardware.h+g.inspector.h != body.h {
+		t.Fatalf("panes %d+%d+%d do not fill body %d", g.stage.h, g.hardware.h, g.inspector.h, body.h)
 	}
-	if canvas+inspector != 18 {
-		t.Fatalf("expected compact layout heights to add up to 18, got canvas=%d inspector=%d", canvas, inspector)
+	want := stageRowsFor(m.editOutputs, g.stage.w-m.styles.inactivePane.GetHorizontalFrameSize()) + m.styles.inactivePane.GetVerticalFrameSize()
+	if g.stage.h != want {
+		t.Fatalf("stage rows = %d, want the arrangement's %d", g.stage.h, want)
+	}
+	if g.inspector.h < 12 {
+		t.Fatalf("the controls should get the spare rows, got %d", g.inspector.h)
+	}
+	if g.hardware.h != 5 {
+		t.Fatalf("six hardware facts should fit two columns of three at 80 columns, got height %d", g.hardware.h)
 	}
 }
 
@@ -2270,8 +2279,8 @@ func TestRenderMainFitsTallMediumWidth(t *testing.T) {
 	if height := lipgloss.Height(view); height != m.height {
 		t.Fatalf("expected tall medium-width view to fill height %d, got %d", m.height, height)
 	}
-	if !strings.Contains(view, "Display") || !strings.Contains(view, "Info") {
-		t.Fatalf("expected display and info panes visible, got:\n%s", view)
+	if !strings.Contains(view, "Display") || !strings.Contains(view, "Hardware") {
+		t.Fatalf("expected display and hardware panes visible, got:\n%s", view)
 	}
 }
 
@@ -2366,8 +2375,9 @@ func TestApplySelectedSnapAlignsBottomEdge(t *testing.T) {
 		},
 	}
 
-	hint := m.applySelectedSnap(24)
-	if hint == nil {
+	// A drop at its current position goes through the shared drop rules.
+	analysis, ok := m.placeSelected(m.editOutputs[1].X, m.editOutputs[1].Y, 24)
+	if !ok || analysis.Y.Dist > 24 {
 		t.Fatal("expected aligned-edge snap application")
 	}
 	if m.editOutputs[1].Y != 960 {
@@ -2917,6 +2927,22 @@ func maxRenderedLineWidth(view string) int {
 	return maxWidth
 }
 
+// findVisiblePositionBelow finds text on or below a row, skipping earlier
+// matches such as a monitor card that shows the same word.
+func findVisiblePositionBelow(t *testing.T, view string, text string, minY int) (int, int) {
+	t.Helper()
+	for y, line := range strings.Split(ansi.Strip(view), "\n") {
+		if y < minY {
+			continue
+		}
+		if idx := strings.Index(line, text); idx >= 0 {
+			return lipgloss.Width(line[:idx]), y
+		}
+	}
+	t.Fatalf("expected %q at or below row %d in:\n%s", text, minY, ansi.Strip(view))
+	return 0, 0
+}
+
 func findVisiblePosition(t *testing.T, view string, text string) (int, int) {
 	t.Helper()
 
@@ -3334,18 +3360,26 @@ func TestPaneTitlesSelectTheirLayoutFocus(t *testing.T) {
 	}
 }
 
-func TestInspectorColumnPlacesInfoAbovePreferences(t *testing.T) {
-	m := Model{
-		styles:      newStyles(),
-		tab:         tabLayout,
-		layoutFocus: layoutFocusInspector,
-		editOutputs: []editableOutput{{Name: "DP-1", Enabled: true, Scale: 1}},
+// Hardware facts describe the pictured display, so they sit under the stage;
+// the other column holds only the editable Display and Color controls.
+func TestHardwareSitsUnderTheStageBesideTheControls(t *testing.T) {
+	m := paneTestModel(t, tabLayout, []hypr.Monitor{paneTestDesk, paneTestSide}, nil)
+	m.width, m.height = 158, 37
+	g := m.layoutGeometry(m.bodyRect())
+	if g.compact {
+		t.Fatal("158x37 should place the stage and controls side by side")
 	}
-	view := ansi.Strip(m.renderInspectorColumn(48, 30, false))
-	info := strings.Index(view, "Info")
-	display := strings.Index(view, "Display - Color")
-	if info < 0 || display < 0 || info > display {
-		t.Fatalf("expected Info above Display - Color, got:\n%s", view)
+	if g.hardware.x != g.stage.x || g.hardware.y != g.stage.y+g.stage.h || g.hardware.w != g.stage.w {
+		t.Fatalf("hardware %+v is not directly under stage %+v", g.hardware, g.stage)
+	}
+	if g.inspector.y != g.stage.y || g.inspector.h != g.stage.h+g.hardware.h {
+		t.Fatalf("controls %+v should span the full body beside the stage", g.inspector)
+	}
+	view := ansi.Strip(m.View())
+	requireContains(t, view, "Hardware", "Connector", "Serial", "Max resolution", "Panel size", "Type", "Model")
+	x, y := findVisiblePosition(t, view, "Hardware")
+	if x > g.stage.x+g.stage.w || y < g.stage.y+g.stage.h-1 {
+		t.Fatalf("Hardware title at %d,%d is not under the stage", x, y)
 	}
 }
 
@@ -3501,7 +3535,7 @@ func TestAdjustInspectorPositionDoesNotReflow(t *testing.T) {
 		inspectorField: 7,
 		editOutputs: []editableOutput{
 			{Key: "selected", Name: "DP-1", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 0, Y: 0},
-			{Key: "neighbor", Name: "DP-2", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 1920, Y: 0},
+			{Key: "neighbor", Name: "DP-2", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 1920, Y: 1080},
 		},
 	}
 
@@ -3557,7 +3591,7 @@ func TestCommitNumericPositionDoesNotReflow(t *testing.T) {
 		},
 		editOutputs: []editableOutput{
 			{Key: "selected", Name: "eDP-1", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 0, Y: 0},
-			{Key: "neighbor", Name: "DP-1", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 1920, Y: 0},
+			{Key: "neighbor", Name: "DP-1", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 1920, Y: 1080},
 		},
 	}
 

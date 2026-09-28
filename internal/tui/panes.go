@@ -70,11 +70,19 @@ func (m Model) monitorCardLines(output editableOutput, workspaces []string, emph
 	}
 
 	lines := output.cardLinesWithIssue(maxLines-1, colors.fg, colors.muted, issue, issueFG)
+	p := m.styles.palette
+	fg, bg := p.chipFg, p.chipBg
+	if emphasis != monitorCardLayout {
+		fg, bg = p.chipStrongFg, p.chipStrongBg
+	}
 	for _, text := range fitWorkspaceLines(workspaces, maxWidth, 1) {
 		lines = append(lines, cardLine{
-			text: text,
-			fg:   m.styles.palette.paneActiveBorder,
-			bold: emphasis != monitorCardLayout,
+			text:       text,
+			fg:         fg,
+			bg:         bg,
+			bold:       emphasis != monitorCardLayout,
+			role:       cardRoleWorkspaces,
+			workspaces: workspaces,
 		})
 	}
 	return lines
@@ -271,6 +279,21 @@ func (m Model) profileListRows(summaries []profileMatchSummary, cols profileList
 		}
 		if idx == m.selectedProfile {
 			nameStyle = m.styles.fieldSelected.Padding(0).Bold(true)
+		}
+
+		if idx == m.selectedProfile {
+			// The highlight spans the whole row so name, status, and score read
+			// as one selected record, without an extra arrow.
+			plain := fmt.Sprintf("%-*s", cols.name, fitString(saved.Name, cols.name))
+			if cols.tag > 0 {
+				tag, _ := m.profileTag(summary)
+				plain += " " + fmt.Sprintf("%*s", cols.tag, tag)
+			}
+			if cols.score > 0 {
+				plain += " " + fmt.Sprintf("%*s", cols.score, profileScoreLabel(summary))
+			}
+			rows = append(rows, nameStyle.Render(plain))
+			continue
 		}
 
 		row := nameStyle.Render(fmt.Sprintf("%-*s", cols.name, fitString(saved.Name, cols.name)))

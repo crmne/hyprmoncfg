@@ -332,6 +332,29 @@ focus, direct entry, and resets. Position lives in logical pixels; arrows and
 snapping remain available on the canvas. The TUI provides equivalent adjustments
 and exact entry without imitating tiny graphical buttons.
 
+Decision, 2026-09-28 (TUI stage direction, companion to the panel's canvas
+stage): the TUI draws its canvases as a stage, a dotted field with each display
+as a card whose connector and model sit at the top, workspace IDs as chips beside
+the connector, and mode, scale and position on the bottom rows. The selected card
+has a heavy border, so selection does not rely on color. Hardware facts sit under
+the Layout stage; the other column holds only Display and Color. Previews on
+Workspaces and Profiles put the stage above the plan or details, and stacked
+terminals give the stage only the rows the arrangement needs. Closed sets of two
+or three values are choice rows (every option visible, arrows, Enter or a click
+select), Scale arrows step between sharp scales, and Position X/Y are typed in
+place with 10px and 1px steps. Keep/Revert shows a draining countdown with
+clickable Keep and Revert. Operations, names, defaults and page order are
+unchanged; this is presentation.
+
+Canvas placement is shared Go (`internal/profile/placement.go`): the panel
+reaches it through the daemon's editor (a drag release sends a snap distance),
+the TUI calls it directly. A drop snaps within the snap distance and leaves any
+overlap by the nearest clear edge, or is refused and returns; exact moves
+(nudges, typed coordinates, Place beside, 0,0) are refused when they would
+overlap; edits that would grow a display into a neighbour are refused unless
+the layout already overlapped. The TUI drag freezes the canvas transform at the
+press and derives the position from the grab origin, validating only on drop.
+
 Brightness stays a live hardware control in the compact panel, outside the expanded
 profile editor. Use the short heading `Brightness`; show the current target as
 secondary context when more than one display is connected. Capability limits such
@@ -369,7 +392,8 @@ Scale 1.33x  Position 0,0
 ```
 
 Use ASCII x for resolution, no spaces around @ or before Hz, no separator dots,
-and no Workspaces prefix inside display cards. Do not show logical desktop
+and no Workspaces prefix inside display cards. Both canvases draw the IDs as
+bare chips; lists such as the workspace plan keep `1, 2, 3`. Do not show logical desktop
 dimensions. Round only presentation; preserve exact mode/scale data. Use a shared
 formatter within each frontend, not per-view string assembly. Canvas values
 describe its draft or saved profile; Identify describes a fresh live snapshot.

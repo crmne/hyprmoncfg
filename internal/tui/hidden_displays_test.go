@@ -79,9 +79,12 @@ func TestProfileActionButtonsAndCommandAreDiscoverable(t *testing.T) {
 			t.Fatal("automatic selection must match list width")
 		}
 		if m.terminalWidth() >= 96 {
+			// The preview column starts beside automatic selection with its
+			// stage, as in the panel, and the details follow below it.
+			_, stageY := findVisiblePosition(t, m.View(), "Monitor Layout")
 			_, detailY := findVisiblePosition(t, m.View(), "Profile Details")
-			if detailY != autoY {
-				t.Fatal("details must start beside automatic selection")
+			if stageY != autoY || detailY <= stageY {
+				t.Fatal("stage must start beside automatic selection with details below")
 			}
 			if m.profileAutomaticRect().contains(listRect.x+listRect.w+2, autoY+1) {
 				t.Fatal("automatic click target extends into details")

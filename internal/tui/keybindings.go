@@ -33,7 +33,8 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 			keyGroup{
 				title: "Selected monitor",
 				bindings: []keyBinding{
-					{"drag, arrows", "Move by 100px"},
+					{"drag", "Move; on release snap to an edge or leave an overlap"},
+					{"arrows", "Move by 100px, never onto another monitor"},
 					{"Shift+arrows", "Move by 10px"},
 					{"Ctrl+arrows", "Move by 1px"},
 					{"Alt+arrows", "Snap beside the nearest monitor"},
@@ -46,7 +47,9 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 				title: "Layout",
 				bindings: []keyBinding{
 					{"Tab, Shift+Tab", "Move between the canvas, Display, and Color"},
-					{"Enter", "Edit the selected field"},
+					{"← →", "Adjust the selected field; Scale steps between sharp scales"},
+					{"Shift+← →", "Move Position X or Y by 1px"},
+					{"Enter", "Type an exact value, open a list, or cycle a choice row"},
 				},
 			},
 		)
@@ -82,7 +85,7 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 		title: "Anywhere",
 		bindings: []keyBinding{
 			{"1 2 3", "Switch tabs"},
-			{"a", "Apply the current draft or selected profile"},
+			{"a", "Preview the current draft or selected profile, then Keep or Revert"},
 			{"s", "Save the current draft as a profile"},
 			{"U", fmt.Sprintf("Disable displays outside the draft: %t (toggle)", m.disableUnknownOutputs)},
 			{"r", "Reset from live Hyprland state"},

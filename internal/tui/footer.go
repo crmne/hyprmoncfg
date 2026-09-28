@@ -37,29 +37,31 @@ type footerLayout struct {
 	links []footerLinkRegion
 }
 
+// footerSeparator spaces the key groups. Plain space reads calmer than rules
+// between every pair, and the keys already carry the accent.
+const footerSeparator = "   "
+
 func (m Model) footerHelpText() string {
 	// One key, one meaning. Everything else lives behind `?`.
+	join := func(items ...string) string { return strings.Join(items, footerSeparator) }
 	switch m.tab {
 	case tabLayout:
 		// The inspector is where scale, mode, and position are edited, so say
 		// how to change a value rather than how to move a monitor around.
 		if m.layoutFocus == layoutFocusInspector {
-			return "`↑↓` field | `←→` adjust | `Enter` type | `[ ]` monitors | `Tab` pane | `a` apply | `s` save | `?` keys"
+			return join("`↑↓` field", "`←→` adjust", "`Enter` type", "`[ ]` monitors", "`Tab` pane", "`a` preview", "`s` save", "`?` keys")
 		}
-		return "`drag/arrows` move | `[ ]` monitors | `Tab` pane | `Enter` edit | `a` apply | `s` save | `?` keys"
+		return join("`drag/arrows` move", "`[ ]` monitors", "`Tab` pane", "`Enter` edit", "`a` preview", "`s` save", "`?` keys")
 	case tabProfiles:
-		if m.profileAutomatic() {
-			return "`↑↓` browse | `Enter` preview | `l` edit | `e` post-apply command | `d` delete | `?` keys"
-		}
-		return "`↑↓` browse | `Enter` preview | `l` edit | `e` post-apply command | `d` delete | `?` keys"
+		return join("`↑↓` browse", "`Enter` preview", "`l` edit", "`e` post-apply command", "`d` delete", "`?` keys")
 	case tabWorkspaces:
 		if !m.workspaceEdit.Enabled {
-			return "`↑↓` select | `←→` adjust | `a` apply | `s` save | `?` keys"
+			return join("`↑↓` select", "`←→` adjust", "`a` preview", "`s` save", "`?` keys")
 		}
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
-			return "`↑↓` select | `←→` assign | `Enter` type count | `a` apply | `s` save | `?` keys"
+			return join("`↑↓` select", "`←→` assign", "`Enter` type count", "`a` preview", "`s` save", "`?` keys")
 		}
-		return "`↑↓` select | `←→` adjust | `Enter` type count | `a` apply | `s` save | `?` keys"
+		return join("`↑↓` select", "`←→` adjust", "`Enter` type count", "`a` preview", "`s` save", "`?` keys")
 	default:
 		return ""
 	}
@@ -104,7 +106,7 @@ func (m Model) footerInfoItems(width int) []footerItem {
 
 func (m Model) unsavedLabel() string {
 	if m.dirty && !m.draftSaved {
-		return "Unsaved Changes"
+		return "Changes not applied"
 	}
 	if m.dirty && m.draftSaved {
 		return "Saved Draft"
@@ -190,9 +192,9 @@ func (m Model) footerLayout() footerLayout {
 	if lipgloss.Width(helpClean)+lipgloss.Width(info)+1 > width {
 		switch m.tab {
 		case tabProfiles:
-			helpClean = "Enter preview | l edit | d delete | ? keys"
+			helpClean = strings.Join([]string{"Enter preview", "l edit", "d delete", "? keys"}, footerSeparator)
 		default:
-			helpClean = "a apply | s save | ? keys"
+			helpClean = strings.Join([]string{"a preview", "s save", "? keys"}, footerSeparator)
 		}
 		// Essential actions take precedence over project links and version.
 		for len(items) > 0 && lipgloss.Width(helpClean)+lipgloss.Width(joinFooterItems(items))+1 > width {
@@ -326,7 +328,7 @@ func (m Model) decorateFooterBar(footer string) string {
 		end += start + 1
 		key := help[start+1 : end]
 		rest := help[end+1:]
-		ctxEnd := strings.Index(rest, "|")
+		ctxEnd := strings.Index(rest, footerSeparator)
 		if ctxEnd < 0 {
 			ctxEnd = len(rest)
 		}

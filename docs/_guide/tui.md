@@ -13,17 +13,23 @@ preserve individual flags.
 
 When you launch `hyprmoncfg`, you land on the layout tab. This is where you arrange your monitors and tune their settings. The screen is split into two panes:
 
-- **Left**: a canvas showing your monitors as draggable rectangles, positioned the way Hyprland currently sees them
-- **Right**: monitor information above switchable **Display** and **Color** controls -- resolution, scale, position, transform, VRR, color management, and more
+- **Left**: a stage showing your monitors as draggable screens on a dotted field, positioned the way Hyprland currently sees them, with the selected display's **Hardware** facts directly below it
+- **Right**: switchable **Display** and **Color** controls -- resolution, scale, position, transform, VRR, color management, and more
 
 Display cards consistently show connector, model with whole-inch size (`32"`),
-`3840x2160@144Hz`, `Scale 1.33x  Position 0,0`, and workspace IDs. There are no
-arbitrary display numbers or logical desktop dimensions. Small cards prioritize
-identity and workspaces. Formatting never rounds the stored mode or scale.
+`3840x2160@144Hz`, `Scale 1.33x  Position 0,0`, and workspace IDs. The connector
+and model sit at the top of the card with the workspace IDs as chips beside the
+connector; the mode and the scale and position sit on the card's bottom rows.
+The selected card has a heavy border. There are no arbitrary display numbers or
+logical desktop dimensions. Small cards prioritize identity and workspaces.
+Formatting never rounds the stored mode or scale. Lists outside the canvas,
+such as the workspace plan, keep the `1, 2, 3` form.
 
-The hardware summary shows connector, model, and maximum advertised
+The Hardware box shows connector, model, and maximum advertised
 resolution, panel dimensions, type, and serial, all shown directly without a
-More details action. The TUI currently has no standalone on-screen Identify overlay; this
+More details action. It uses two columns when the stage is wide enough. In
+narrow terminals the stage, Hardware, and the controls stack, and the stage
+takes only the rows its arrangement needs, so the controls keep the rest. The TUI currently has no standalone on-screen Identify overlay; this
 remains a panel capability, not a requirement to install Omarchy for the TUI.
 Panel size shows a whole-inch diagonal and exact reported dimensions, such as
 `32" (710x400mm)`, separately from the inspector's model name.
@@ -54,7 +60,7 @@ VRR`. The saved profile is unchanged. See [Daemon Behavior](/daemon/#displays-th
 | Key | Action |
 |-----|--------|
 | `1` `2` `3` | Switch tabs (layout, workspaces, profiles) |
-| `a` | Apply current draft or selected profile |
+| `a` | Preview the current draft or selected profile, then Keep or Revert |
 | `s` | Save current draft as a named profile |
 | `r` | Reset from live Hyprland state |
 | `?` | Show every key for the tab you are on |
@@ -73,20 +79,47 @@ VRR`. The saved profile is unchanged. See [Daemon Behavior](/daemon/#displays-th
 | `[` `]` | Select the previous or next monitor |
 | `Tab` `Shift+Tab` | Move between the canvas, **Display**, and **Color** |
 
-Dragging snaps to nearby edges on release. `Alt` + arrows place the selected monitor flush left, right, above, or below the nearest enabled monitor and center it on the other axis. Regular keyboard movement remains freeform.
+Edits never make displays overlap, and the canvas follows the same placement rules as
+the Omarchy panel:
+
+- **Drag** a display and it follows the pointer; the stage holds still until
+  you let go. On release it snaps to a neighbour's edge or alignment within
+  about one canvas row. Dropped on top of another display, it moves to the
+  nearest clear edge instead. If no clear spot exists it returns to where you
+  picked it up.
+- **Arrow keys**, **Position X/Y**, and `0` are exact: a move that would cover
+  another display is refused and the top bar says which one.
+- `Alt` + arrows place the selected monitor flush left, right, above, or below
+  the nearest enabled monitor and center it on the other axis.
+- A mode, scale, rotation, or Enabled change that would push a display into a
+  neighbour is refused too. A layout that already overlapped stays editable so
+  you can fix it.
 
 ### Display and Color controls
 
 Press `Enter` on any **Display** or **Color** field to edit it:
 
+- **Enabled**, **VRR**, **Color depth**, **SDR EOTF**, **WCG capability**, and **HDR capability** are choice rows: every option is visible, `←` `→` or `Enter` move to the next one, and a click picks one directly. A row too narrow for its options shows the selected value and still cycles
 - **Mode** opens a scrollable picker with every supported resolution and refresh rate
-- **Scale**, **Position X**, **Position Y** accept typed numeric values
-- **Rotation**, **VRR** cycle through their options with Enter or scroll
+- **Scale** accepts a typed value in a dialog that explains sharpness; `←` `→` step between the scales that give whole logical pixels for the current mode
+- **Position X** and **Position Y** are typed in place on their row, so the stage stays visible; `←` `→` move by 10px and `Shift` + `←` `→` by 1px. Snapping stays on the canvas with `Alt` + arrows
+- **Rotation** cycles with `←` `→` or opens a picker with Enter
 - **Mirror** lets you mirror the selected monitor to any other connected display. For a crisp image, set the mirrored monitor's Mode to match the source resolution. If the resolutions don't match, Hyprland upscales the image, which looks blurry
 
 The **Color** tab uses the same terminology as the Omarchy panel. **Color space / EOTF** combines the primaries and transfer function (for example, **BT.2020 + PQ (HDR)**). The picker shows descriptive labels but saves Hyprland's original values, such as `hdr`.
 
 **SDR luminance scale** and **SDR saturation scale** are unitless SDR-to-HDR multipliers, not physical brightness controls. An omitted or zero multiplier uses the neutral value `1`. Black, white, peak, and frame-average luminance are measured in **cd/m²**. Display luminance and WCG/HDR capability fields override display metadata; leave them at their defaults to use EDID. Narrow terminals shorten the labels without changing their meaning.
+
+## Keep or Revert
+
+Every preview ends in a **Keep this layout?** (or **Keep this profile?**)
+dialog. It names what is live, says when the previous layout returns, and
+drains a countdown meter that ends in the seconds left, so the countdown does
+not rely on color. When the terminal has rows to spare, a miniature of the
+arrangement being kept sits under the meter. **[Revert]** and **[Keep]** are
+buttons you can click; `Enter` or `y` keeps, `Esc` or `n` reverts. The daemon's
+deadline is authoritative; the dialog only shows it. On short terminals the
+dialog drops its spacing so both buttons stay on screen.
 
 ## Save dialog
 
@@ -114,7 +147,7 @@ alongside the list, or below it in narrow terminals.
 - **active** marks the profile your screens are already showing
 - **best** marks the highest scoring profile -- the one the daemon would apply on the next hotplug
 
-Selecting a profile fills the right side: its details on top, its monitor arrangement below. The details spell out the score as the arithmetic that produced it, so a surprising number is never a mystery, and they list what the canvas cannot draw -- displays the profile keeps off and displays that mirror another one. On the canvas, a display the profile expects but cannot find is outlined and labelled `not connected`.
+Selecting a profile fills the right side: its monitor arrangement on top, its details below. The details spell out the score as the arithmetic that produced it, so a surprising number is never a mystery, and they list what the canvas cannot draw -- displays the profile keeps off and displays that mirror another one. On the canvas, a display the profile expects but cannot find is outlined and labelled `not connected`.
 
 ![Profiles tab]({{ '/assets/images/screenshots/profiles-dark.png' | relative_url }})
 {: .screenshot }
@@ -125,7 +158,7 @@ Selecting a profile fills the right side: its details on top, its monitor arrang
 | `Enter`, `a` | Preview the profile, even with automatic selection on |
 | `l` | Load the profile into the layout editor |
 | `e` | Edit the profile's post-apply command |
-| `d` | Ask to delete the profile; `y` confirms, Enter or Esc cancels |
+| `d` | Ask to delete the profile; `y` or **[Delete profile]** confirms, Enter, Esc, or **[Cancel]** cancels |
 | `s` | Save the current draft |
 
 **Post-apply command** is the final profile detail. Click its
@@ -168,7 +201,7 @@ Long manual lists stay navigable: the mouse wheel scrolls three rows at a time, 
 
 Switching from a generated strategy to `manual` starts with the plan already on screen, so you can adjust only the exceptional workspaces instead of rebuilding the whole layout. In manual mode, changing **Max workspaces** adds or removes numbered workspace assignments.
 
-The right side previews the result twice: **Workspace Plan** lists which workspaces each monitor owns, and **Monitor Layout** paints those same workspaces onto the monitors themselves. Both update as you change the strategy, so you can see where workspace 1 lands before you save.
+The right side previews the result twice: **Monitor Layout** paints the workspaces onto the monitors themselves as chips, and **Workspace Plan** below it lists which workspaces each monitor owns. Both update as you change the strategy, so you can see where workspace 1 lands before you save.
 
 The workspace plan is stored inside each profile. When the daemon applies a profile, it applies workspace rules too -- layout and workspace assignment in one shot.
 

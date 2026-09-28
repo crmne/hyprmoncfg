@@ -4,6 +4,37 @@ package tui
 // wire values. Keep these terms aligned with the Omarchy panel's inspector.
 func fieldOptionLabel(field int, value string) string {
 	switch field {
+	case 0:
+		switch value {
+		case "on":
+			return "On"
+		case "off":
+			return "Off"
+		}
+	case 5:
+		switch value {
+		case "off":
+			return "Off"
+		case "on":
+			return "On"
+		case "fullscreen":
+			return "Fullscreen"
+		}
+	case 6:
+		switch value {
+		case "normal":
+			return "Normal"
+		case "90", "180", "270":
+			return value + "°"
+		case "flip", "flipped":
+			return "Flipped"
+		case "flip-90", "flipped+90":
+			return "Flipped 90°"
+		case "flip-180", "flipped+180":
+			return "Flipped 180°"
+		case "flip-270", "flipped+270":
+			return "Flipped 270°"
+		}
 	case 3:
 		return value + "-bit"
 	case 4:
