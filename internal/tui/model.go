@@ -1363,6 +1363,9 @@ func (m Model) renderCanvas(width, height int) string {
 type inspectorLayout struct {
 	lines     []string
 	fieldRows map[int]int // field index → index into lines
+	// fieldLines is how many lines a field takes; only a wrapped Scale row
+	// takes more than one.
+	fieldLines map[int]int
 	// choices holds each choice row's option spans, in columns from the
 	// start of its line, for pointer selection.
 	choices map[int][]choiceSpan
@@ -1382,6 +1385,7 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 	}
 
 	fieldRows := make(map[int]int, len(layoutFields))
+	fieldLines := make(map[int]int, len(layoutFields))
 	choices := make(map[int][]choiceSpan)
 	for _, idx := range inspectorFieldsForTab(m.inspectorTab) {
 		if idx == advancedFieldStart {
@@ -1396,6 +1400,28 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 		raw := m.layoutFieldValue(output, idx)
 		issue, hasIssue := m.layoutFieldIssue(output, idx)
 		fieldRows[idx] = len(lines)
+		fieldLines[idx] = 1
+
+		if idx == 2 {
+			rows, spans := m.renderScaleRow(output, innerWidth-labelWidth-1, focused, !compact)
+			if len(rows) > 0 {
+				for i := range spans {
+					spans[i].start += labelWidth + 1
+					spans[i].end += labelWidth + 1
+				}
+				choices[idx] = spans
+				indent := strings.Repeat(" ", labelWidth+1)
+				for i, row := range rows {
+					if i == 0 {
+						lines = append(lines, label+" "+row)
+					} else {
+						lines = append(lines, indent+row)
+					}
+				}
+				fieldLines[idx] = len(rows)
+				continue
+			}
+		}
 
 		if !hasIssue {
 			if row, spans, ok := m.renderChoiceRow(idx, raw, innerWidth-labelWidth-1, focused); ok {
@@ -1435,7 +1461,7 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 		lines = append(lines, fmt.Sprintf("%s %s", label, value))
 	}
 
-	return inspectorLayout{lines: lines, fieldRows: fieldRows, choices: choices}
+	return inspectorLayout{lines: lines, fieldRows: fieldRows, fieldLines: fieldLines, choices: choices}
 }
 
 func inspectorFieldsForTab(tab inspectorTab) []int {
@@ -1529,6 +1555,8 @@ func (m Model) renderInspectorPane(width int, height int, compact bool) string {
 
 	if m.layoutFocus == layoutFocusInspector && m.tab == tabLayout {
 		if row, ok := layout.fieldRows[m.inspectorField]; ok {
+			// Keep every line of a wrapped field in view.
+			row += max(1, layout.fieldLines[m.inspectorField]) - 1
 			offset := inspectorScrollOffset(len(lines), row, innerHeight)
 			lines = lines[offset:]
 		}
@@ -2549,6 +2577,20 @@ func (m *Model) adjustInspectorField(delta int) {
 		} else {
 			m.placeSelected(output.X, output.Y+delta*10, 0)
 		}
+		return
+	}
+	// Choice rows step like Omarchy's pill rows: arrows and h/l stop at the
+	// first and last option; Enter advances and wraps.
+	if values := inspectorChoiceValues(m.inspectorField); len(values) > 0 {
+		current := m.layoutFieldValue(m.editOutputs[m.selectedOutput], m.inspectorField)
+		pos := 0
+		for idx, value := range values {
+			if value == current {
+				pos = idx
+				break
+			}
+		}
+		m.setInspectorChoice(m.inspectorField, values[clampInt(pos+delta, 0, len(values)-1)])
 		return
 	}
 	m.guardLayoutEdit(func() { m.adjustInspectorFieldUnguarded(delta) })

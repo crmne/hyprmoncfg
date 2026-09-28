@@ -99,9 +99,9 @@ the Omarchy panel:
 
 Press `Enter` on any **Display** or **Color** field to edit it:
 
-- **Enabled**, **VRR**, **Color depth**, **SDR EOTF**, **WCG capability**, and **HDR capability** are choice rows: every option is visible, `←` `→` or `Enter` move to the next one, and a click picks one directly. A row too narrow for its options shows the selected value and still cycles
+- **Enabled**, **VRR**, **Color depth**, **SDR EOTF**, **WCG capability**, and **HDR capability** are choice rows, like the scale pills in Omarchy's own Display panel: every option is visible, `←` `→` or `h` `l` move one option and stop at the ends, `Enter` advances and wraps, and a click picks one directly. A row too narrow for its options shows the selected value and still steps
 - **Mode** opens a scrollable picker with every supported resolution and refresh rate
-- **Scale** accepts a typed value in a dialog that explains sharpness; `←` `→` step between the scales that give whole logical pixels for the current mode
+- **Scale** is a row of pills like Omarchy's own scale row: 1x, 1.25x, 1.5x, 1.6x, 2x, and 3x (plus 4x on modes at least 5120 pixels wide), each moved up to the next scale that gives whole logical pixels on this display, so a preset can read 1.6x or 3.2x, and presets that land on the same scale show once. The same pills appear in the Omarchy panel. A current scale that is not a preset gets its own pill; one that is not sharp is marked ⚠ and never rewritten. `←` `→` step through every sharp scale from 1x to 4x, the list the panel uses. **More…**, `Enter`, or a click on the Scale label opens that full list, whose **Custom…** types any exact scale in a dialog that explains sharpness. Wide terminals wrap the pills; narrow ones keep one line and slide it, with ‹ and › marking more
 - **Position X** and **Position Y** are typed in place on their row, so the stage stays visible; `←` `→` move by 10px and `Shift` + `←` `→` by 1px. Snapping stays on the canvas with `Alt` + arrows
 - **Rotation** cycles with `←` `→` or opens a picker with Enter
 - **Mirror** lets you mirror the selected monitor to any other connected display. For a crisp image, set the mirrored monitor's Mode to match the source resolution. If the resolutions don't match, Hyprland upscales the image, which looks blurry

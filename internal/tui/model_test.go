@@ -631,8 +631,14 @@ func TestLayoutMouseOpensScaleEditorAtVisibleField(t *testing.T) {
 		}
 	}
 	got := mustModel(t, updated)
+	// The Scale label opens the full sharp list, whose Custom… types a value.
+	if got.mode != modeModePicker || got.picker == nil || got.picker.FieldIndex != 2 {
+		t.Fatalf("expected visible click on Scale to open the scale list, got mode=%v", got.mode)
+	}
+	got.picker.List.Select(len(got.picker.List.Items()) - 1)
+	got.commitModePicker()
 	if got.mode != modeNumericInput || got.input == nil || got.input.Kind != numericInputScale {
-		t.Fatalf("expected visible click on Scale to open numeric scale editor, got mode=%v input=%+v", got.mode, got.input)
+		t.Fatalf("expected Custom… to open the numeric scale editor, got mode=%v input=%+v", got.mode, got.input)
 	}
 }
 
@@ -666,8 +672,8 @@ func TestLayoutMouseOpensScaleEditorAtVisibleFieldInCompactLayout(t *testing.T) 
 		}
 	}
 	got := mustModel(t, updated)
-	if got.mode != modeNumericInput || got.input == nil || got.input.Kind != numericInputScale {
-		t.Fatalf("expected compact visible click on Scale to open numeric scale editor, got mode=%v input=%+v", got.mode, got.input)
+	if got.mode != modeModePicker || got.picker == nil || got.picker.FieldIndex != 2 {
+		t.Fatalf("expected compact visible click on Scale to open the scale list, got mode=%v", got.mode)
 	}
 }
 
@@ -779,6 +785,10 @@ func TestActivateInspectorFieldOpensEditors(t *testing.T) {
 
 	base.inspectorField = 2
 	base.activateInspectorField()
+	if base.mode != modeModePicker || base.picker == nil || base.picker.FieldIndex != 2 {
+		t.Fatalf("expected the scale list to open, got mode %v", base.mode)
+	}
+	base.openScaleEntry()
 	if base.mode != modeNumericInput || base.input == nil {
 		t.Fatalf("expected numeric input to open, got mode %v input %+v", base.mode, base.input)
 	}

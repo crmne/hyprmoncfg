@@ -346,6 +346,18 @@ place with 10px and 1px steps. Keep/Revert shows a draining countdown with
 clickable Keep and Revert. Operations, names, defaults and page order are
 unchanged; this is presentation.
 
+Decision, 2026-09-28 (scale pills): Scale is a row of pills in both clients,
+following Omarchy's own Display panel. The pills are `scaling.PresetChoices`:
+1, 1.25, 1.5, 1.6, 2 and 3 (plus 4 on modes at least 5120 wide whose list
+reaches 4), each raised to the next sharp scale (Omarchy's cleanScale),
+duplicates collapsed, anything above the largest sharp scale dropped. Labels
+use two decimals with trailing zeros trimmed (`1.33x`), falling back to the
+exact value when two would read alike. A current scale that is not a pill is
+its own pill and is never rewritten. Arrows step the full list,
+`scaling.SharpChoices` (every sharp scale from 1 to 4, served to the panel as
+`scale_options`), and stop at the ends; More… opens that list. Pill rows stop
+at the ends on arrows; Enter advances and wraps.
+
 Canvas placement is shared Go (`internal/profile/placement.go`): the panel
 reaches it through the daemon's editor (a drag release sends a snap distance),
 the TUI calls it directly. A drop snaps within the snap distance and leaves any

@@ -47,9 +47,9 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 				title: "Layout",
 				bindings: []keyBinding{
 					{"Tab, Shift+Tab", "Move between the canvas, Display, and Color"},
-					{"← →", "Adjust the selected field; Scale steps between sharp scales"},
+					{"← → h l", "Adjust the selected field; choice rows and Scale stop at the ends"},
 					{"Shift+← →", "Move Position X or Y by 1px"},
-					{"Enter", "Type an exact value, open a list, or cycle a choice row"},
+					{"Enter", "Type an exact value, open a list (Scale: every sharp scale), or advance a choice row"},
 				},
 			},
 		)

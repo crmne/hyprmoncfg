@@ -253,24 +253,10 @@ func BuildEditorDraft(draft profile.Profile) EditorDraft {
 	return EditorDraft{Profile: draft, WorkspacePlan: plan}
 }
 
+// editorScaleOptions is the Scale list both editors show; see
+// scaling.SharpChoices.
 func editorScaleOptions(width, height int, current float64) []float64 {
-	options := scaling.GridScales(width, height, 1, scaling.MaxScale)
-	candidate := scaling.Round(current)
-	if !scaling.Sharp(width, height, candidate) {
-		var ok bool
-		candidate, ok = scaling.ClosestSharp(width, height, candidate)
-		if !ok {
-			return options
-		}
-	}
-	for _, option := range options {
-		if option == candidate {
-			return options
-		}
-	}
-	options = append(options, candidate)
-	sort.Float64s(options)
-	return options
+	return scaling.SharpChoices(width, height, current)
 }
 
 func Build(version string, daemonRunning bool, profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, opts profile.MatchOptions) Document {

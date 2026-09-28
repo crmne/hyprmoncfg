@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"math"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -33,6 +36,8 @@ func inspectorChoiceValues(field int) []string {
 type choiceSpan struct {
 	start, end int
 	value      string
+	// line is the span's line within its field, for rows that wrap.
+	line int
 }
 
 // renderChoiceRow draws the options side by side and returns their column
@@ -84,6 +89,20 @@ func (m *Model) setInspectorChoice(field int, value string) {
 		return
 	}
 	output := &m.editOutputs[m.selectedOutput]
+	if field == 2 {
+		scale, err := strconv.ParseFloat(value, 64)
+		if err != nil || scaling.Round(scale) == scaling.Round(output.Scale) {
+			return
+		}
+		m.guardLayoutEdit(func() {
+			output := &m.editOutputs[m.selectedOutput]
+			oldWidth, oldHeight := output.logicalSize()
+			output.Scale = scale
+			m.reflowAfterResize(m.selectedOutput, oldWidth, oldHeight)
+			m.layoutChanged()
+		})
+		return
+	}
 	if m.layoutFieldValue(*output, field) == value {
 		return
 	}
@@ -100,29 +119,178 @@ func (m *Model) setInspectorChoice(field int, value string) {
 	})
 }
 
-// nextSharpScale steps to the neighbouring scale that gives whole logical
-// pixels for the current mode, the same set the panel's Scale list offers.
-// Typed entry still accepts any scale.
+// nextSharpScale steps to the neighbouring entry of the full scale list, the
+// one More… opens and the daemon serves the panel (scaling.Choices), stopping
+// at the ends like Omarchy's scale pills. Typed entry still accepts any scale.
 func nextSharpScale(width, height int, current float64, delta int) float64 {
-	options := scaling.GridScales(width, height, scaling.MinScale, scaling.MaxScale)
+	options := scaling.Choices(width, height, current)
 	if len(options) == 0 || delta == 0 {
 		return scaling.Round(clampFloat(current+float64(delta)*0.05, scaling.MinScale, scaling.MaxScale))
 	}
+	pos := scaleChoiceIndex(options, current)
+	return options[clampInt(pos+delta, 0, len(options)-1)]
+}
+
+func scaleChoiceIndex(options []float64, current float64) int {
 	current = scaling.Round(current)
-	if delta > 0 {
-		for _, option := range options {
-			if option > current+1e-9 {
-				return option
+	best, bestDistance := 0, math.Inf(1)
+	for idx, option := range options {
+		if d := math.Abs(option - current); d < bestDistance {
+			best, bestDistance = idx, d
+		}
+	}
+	return best
+}
+
+// scaleChoiceLabels formats the Scale row like the cards (1.33x). Two scales
+// that would read the same get the precision that tells them apart.
+func scaleChoiceLabels(options []float64) []string {
+	labels := make([]string, len(options))
+	seen := make(map[string]int, len(options))
+	for idx, option := range options {
+		labels[idx] = displayNumber(option, 2) + "x"
+		seen[labels[idx]]++
+	}
+	for idx, option := range options {
+		if seen[labels[idx]] > 1 {
+			labels[idx] = scaling.Format(option) + "x"
+		}
+	}
+	return labels
+}
+
+const scaleMoreValue = "more"
+
+// scaleRowChoices is what the Scale row shows: Omarchy's presets mapped onto
+// this mode (scaling.PresetChoices) and, when the current scale is not one
+// of them, the current scale itself, exactly as saved.
+func scaleRowChoices(output editableOutput) []float64 {
+	choices := scaling.PresetChoices(output.Width, output.Height)
+	if output.Scale <= 0 {
+		return choices
+	}
+	current := scaling.Round(output.Scale)
+	for _, choice := range choices {
+		if choice == current {
+			return choices
+		}
+	}
+	choices = append(choices, current)
+	sort.Float64s(choices)
+	return choices
+}
+
+// renderScaleRow draws Scale like Omarchy's scale pills: the preset row for
+// this display, the current scale as its own pill when it is not a preset
+// (marked ⚠ when it is not sharp), and More… for the full sharp list. Wide
+// inspectors wrap the pills; compact ones keep one line and slide a window
+// around the selected pill, with ‹ and › marking more.
+func (m Model) renderScaleRow(output editableOutput, width int, focused, wrap bool) ([]string, []choiceSpan) {
+	options := scaleRowChoices(output)
+	if len(options) == 0 || width < 8 {
+		return nil, nil
+	}
+	labels := scaleChoiceLabels(options)
+	current := scaling.Round(output.Scale)
+	selected := scaleChoiceIndex(options, output.Scale)
+	sharp := scaling.Sharp(output.Width, output.Height, output.Scale)
+	count := len(options) + 1 // the last pill is More…
+	pill := func(idx int) (string, string, string) {
+		if idx == len(options) {
+			label := " More… "
+			return label, m.styles.value.Render(label), scaleMoreValue
+		}
+		label := " " + labels[idx] + " "
+		style := m.styles.subtle
+		if options[idx] == current && !sharp {
+			label = " " + labels[idx] + " ⚠ "
+			style = m.styles.warning
+		}
+		if idx == selected {
+			fg := m.styles.palette.chipFg
+			if !sharp {
+				fg = m.styles.palette.warning
+			}
+			style = withBG(withFG(lipgloss.NewStyle().Bold(true), fg), m.styles.palette.chipBg)
+			if focused {
+				style = m.styles.focused.UnsetPadding()
 			}
 		}
-		return options[len(options)-1]
+		return label, style.Render(label), strconv.FormatFloat(options[idx], 'f', -1, 64)
 	}
-	for idx := len(options) - 1; idx >= 0; idx-- {
-		if options[idx] < current-1e-9 {
-			return options[idx]
+
+	var lines []string
+	var spans []choiceSpan
+	if wrap {
+		line, cursor := "", 0
+		for idx := 0; idx < count; idx++ {
+			plain, styled, value := pill(idx)
+			w := lipgloss.Width(plain)
+			if cursor > 0 && cursor+1+w > width {
+				lines = append(lines, line)
+				line, cursor = "", 0
+			}
+			if cursor > 0 {
+				line += " "
+				cursor++
+			}
+			spans = append(spans, choiceSpan{start: cursor, end: cursor + w, value: value, line: len(lines)})
+			line += styled
+			cursor += w
+		}
+		lines = append(lines, line)
+		if !sharp {
+			// Say why the saved scale is marked; it stays selectable as is.
+			lines = append(lines, m.styles.warning.Render("⚠ fractional px"))
+		}
+		return lines, spans
+	}
+
+	// One line: grow a window around the selected pill until it is full.
+	widthOf := func(idx int) int { plain, _, _ := pill(idx); return lipgloss.Width(plain) }
+	first, last := selected, selected
+	used := widthOf(selected)
+	for {
+		grew := false
+		markers := 0
+		if first > 0 {
+			markers += 2
+		}
+		if last < count-1 {
+			markers += 2
+		}
+		if last < count-1 && used+1+widthOf(last+1)+markers <= width {
+			last++
+			used += 1 + widthOf(last)
+			grew = true
+		}
+		if first > 0 && used+1+widthOf(first-1)+markers <= width {
+			first--
+			used += 1 + widthOf(first)
+			grew = true
+		}
+		if !grew {
+			break
 		}
 	}
-	return options[0]
+	line, cursor := "", 0
+	if first > 0 {
+		line, cursor = m.styles.subtle.Render("‹ "), 2
+	}
+	for idx := first; idx <= last; idx++ {
+		if idx > first {
+			line += " "
+			cursor++
+		}
+		plain, styled, value := pill(idx)
+		spans = append(spans, choiceSpan{start: cursor, end: cursor + lipgloss.Width(plain), value: value})
+		line += styled
+		cursor += lipgloss.Width(plain)
+	}
+	if last < count-1 {
+		line += m.styles.subtle.Render(" ›")
+	}
+	return []string{line}, spans
 }
 
 // inlineEntryKind reports the exact-entry editors that edit in place, on the

@@ -294,14 +294,9 @@ func (m *Model) activateInspectorField() tea.Cmd {
 		m.mode = modeModePicker
 		return nil
 	case 2:
-		output := m.editOutputs[m.selectedOutput]
-		return m.openNumericInput(
-			numericInputScale,
-			m.selectedOutput,
-			fmt.Sprintf("Set Scale for %s", output.Name),
-			"Type a scale. Enter applies. Esc cancels.",
-			scaling.Format(output.Scale),
-		)
+		// Enter on Scale opens the full sharp list, the row's More… choice.
+		m.openScalePicker()
+		return nil
 	case 7, 8:
 		output := m.editOutputs[m.selectedOutput]
 		kind := numericInputPositionX
@@ -370,13 +365,53 @@ func (m *Model) openFieldPicker(title string, fieldIndex int, options []string) 
 	output := m.editOutputs[m.selectedOutput]
 	currentValue := m.layoutFieldValue(output, fieldIndex)
 
-	items := make([]list.Item, 0, len(options))
+	labels := make([]string, len(options))
 	selected := 0
 	for i, opt := range options {
-		items = append(items, fieldPickerItem{pickerItem(opt), fieldOptionLabel(fieldIndex, opt)})
+		labels[i] = fieldOptionLabel(fieldIndex, opt)
 		if opt == currentValue {
 			selected = i
 		}
+	}
+	m.openLabeledPicker(title, fieldIndex, options, labels, selected)
+}
+
+// openScalePicker lists every scale the Scale row can step to (the shared
+// sharp list, plus the current scale when it is not sharp) and ends with
+// Custom… for typing any value.
+func (m *Model) openScalePicker() {
+	output := m.editOutputs[m.selectedOutput]
+	choices := scaling.Choices(output.Width, output.Height, output.Scale)
+	labels := scaleChoiceLabels(choices)
+	options := make([]string, 0, len(choices)+1)
+	for _, choice := range choices {
+		options = append(options, strconv.FormatFloat(choice, 'f', -1, 64))
+	}
+	options = append(options, scaleCustomValue)
+	labels = append(labels, "Custom…")
+	m.openLabeledPicker("Scale", 2, options, labels, scaleChoiceIndex(choices, output.Scale))
+}
+
+const scaleCustomValue = "custom"
+
+// openScaleEntry types an exact scale, with the dialog that explains
+// sharpness and offers the closest sharp value.
+func (m *Model) openScaleEntry() tea.Cmd {
+	output := m.editOutputs[m.selectedOutput]
+	m.inspectorField = 2
+	return m.openNumericInput(
+		numericInputScale,
+		m.selectedOutput,
+		fmt.Sprintf("Set Scale for %s", output.Name),
+		"Type a scale. Enter applies. Esc cancels.",
+		scaling.Format(output.Scale),
+	)
+}
+
+func (m *Model) openLabeledPicker(title string, fieldIndex int, options, labels []string, selected int) {
+	items := make([]list.Item, 0, len(options))
+	for i, opt := range options {
+		items = append(items, fieldPickerItem{pickerItem(opt), labels[i]})
 	}
 	inner := list.NewDefaultDelegate()
 	inner.ShowDescription = false
@@ -407,6 +442,17 @@ func (m *Model) openFieldPicker(title string, fieldIndex int, options []string) 
 		List:        picker,
 	}
 	m.mode = modeModePicker
+}
+
+func (m Model) pickerPrompt(name string) string {
+	switch {
+	case m.picker.FieldIndex < 0:
+		return fmt.Sprintf("Pick a display mode for %s.", name)
+	case m.picker.FieldIndex == 2:
+		return fmt.Sprintf("Pick a sharp scale for %s, or Custom… to type one.", name)
+	default:
+		return fmt.Sprintf("Pick a value for %s.", name)
+	}
 }
 
 func (m Model) numericInputWidthFor(kind numericInputKind) int {
@@ -455,7 +501,7 @@ func (m Model) renderModePicker() string {
 
 	output := m.editOutputs[m.picker.OutputIndex]
 	body := []string{
-		m.styles.subtle.Render(fmt.Sprintf("Pick a display mode for %s.", output.Name)),
+		m.styles.subtle.Render(m.pickerPrompt(output.Name)),
 		"",
 		m.picker.List.View(),
 		"",
@@ -981,6 +1027,13 @@ func (m *Model) commitModePicker() tea.Cmd {
 	picker := m.picker
 	m.picker = nil
 	m.mode = modeMain
+	if picker.FieldIndex == 2 {
+		if value == scaleCustomValue {
+			return m.openScaleEntry()
+		}
+		m.setInspectorChoice(2, value)
+		return nil
+	}
 
 	// A new mode or rotation can grow the display into a neighbour; that
 	// edit is refused, as the panel's editor refuses it.
@@ -1414,11 +1467,15 @@ func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.normalizeInspectorField()
 			return m, nil
 		}
-		if field, ok := m.inspectorFieldAt(msg.Y, inspectorRect, compact, wasFocused); ok && msg.Action == tea.MouseActionPress {
+		if field, line, ok := m.inspectorFieldLineAt(msg.Y, inspectorRect, compact, wasFocused); ok && msg.Action == tea.MouseActionPress {
 			m.inspectorField = field
 			switch msg.Button {
 			case tea.MouseButtonLeft:
-				if value, ok := m.inspectorChoiceAt(msg.X, field, inspectorRect, compact); ok {
+				if value, ok := m.inspectorChoiceAt(msg.X, field, line, inspectorRect, compact); ok {
+					if field == 2 && value == scaleMoreValue {
+						m.openScalePicker()
+						return m, nil
+					}
 					m.setInspectorChoice(field, value)
 					return m, nil
 				}
@@ -1454,7 +1511,7 @@ func (m Model) inspectorTabAt(x, y int, inspectorRect hitRect) (inspectorTab, bo
 }
 
 // inspectorChoiceAt finds the option of a choice row under the pointer.
-func (m Model) inspectorChoiceAt(x, field int, inspectorRect hitRect, compact bool) (string, bool) {
+func (m Model) inspectorChoiceAt(x, field, line int, inspectorRect hitRect, compact bool) (string, bool) {
 	if len(m.editOutputs) == 0 {
 		return "", false
 	}
@@ -1462,7 +1519,7 @@ func (m Model) inspectorChoiceAt(x, field int, inspectorRect hitRect, compact bo
 	layout := m.buildInspectorLayout(m.editOutputs[m.selectedOutput], inner.w, compact)
 	localX := x - inner.x
 	for _, span := range layout.choices[field] {
-		if localX >= span.start && localX < span.end {
+		if span.line == line && localX >= span.start && localX < span.end {
 			return span.value, true
 		}
 	}
@@ -1782,19 +1839,27 @@ func (m Model) canvasLocalPoint(x, y int, canvasRect hitRect) (int, int) {
 }
 
 func (m Model) inspectorFieldAt(y int, inspectorRect hitRect, compact bool, wasFocused bool) (int, bool) {
+	field, _, ok := m.inspectorFieldLineAt(y, inspectorRect, compact, wasFocused)
+	return field, ok
+}
+
+// inspectorFieldLineAt finds the field under a row and which of its lines
+// the row is, since a wrapped Scale row spans several.
+func (m Model) inspectorFieldLineAt(y int, inspectorRect hitRect, compact bool, wasFocused bool) (int, int, bool) {
 	if len(m.editOutputs) == 0 {
-		return 0, false
+		return 0, 0, false
 	}
 	inner := inspectorRect.inner(m.styles.inactivePane)
 	localY := y - inner.y
 	if localY < 0 || localY >= inner.h {
-		return 0, false
+		return 0, 0, false
 	}
 
 	layout := m.buildInspectorLayout(m.editOutputs[m.selectedOutput], inner.w, compact)
 	scrollOffset := 0
 	if wasFocused {
 		if row, ok := layout.fieldRows[m.inspectorField]; ok {
+			row += max(1, layout.fieldLines[m.inspectorField]) - 1
 			scrollOffset = inspectorScrollOffset(len(layout.lines), row, inner.h)
 		}
 	}
@@ -1804,11 +1869,12 @@ func (m Model) inspectorFieldAt(y int, inspectorRect hitRect, compact bool, wasF
 		if !ok {
 			continue
 		}
-		if row-scrollOffset == localY {
-			return idx, true
+		line := localY - (row - scrollOffset)
+		if line >= 0 && line < max(1, layout.fieldLines[idx]) {
+			return idx, line, true
 		}
 	}
-	return 0, false
+	return 0, 0, false
 }
 
 func (m Model) canvasLayout(width, height int) canvasGeometry {
