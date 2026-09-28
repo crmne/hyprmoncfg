@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/crmne/hyprmoncfg/internal/apply"
@@ -47,20 +48,24 @@ type Config struct {
 }
 
 type Service struct {
-	client         *hypr.Client
-	store          *profile.Store
-	engine         apply.Engine
-	cfg            Config
-	writeMu        sync.Mutex
-	pendingMu      sync.Mutex
-	pending        *pendingTransaction
-	manualMu       sync.Mutex
-	manualSet      string
-	manualProfile  profile.Profile
-	notifyMu       sync.RWMutex
-	notify         func()
-	applied        *appliedState
-	fallbacks      *displayFallbacks
+	client        *hypr.Client
+	store         *profile.Store
+	engine        apply.Engine
+	cfg           Config
+	writeMu       sync.Mutex
+	pendingMu     sync.Mutex
+	pending       *pendingTransaction
+	manualMu      sync.Mutex
+	manualSet     string
+	manualProfile profile.Profile
+	notifyMu      sync.RWMutex
+	notify        func()
+	applied       *appliedState
+	fallbacks     *displayFallbacks
+	// luaDialect remembers whether the running Hyprland reads a Lua config,
+	// for when it is too busy to say. Waking displays right after resume is
+	// exactly when it tends to be.
+	luaDialect     atomic.Bool
 	lastSeenHash   string
 	lastProfile    profile.Profile
 	lastMonitorSet string
@@ -639,6 +644,9 @@ func (s *Service) ensureConfigInclude(ctx context.Context) {
 	cancel()
 
 	resolved, err := config.ResolveHyprlandConfig(version, s.cfg.MonitorsConf, s.cfg.HyprConfig)
+	if err == nil && version != "" {
+		s.luaDialect.Store(resolved.Format == config.HyprConfigLua)
+	}
 	if err != nil {
 		s.cfg.Logf("could not resolve the Hyprland config: %v", err)
 		return
@@ -691,13 +699,18 @@ func (s *Service) wakeDisplays(ctx context.Context) {
 	wakeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	version := ""
-	if info, err := s.client.Version(wakeCtx); err == nil {
-		version = info.Version
-	}
-	luaDispatch := false
-	if resolved, err := config.ResolveHyprlandConfig(version, s.cfg.MonitorsConf, s.cfg.HyprConfig); err == nil {
-		luaDispatch = resolved.Format == config.HyprConfigLua
+	// Ask briefly and keep the rest of the budget for the wake itself. Without
+	// an answer, use the dialect seen last: guessing legacy sends Lua-mode
+	// Hyprland a command it rejects, and the displays stay dark.
+	luaDispatch := s.luaDialect.Load()
+	versionCtx, cancelVersion := context.WithTimeout(wakeCtx, s.cfg.QueryTimeout)
+	info, err := s.client.Version(versionCtx)
+	cancelVersion()
+	if err == nil && info.Version != "" {
+		if resolved, err := config.ResolveHyprlandConfig(info.Version, s.cfg.MonitorsConf, s.cfg.HyprConfig); err == nil {
+			luaDispatch = resolved.Format == config.HyprConfigLua
+			s.luaDialect.Store(luaDispatch)
+		}
 	}
 	if err := s.client.WakeDisplays(wakeCtx, luaDispatch); err != nil {
 		s.cfg.Logf("could not wake displays: %v", err)
