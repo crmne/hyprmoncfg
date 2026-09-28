@@ -141,3 +141,18 @@ func TestEditorProfileFromStatePreservesProfileOnlySettings(t *testing.T) {
 		t.Fatalf("draft did not preserve saved-only settings: %+v", draft.Outputs[0])
 	}
 }
+
+func TestValidateLayoutIgnoresAnOutputWithoutAMode(t *testing.T) {
+	outputs := []OutputConfig{
+		{Name: "DP-1", Enabled: true, Width: 3840, Height: 2160, Scale: 1},
+		// Hyprland reports a modeless output at 0,0, on top of DP-1.
+		{Name: "HDMI-A-1", Enabled: true, Mode: "preferred", Scale: 1},
+	}
+	if err := ValidateLayout(outputs); err != nil {
+		t.Fatalf("a display without a mode has no area to overlap: %v", err)
+	}
+	outputs[1].Width, outputs[1].Height = 1920, 1080
+	if err := ValidateLayout(outputs); err == nil {
+		t.Fatal("once it has a size at 0,0, it does overlap DP-1")
+	}
+}

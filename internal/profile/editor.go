@@ -513,6 +513,12 @@ func ValidateLayout(outputs []OutputConfig) error {
 		if !output.Enabled || output.MirrorOf != "" {
 			continue
 		}
+		// An output without a mode has no size to overlap anything with.
+		// LogicalSize would make it a 1x1 square at whatever position
+		// Hyprland reports for it, usually another display's corner.
+		if output.Width <= 0 || output.Height <= 0 {
+			continue
+		}
 		width, height := output.LogicalSize()
 		name := strings.TrimSpace(output.Name)
 		if name == "" {

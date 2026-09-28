@@ -81,3 +81,14 @@ func TestRefreshKeepsDaemonFallbacksUntilTheDaemonAnswersAgain(t *testing.T) {
 		t.Fatal("view lost the display")
 	}
 }
+
+// A display without a mode, reported at 0,0, sits in its own row; it must not
+// also be reported as overlapping the display that really is at 0,0.
+func TestLayoutDoesNotReportADisplayWithoutAModeAsOverlapping(t *testing.T) {
+	hdmi := hypr.Monitor{Name: "HDMI-A-1", Description: "Example TV", Make: "Example", Model: "TV", Serial: "T1",
+		DPMSStatus: true, AvailableModes: []string{"1920x1080@60.00Hz"}}
+	m := paneTestModel(t, tabLayout, []hypr.Monitor{paneTestDesk, hdmi}, nil)
+	if m.layoutErr != nil {
+		t.Fatalf("unexpected layout error: %v", m.layoutErr)
+	}
+}
