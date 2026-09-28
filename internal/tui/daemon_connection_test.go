@@ -48,11 +48,11 @@ func TestDaemonBusyRetainsConnectionUntilStatusRecovers(t *testing.T) {
 	client := ipc.NewClient(clientConn)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if running, unknown, _, _ := daemonReachable(ctx, client); running || !unknown {
-		t.Fatalf("busy daemon was classified as disconnected: running=%t unknown=%t", running, unknown)
+	if probe := daemonReachable(ctx, client); probe.ok || !probe.unknown {
+		t.Fatalf("busy daemon was classified as disconnected: running=%t unknown=%t", probe.ok, probe.unknown)
 	}
-	if running, unknown, version, _ := daemonReachable(ctx, client); !running || unknown || version != "test" {
-		t.Fatalf("same connection did not recover: running=%t unknown=%t version=%q", running, unknown, version)
+	if probe := daemonReachable(ctx, client); !probe.ok || probe.unknown || probe.version != "test" {
+		t.Fatalf("same connection did not recover: running=%t unknown=%t version=%q", probe.ok, probe.unknown, probe.version)
 	}
 	if err := <-completed; err != nil {
 		t.Fatal(err)
@@ -83,8 +83,8 @@ func TestRedialKeepsDaemonThatRepliesBusy(t *testing.T) {
 		t.Fatal("redial discarded a live daemon because its compositor was busy")
 	}
 	defer client.Close()
-	if running, unknown, _, _ := daemonReachable(ctx, client); !running || unknown {
-		t.Fatalf("redialed connection did not recover: running=%t unknown=%t", running, unknown)
+	if probe := daemonReachable(ctx, client); !probe.ok || probe.unknown {
+		t.Fatalf("redialed connection did not recover: running=%t unknown=%t", probe.ok, probe.unknown)
 	}
 	if err := <-completed; err != nil {
 		t.Fatal(err)

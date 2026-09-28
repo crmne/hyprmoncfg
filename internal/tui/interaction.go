@@ -1794,7 +1794,7 @@ func canvasLayoutFor(outputs []editableOutput, width, height int) canvasGeometry
 
 	enabled := make([]editableOutput, 0, len(outputs))
 	for _, output := range outputs {
-		if output.Enabled && output.MirrorOf == "" {
+		if output.spatial() {
 			enabled = append(enabled, output)
 		}
 	}
@@ -1828,7 +1828,7 @@ func canvasLayoutFor(outputs []editableOutput, width, height int) canvasGeometry
 	layout.ok = true
 
 	for idx, output := range outputs {
-		if !output.Enabled || output.MirrorOf != "" {
+		if !output.spatial() {
 			continue
 		}
 		w, h := output.logicalSize()

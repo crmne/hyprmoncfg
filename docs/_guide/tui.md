@@ -40,6 +40,12 @@ off display on in the draft. Keyboard users can select it with `[` / `]` and pre
 without an Enable action. In crowded layouts, keyboard selection reveals hidden
 rows without covering the active display cards.
 
+A display that is on but has no mode shows nothing, so it gets a row too, marked
+**No usable signal**, instead of an empty rectangle. When `hyprmoncfgd` runs a
+display below its saved settings because it would not stay on at them, that
+display's card says how it runs now, for example `running at 120 Hz without
+VRR`. The saved profile is unchanged. See [Daemon Behavior](/daemon/#displays-that-wont-stay-on).
+
 ![Layout editor]({{ '/assets/images/screenshots/layout-dark.png' | relative_url }})
 {: .screenshot }
 

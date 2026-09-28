@@ -16,12 +16,15 @@ type hiddenDisplayRow struct {
 func (m Model) hiddenDisplayRows(width, height int) []hiddenDisplayRow {
 	var rows []hiddenDisplayRow
 	for i, o := range m.editOutputs {
-		if o.Enabled && o.MirrorOf == "" {
+		if o.spatial() {
 			continue
 		}
 		state, action := "Off", "[Enable]"
-		if o.Enabled {
+		switch {
+		case o.Enabled && o.MirrorOf != "":
 			state, action = "Mirrors "+outputNameForKeyIn(m.editOutputs, o.MirrorOf), ""
+		case o.Enabled:
+			state, action = "No usable signal", ""
 		}
 		connected := false
 		for _, live := range m.monitors {

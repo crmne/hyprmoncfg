@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/crmne/hyprmoncfg/internal/apply"
+	"github.com/crmne/hyprmoncfg/internal/appstatus"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/ipc"
 	"github.com/crmne/hyprmoncfg/internal/lid"
@@ -75,9 +76,12 @@ type refreshMsg struct {
 	daemonUnknown   bool
 	daemonVersion   string
 	profileOverride string
-	daemonClient    *ipc.Client
-	background      bool
-	err             error
+	// fallbacks maps connector names to displays the daemon runs below
+	// their saved settings.
+	fallbacks    map[string]appstatus.MonitorFallback
+	daemonClient *ipc.Client
+	background   bool
+	err          error
 }
 
 type saveMsg struct {
@@ -324,6 +328,7 @@ type Model struct {
 	daemonOK              bool
 	daemonVersion         string
 	profileOverride       string
+	fallbacks             map[string]appstatus.MonitorFallback
 	profileModePending    bool
 	refreshInFlight       bool
 	applying              bool
@@ -411,6 +416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.daemonOK = msg.daemonOK
 			m.daemonVersion = msg.daemonVersion
 			m.profileOverride = msg.profileOverride
+			m.fallbacks = msg.fallbacks
 		}
 		if msg.err != nil {
 			m.setStatusErr(msg.err.Error())
@@ -2835,15 +2841,16 @@ func (m Model) refreshCmd(background bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		daemonOK, daemonUnknown, daemonVersion, profileOverride := daemonReachable(ctx, ipcClient)
+		daemon := daemonReachable(ctx, ipcClient)
 		// A failure that is not a timeout means the connection is gone, not
 		// that the daemon is: reconnect before calling it stopped.
 		var replacement *ipc.Client
-		if ipcClient != nil && !daemonOK && !daemonUnknown {
+		if ipcClient != nil && !daemon.ok && !daemon.unknown {
 			if replacement = redialDaemon(ctx); replacement != nil {
-				daemonOK, daemonUnknown, daemonVersion, profileOverride = daemonReachable(ctx, replacement)
+				daemon = daemonReachable(ctx, replacement)
 			}
 		}
+		daemonOK, daemonUnknown, daemonVersion, profileOverride := daemon.ok, daemon.unknown, daemon.version, daemon.profileOverride
 
 		monitors, err := client.Monitors(ctx)
 		if err != nil {
@@ -2876,6 +2883,7 @@ func (m Model) refreshCmd(background bool) tea.Cmd {
 			daemonUnknown:   daemonUnknown,
 			daemonVersion:   daemonVersion,
 			profileOverride: profileOverride,
+			fallbacks:       daemon.fallbacks,
 			daemonClient:    replacement,
 			background:      background,
 		}
@@ -2886,18 +2894,38 @@ func (m Model) refreshCmd(background bool) tea.Cmd {
 // applying a profile can miss the deadline while being perfectly alive, so a
 // timeout or compositor_busy reply reports "unknown" and leaves the last answer
 // standing; a busy reply does not mean the connection needs to be replaced.
-func daemonReachable(ctx context.Context, client *ipc.Client) (ok bool, unknown bool, version string, profileOverride string) {
+type daemonProbe struct {
+	ok, unknown     bool
+	version         string
+	profileOverride string
+	fallbacks       map[string]appstatus.MonitorFallback
+}
+
+func daemonReachable(ctx context.Context, client *ipc.Client) daemonProbe {
 	if client == nil {
-		return false, false, "", ""
+		return daemonProbe{}
 	}
 
 	probeCtx, cancel := context.WithTimeout(ctx, daemonProbeTimeout)
 	defer cancel()
 	document, err := client.Status(probeCtx)
 	if err != nil {
-		return false, isTimeout(err) || errors.Is(err, ipc.ErrCompositorBusy), "", ""
+		return daemonProbe{unknown: isTimeout(err) || errors.Is(err, ipc.ErrCompositorBusy)}
 	}
-	return true, false, strings.TrimSpace(document.Version), strings.TrimSpace(document.Daemon.ProfileOverride)
+	probe := daemonProbe{
+		ok:              true,
+		version:         strings.TrimSpace(document.Version),
+		profileOverride: strings.TrimSpace(document.Daemon.ProfileOverride),
+	}
+	for _, monitor := range document.Monitors {
+		if monitor.Fallback != nil {
+			if probe.fallbacks == nil {
+				probe.fallbacks = map[string]appstatus.MonitorFallback{}
+			}
+			probe.fallbacks[monitor.Name] = *monitor.Fallback
+		}
+	}
+	return probe
 }
 
 // redialDaemon reconnects after the daemon was restarted, which the connection
@@ -3812,6 +3840,13 @@ func (o editableOutput) profileOutput() profile.OutputConfig {
 	}
 }
 
+// spatial reports whether the output has a place on the canvas: it is on,
+// shows its own image, and has a mode. An enabled output without a mode shows
+// nothing, so it gets a row of its own instead of an invisible rectangle.
+func (o editableOutput) spatial() bool {
+	return o.Enabled && o.MirrorOf == "" && o.Width > 0 && o.Height > 0
+}
+
 func (o editableOutput) logicalSize() (int, int) {
 	scale := scaling.Round(scaling.Clamp(o.Scale))
 	width := int(math.Round(float64(o.Width) / scale))
@@ -3949,7 +3984,24 @@ func (m Model) canvasOutputIssue(output editableOutput) (string, bool) {
 	if m.layoutErr != nil && m.isOutputOverlapping(output) {
 		return "overlap", true
 	}
+	if m.liveWithoutMode(output.Name) {
+		return "no usable signal", true
+	}
+	if fallback, ok := m.fallbacks[output.Name]; ok && output.Enabled {
+		return "running " + fallback.Running, true
+	}
 	return "", false
+}
+
+// liveWithoutMode reports an output Hyprland has enabled but without a mode:
+// it is connected and switched on, yet shows nothing.
+func (m Model) liveWithoutMode(name string) bool {
+	for _, live := range m.monitors {
+		if live.Name == name {
+			return !live.Disabled && (live.Width <= 0 || live.Height <= 0)
+		}
+	}
+	return false
 }
 
 // paintCard draws one monitor rectangle. The caller supplies the body lines
