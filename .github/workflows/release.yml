@@ -25,6 +25,13 @@ jobs:
             echo "Release tags must point to a commit already on origin/main." >&2
             exit 1
           fi
+      - name: Require committed release notes
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME#v}.md"
+          if [[ ! -s $notes ]]; then
+            echo "Commit the release notes at $notes before tagging." >&2
+            exit 1
+          fi
 
   goreleaser:
     needs: release-source
@@ -42,12 +49,16 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Locate release notes
+        id: notes
+        run: echo "path=docs/releases/${GITHUB_REF_NAME#v}.md" >> "$GITHUB_OUTPUT"
+
       - name: Goreleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: v2.18.1
-          args: release --clean
+          args: release --clean --release-notes ${{ steps.notes.outputs.path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
