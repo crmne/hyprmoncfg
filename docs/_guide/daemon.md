@@ -71,8 +71,17 @@ application stops retries. Preview ownership defers retries; suspend, intentiona
 display sleep and unmanaged mode stop them. Resume or a later wake/topology event
 restarts reconciliation. Verification reports all failed outputs, not just the
 first. Monitor/workspace discovery queries have a 750ms timeout. This does not
-prove physical projector readiness or recover an all-DPMS-off failed wake which
-cannot yet be distinguished from deliberate sleep.
+prove physical projector readiness.
+
+Resuming or opening the lid is a request for light. When displays still report
+DPMS off right afterwards, the daemon treats it as a wake that did not take and
+repeats it up to three times before treating the displays as asleep by choice.
+It stops early once any display is seen awake or the layout applies. If the
+built-in panel is off while the lid is open (it was switched off with the lid
+shut and the external stayed asleep), the daemon applies the profile anyway,
+so the panel comes back without waiting for the external. The wake command uses
+the Lua or legacy syntax Hyprland last reported, even when Hyprland is too busy
+to answer right after resume.
 
 ### Displays that won't stay on
 

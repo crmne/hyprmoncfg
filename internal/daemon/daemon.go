@@ -65,7 +65,10 @@ type Service struct {
 	// luaDialect remembers whether the running Hyprland reads a Lua config,
 	// for when it is too busy to say. Waking displays right after resume is
 	// exactly when it tends to be.
-	luaDialect     atomic.Bool
+	luaDialect atomic.Bool
+	// wakeRequested is set right after resume or opening the lid, while
+	// displays that still report DPMS off count as a failed wake.
+	wakeRequested  atomic.Bool
 	lastSeenHash   string
 	lastProfile    profile.Profile
 	lastMonitorSet string
@@ -79,6 +82,12 @@ type Service struct {
 }
 
 var errDisplaysSleeping = errors.New("displays are sleeping")
+
+// wakeRetryLimit bounds how often the daemon repeats a wake it was asked for.
+// Right after resume or opening the lid, displays still reporting DPMS off
+// are a wake that did not take, not a choice to sleep.
+const wakeRetryLimit = 3
+
 var errPreviewActive = errors.New("interactive preview is active")
 
 type displaySleepTransition uint8
@@ -320,6 +329,16 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	pending := false
+	wakeRetries := 0
+	requestWake := func() {
+		s.wakeDisplays(ctx)
+		wakeRetries = wakeRetryLimit
+		s.wakeRequested.Store(true)
+	}
+	endWakeRequest := func() {
+		wakeRetries = 0
+		s.wakeRequested.Store(false)
+	}
 	var pendingGeneration uint64
 	topologyProbePending := false
 	settlingAfterWake := false
@@ -440,13 +459,14 @@ func (s *Service) Run(ctx context.Context) error {
 				}
 				pending = false
 				settlingAfterWake = false
+				endWakeRequest()
 				stopDebounce()
 				continue
 			}
 			s.cfg.Logf("resumed from sleep; waking displays")
 			s.cfg.LaptopToggle.Reset()
 			s.refreshLidState(ctx)
-			s.wakeDisplays(ctx)
+			requestWake()
 			displayGuard.sleeping = false
 			settlingAfterWake = true
 			pushTrigger("resume", s.cfg.WakeSettle)
@@ -471,7 +491,7 @@ func (s *Service) Run(ctx context.Context) error {
 					stopDebounce()
 					// Opening the lid is an explicit ask for light. Wake the
 					// displays instead of waiting for a keypress to do it.
-					s.wakeDisplays(ctx)
+					requestWake()
 					if displayGuard.sleeping {
 						displayGuard.sleeping = false
 						settlingAfterWake = true
@@ -533,10 +553,17 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			switch displayGuard.Observe(monitors) {
 			case displaySleepEntered:
+				if wakeRetries > 0 {
+					// The wake we were asked for has not taken yet. The pending
+					// reconciliation repeats it rather than calling this sleep.
+					displayGuard.sleeping = false
+					continue
+				}
 				s.cfg.Logf("display sleep detected; pausing automatic switching")
 				deferForDisplaySleep("")
 				continue
 			case displaySleepExited:
+				endWakeRequest()
 				s.cfg.LaptopToggle.Reset()
 				settlingAfterWake = true
 				s.cfg.Logf("display wake detected; waiting %s for monitors to settle", s.cfg.WakeSettle)
@@ -601,6 +628,14 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			if errors.Is(err, errDisplaysSleeping) {
+				if wakeRetries > 0 {
+					wakeRetries--
+					s.cfg.Logf("displays still asleep after a wake request; waking them again")
+					s.wakeDisplays(ctx)
+					debounceTimer.Reset(s.cfg.WakeSettle)
+					continue
+				}
+				endWakeRequest()
 				if displayGuard.MarkSleeping() {
 					s.cfg.Logf("display sleep detected; pausing automatic switching")
 				}
@@ -609,6 +644,7 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			pending = false
 			settlingAfterWake = false
+			endWakeRequest()
 			if err != nil {
 				s.cfg.Logf("apply failed: %v", err)
 				scheduleRecovery()
@@ -719,6 +755,23 @@ func (s *Service) wakeDisplays(ctx context.Context) {
 
 var errWriterBusy = errors.New("display writer is busy")
 
+// restoresPanelAfterWake lets an apply through the sleep guard in one case:
+// the displays were just asked to wake, the lid is not closed, and a built-in
+// panel is off. That is a laptop whose external display stayed asleep after
+// the clamshell panel was switched off; the saved profile is what turns the
+// panel back on, and waiting for the external to wake could leave no light.
+func (s *Service) restoresPanelAfterWake(monitors []hypr.Monitor) bool {
+	if !s.wakeRequested.Load() || s.lidState == lid.Closed {
+		return false
+	}
+	for _, monitor := range monitors {
+		if monitor.IsInternal() && monitor.Disabled {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) tryApplyBest(ctx context.Context) error {
 	if !s.writeMu.TryLock() {
 		return errWriterBusy
@@ -769,7 +822,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	if len(monitors) == 0 {
 		return nil
 	}
-	if displayPowerState(monitors) == displayPowerAsleep {
+	if displayPowerState(monitors) == displayPowerAsleep && !s.restoresPanelAfterWake(monitors) {
 		return errDisplaysSleeping
 	}
 
