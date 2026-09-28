@@ -295,9 +295,9 @@ func renderMonitorV2Block(identifier string, output profile.OutputConfig, mirror
 	if output.Transform != 0 {
 		lines = append(lines, fmt.Sprintf("  transform = %d", output.Transform))
 	}
-	if output.VRR != 0 {
-		lines = append(lines, fmt.Sprintf("  vrr = %d", output.VRR))
-	}
+	// Always write VRR. Hyprland falls back to the global misc:vrr when a rule
+	// leaves it out, which would quietly override a profile that says off.
+	lines = append(lines, fmt.Sprintf("  vrr = %d", output.VRR))
 	if output.Bitdepth > 0 && output.Bitdepth != 8 {
 		lines = append(lines, fmt.Sprintf("  bitdepth = %d", output.Bitdepth))
 	}
@@ -359,9 +359,8 @@ func renderLuaMonitorCall(identifier string, output profile.OutputConfig, mirror
 	if output.Transform != 0 {
 		lines = append(lines, fmt.Sprintf("  transform = %d,", output.Transform))
 	}
-	if output.VRR != 0 {
-		lines = append(lines, fmt.Sprintf("  vrr = %d,", output.VRR))
-	}
+	// Always write VRR; see renderMonitorV2Block.
+	lines = append(lines, fmt.Sprintf("  vrr = %d,", output.VRR))
 	if output.Bitdepth > 0 && output.Bitdepth != 8 {
 		lines = append(lines, fmt.Sprintf("  bitdepth = %d,", output.Bitdepth))
 	}

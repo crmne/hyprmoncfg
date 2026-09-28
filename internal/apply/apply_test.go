@@ -1560,7 +1560,6 @@ func TestRenderMonitorV2BlockDefaultsOmitted(t *testing.T) {
 	for _, unwanted := range []string{
 		"bitdepth",
 		"cm =",
-		"vrr",
 		"sdrbrightness",
 		"sdrsaturation",
 		"sdr_min_luminance",
@@ -1575,6 +1574,28 @@ func TestRenderMonitorV2BlockDefaultsOmitted(t *testing.T) {
 	} {
 		if strings.Contains(rendered, unwanted) {
 			t.Fatalf("rendered config should not contain default %q:\n%s", unwanted, rendered)
+		}
+	}
+}
+
+func TestRenderConfigWritesVRROffExplicitly(t *testing.T) {
+	// Hyprland falls back to the global misc:vrr when a rule omits vrr, so an
+	// off profile must say so or a global VRR setting overrides it.
+	mon := testMonitor("DP-1", "Dell U2720Q", "Dell", "U2720Q", "A1")
+	p := profile.New("desk", []profile.OutputConfig{{
+		Key: mon.HardwareKey(), Name: "DP-1", Enabled: true,
+		Width: 2560, Height: 1440, Refresh: 60, Scale: 1,
+	}})
+	for format, want := range map[config.HyprConfigFormat]string{
+		config.HyprConfigLegacy: "  vrr = 0\n",
+		config.HyprConfigLua:    "  vrr = 0,\n",
+	} {
+		rendered, err := RenderConfig(p, []hypr.Monitor{mon}, RenderOptions{Format: format, UseMonitorV2: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("expected %q in:\n%s", want, rendered)
 		}
 	}
 }
