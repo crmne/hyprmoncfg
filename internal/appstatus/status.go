@@ -273,7 +273,7 @@ func editorScaleOptions(width, height int, current float64) []float64 {
 	return options
 }
 
-func Build(version string, daemonRunning bool, profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) Document {
+func Build(version string, daemonRunning bool, profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, opts profile.MatchOptions) Document {
 	document := Document{
 		MonitorSetHash: HardwareSnapshotHash(monitors),
 		SchemaVersion:  SchemaVersion,
@@ -290,13 +290,13 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 	}
 
 	recommendedName := ""
-	if recommended, score, ok := profile.BestMatch(profiles, monitors); ok {
+	if recommended, score, ok := profile.BestMatchWith(profiles, monitors, opts); ok {
 		recommendedName = recommended.Name
 		document.RecommendedProfile = &ProfileMatch{Name: recommended.Name, Score: score}
 	}
 
 	for _, saved := range profiles {
-		match := profile.EvaluateMatch(saved, monitors)
+		match := profile.EvaluateMatchWith(saved, monitors, opts)
 		enabledOutputs := 0
 		for _, output := range saved.Outputs {
 			if output.Enabled {

@@ -139,6 +139,15 @@ Profiles are matched by hardware identity (make, model, serial) -- not connector
 | Monitor enabled in profile but not connected | −30 |
 | Monitor disabled in profile and not connected | −10 |
 
+With the lid closed and an external display connected, the built-in panel scores the other way round, because the closed-lid policy turns it off whatever the profile says:
+
+| Condition, lid closed | Points |
+|---|---|
+| Built-in panel kept off in the profile | +100 |
+| Built-in panel turned on in the profile | +50 |
+
+So a profile you saved for working with the lid closed wins over an otherwise identical profile that turns the panel on. Without an external display, the panel is scored as usual.
+
 For automatic switching, a profile must enable at least one connected display and have a positive score. A partial match can provide the base for a temporary extended layout: unfamiliar displays are added unless the profile explicitly sets `disable_unknown_outputs: true`. Deliberately disabled known displays remain off. Missing saved displays remain allowed, so undocking can still restore the laptop layout.
 
 Among eligible profiles, the highest score wins. Ties break alphabetically by profile name. A profile that mentions a monitor which is not plugged in pays for it either way, so the profile that describes exactly the connected displays beats a larger profile that happens to include them. The profiles tab shows every score, along with this breakdown for the selected profile.

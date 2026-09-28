@@ -22,6 +22,11 @@ type MatchResult struct {
 	MissingOutputs    int // profile outputs enabled here but not connected
 	MissingOffOutputs int // profile outputs kept off here and not connected either
 	UnknownOutputs    int // connected outputs this profile says nothing about
+	// With the lid closed and an external connected, built-in panels are
+	// counted apart: the closed-lid policy turns them off either way, so a
+	// profile that already keeps them off describes the setup better.
+	LidClosedKeptOff int // built-in panels kept off here, lid closed
+	LidClosedOn      int // built-in panels this profile turns on, lid closed
 }
 
 // ExactDisplayMatch reports whether the profile describes the complete set of
@@ -43,6 +48,8 @@ const (
 	MatchReasonNotConnected        MatchReasonKind = "not_connected"
 	MatchReasonNotConnectedKeptOff MatchReasonKind = "not_connected_kept_off"
 	MatchReasonConnectedUnknown    MatchReasonKind = "connected_unknown"
+	MatchReasonLidClosedKeptOff    MatchReasonKind = "lid_closed_kept_off"
+	MatchReasonLidClosedOn         MatchReasonKind = "lid_closed_on"
 )
 
 type MatchReason struct {
@@ -72,6 +79,8 @@ func ExplainMatch(result MatchResult) []MatchReason {
 		{Kind: MatchReasonNotConnected, Count: result.MissingOutputs, Points: result.MissingOutputs * ScoreMissingOutput},
 		{Kind: MatchReasonNotConnectedKeptOff, Count: result.MissingOffOutputs, Points: result.MissingOffOutputs * ScoreMissingOffOutput},
 		{Kind: MatchReasonConnectedUnknown, Count: result.UnknownOutputs, Points: result.UnknownOutputs * ScoreUnknownOutput},
+		{Kind: MatchReasonLidClosedKeptOff, Count: result.LidClosedKeptOff, Points: result.LidClosedKeptOff * ScoreEnabledMatch},
+		{Kind: MatchReasonLidClosedOn, Count: result.LidClosedOn, Points: result.LidClosedOn * ScoreDisabledMatch},
 	}
 	reasons := make([]MatchReason, 0, len(candidates))
 	for _, reason := range candidates {
@@ -82,16 +91,37 @@ func ExplainMatch(result MatchResult) []MatchReason {
 	return reasons
 }
 
+// MatchOptions carries what matching needs to know beyond the displays.
+type MatchOptions struct {
+	// LidClosed means a laptop's lid is closed. With an external connected,
+	// the closed-lid policy turns built-in panels off whatever the profile
+	// says, so a profile saved for that setup should win over one that
+	// turns the panel on only to have it turned off again.
+	LidClosed bool
+}
+
 func EvaluateMatch(p Profile, monitors []hypr.Monitor) MatchResult {
+	return EvaluateMatchWith(p, monitors, MatchOptions{})
+}
+
+func EvaluateMatchWith(p Profile, monitors []hypr.Monitor, opts MatchOptions) MatchResult {
 	p.Normalize()
 	if len(monitors) == 0 || len(p.Outputs) == 0 {
 		return MatchResult{}
 	}
 
 	connected := make(map[string]int, len(monitors))
+	builtIn := make(map[string]bool, len(monitors))
+	externalConnected := false
 	for _, m := range monitors {
 		connected[m.HardwareKey()]++
+		if m.IsInternal() {
+			builtIn[m.HardwareKey()] = true
+		} else if m.Name != "FALLBACK" {
+			externalConnected = true
+		}
 	}
+	lidRule := opts.LidClosed && externalConnected
 
 	profileEnabled := make(map[string]int, len(p.Outputs))
 	profileKnown := make(map[string]int, len(p.Outputs))
@@ -108,14 +138,21 @@ func EvaluateMatch(p Profile, monitors []hypr.Monitor) MatchResult {
 
 	enabledMatch := 0
 	disabledMatch := 0
+	lidKeptOff := 0
+	lidOn := 0
 	for key, connectedCount := range connected {
 		enabledForKey := min(connectedCount, profileEnabled[key])
-		enabledMatch += enabledForKey
-
-		disabledKnown := profileKnown[key] - profileEnabled[key]
-		if disabledKnown > 0 {
-			disabledMatch += min(connectedCount-enabledForKey, disabledKnown)
+		disabledForKey := 0
+		if disabledKnown := profileKnown[key] - profileEnabled[key]; disabledKnown > 0 {
+			disabledForKey = min(connectedCount-enabledForKey, disabledKnown)
 		}
+		if lidRule && builtIn[key] {
+			lidOn += enabledForKey
+			lidKeptOff += disabledForKey
+			continue
+		}
+		enabledMatch += enabledForKey
+		disabledMatch += disabledForKey
 	}
 
 	missingFromCurrent := 0
@@ -144,19 +181,23 @@ func EvaluateMatch(p Profile, monitors []hypr.Monitor) MatchResult {
 		MissingOutputs:    missingFromCurrent,
 		MissingOffOutputs: missingOffFromCurrent,
 		UnknownOutputs:    unknownCurrent,
+		LidClosedKeptOff:  lidKeptOff,
+		LidClosedOn:       lidOn,
 	}
 	// A profile that would leave every connected output off is not a
 	// candidate at all, so it keeps a zero score and no partial credit.
-	if enabledMatch == 0 {
+	if enabledMatch+lidOn == 0 {
 		return result
 	}
 
 	// High reward for enabled match, moderate reward for disabled match,
-	// moderate penalty for mismatch.
+	// moderate penalty for mismatch. With the lid closed, a built-in panel
+	// kept off counts like a match and one turned on like a kept-off one.
 	result.Score = enabledMatch*ScoreEnabledMatch + disabledMatch*ScoreDisabledMatch +
+		lidKeptOff*ScoreEnabledMatch + lidOn*ScoreDisabledMatch +
 		missingFromCurrent*ScoreMissingOutput + missingOffFromCurrent*ScoreMissingOffOutput +
 		unknownCurrent*ScoreUnknownOutput
-	result.ConnectedEnabledOutputs = enabledMatch
+	result.ConnectedEnabledOutputs = enabledMatch + lidOn
 	return result
 }
 
@@ -165,13 +206,17 @@ func MatchScore(p Profile, monitors []hypr.Monitor) int {
 }
 
 func BestMatch(profiles []Profile, monitors []hypr.Monitor) (Profile, int, bool) {
+	return BestMatchWith(profiles, monitors, MatchOptions{})
+}
+
+func BestMatchWith(profiles []Profile, monitors []hypr.Monitor, opts MatchOptions) (Profile, int, bool) {
 	type candidate struct {
 		profile Profile
 		score   int
 	}
 	candidates := make([]candidate, 0, len(profiles))
 	for _, p := range profiles {
-		score := EvaluateMatch(p, monitors).Score
+		score := EvaluateMatchWith(p, monitors, opts).Score
 		if score <= 0 {
 			continue
 		}

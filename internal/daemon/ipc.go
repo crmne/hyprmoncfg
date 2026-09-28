@@ -45,7 +45,7 @@ func (s *Service) Status() (appstatus.Document, error) {
 	if err != nil {
 		return appstatus.Document{}, err
 	}
-	document := appstatus.Build(buildinfo.Version, true, profiles, monitors, rules)
+	document := appstatus.Build(buildinfo.Version, true, profiles, monitors, rules, s.matchOptions())
 	document.Daemon.Unmanaged = !config.IsManaged(s.cfg.ConfigDir)
 	if steps := s.fallbacks.describe(monitors); steps != nil {
 		for i := range document.Monitors {

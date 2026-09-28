@@ -165,6 +165,11 @@ matches again. Do not save the temporary expansion over `Laptop`. Editor changes
 remain drafts; if topology changed underneath them, retain the edits, show the
 conflict, and offer an explicit refresh or remap before applying.
 
+With the lid closed and an external connected, profile matching scores a
+built-in panel the profile keeps off as a match and one it turns on as kept off,
+so a saved clamshell profile beats an otherwise identical profile whose panel the
+closed lid would turn off anyway.
+
 Lid-close policy may switch off the internal screen only after another real
 output is usable. A modeless output or synthetic `FALLBACK` does not satisfy that
 condition. The same holds when the profile itself turns the internal screen off:

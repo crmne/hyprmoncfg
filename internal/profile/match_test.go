@@ -454,3 +454,60 @@ func TestExactStateMatchIgnoresWhereHyprlandPutsAMirror(t *testing.T) {
 		t.Fatal("expected a profile that does not mirror to be a different state")
 	}
 }
+
+// Issue #76: docked with the lid closed, a saved clamshell profile lost to a
+// three-screen profile whose built-in panel the closed lid turns off anyway.
+func issue76Profiles() ([]Profile, []hypr.Monitor) {
+	edp := hypr.Monitor{Name: "eDP-1", Make: "Sharp", Model: "LQ134", Width: 2880, Height: 1800, RefreshRate: 120, Scale: 2, DPMSStatus: true}
+	dp1 := hypr.Monitor{Name: "DP-1", Make: "Dell", Model: "U2723QE", Serial: "A", Width: 3840, Height: 2160, RefreshRate: 60, Scale: 1.5, DPMSStatus: true}
+	dp2 := hypr.Monitor{Name: "DP-2", Make: "Dell", Model: "U2723QE", Serial: "B", Width: 3840, Height: 2160, RefreshRate: 60, X: 2560, Scale: 1.5, DPMSStatus: true}
+	clamshell := []hypr.Monitor{edp, dp1, dp2}
+	clamshell[0].Disabled = true
+	three := []hypr.Monitor{edp, dp1, dp2}
+	three[0].X = 5120
+	return []Profile{
+		FromState("2 External", clamshell, nil),
+		FromState("3 Monitor", three, nil),
+		FromState("New 3 Mon", three, nil),
+	}, []hypr.Monitor{edp, dp1, dp2}
+}
+
+func TestClosedLidPrefersTheSavedClamshellProfile(t *testing.T) {
+	profiles, monitors := issue76Profiles()
+
+	best, score, ok := BestMatchWith(profiles, monitors, MatchOptions{LidClosed: true})
+	if !ok || best.Name != "2 External" || score != 300 {
+		t.Fatalf("lid closed should pick the clamshell profile, got %q score %d", best.Name, score)
+	}
+	panelOn := EvaluateMatchWith(profiles[1], monitors, MatchOptions{LidClosed: true})
+	if panelOn.Score != 250 || panelOn.LidClosedOn != 1 {
+		t.Fatalf("a profile turning the panel on should drop to 250, got %+v", panelOn)
+	}
+
+	// The breakdown still adds up to the score, so both UIs can show it.
+	for _, p := range profiles {
+		result := EvaluateMatchWith(p, monitors, MatchOptions{LidClosed: true})
+		sum := 0
+		for _, reason := range ExplainMatch(result) {
+			sum += reason.Points
+		}
+		if sum != result.Score {
+			t.Fatalf("%s: reasons add up to %d, score is %d", p.Name, sum, result.Score)
+		}
+	}
+
+	// With the lid open nothing changes: the panel-on profiles win.
+	if best, _, _ := BestMatch(profiles, monitors); best.Name == "2 External" {
+		t.Fatal("with the lid open, the clamshell profile must not win")
+	}
+}
+
+func TestClosedLidWithoutAnExternalLeavesScoringAlone(t *testing.T) {
+	laptop := hypr.Monitor{Name: "eDP-1", Make: "Sharp", Model: "LQ134", Width: 2880, Height: 1800, Scale: 2, DPMSStatus: true}
+	p := FromState("Laptop", []hypr.Monitor{laptop}, nil)
+	open := EvaluateMatch(p, []hypr.Monitor{laptop})
+	closed := EvaluateMatchWith(p, []hypr.Monitor{laptop}, MatchOptions{LidClosed: true})
+	if open.Score != closed.Score || closed.LidClosedOn != 0 {
+		t.Fatalf("with no external the panel is all there is: open %+v, closed %+v", open, closed)
+	}
+}

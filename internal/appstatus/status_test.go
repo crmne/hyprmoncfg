@@ -48,7 +48,7 @@ func TestHardwareSnapshotHashTracksIdentityAndConnectorBindings(t *testing.T) {
 
 func TestStatusAndEditorExposeMatchingHardwareIdentity(t *testing.T) {
 	monitors := []hypr.Monitor{{Name: "DP-1", Make: "Example", Model: "Panel", Serial: "unit-a", Width: 1920, Height: 1080, Scale: 1}}
-	status := Build("test", true, nil, monitors, nil)
+	status := Build("test", true, nil, monitors, nil, profile.MatchOptions{})
 	editor := BuildEditor(nil, monitors, nil)
 	if status.MonitorSetHash == "" || status.MonitorSetHash != editor.MonitorSetHash {
 		t.Fatalf("status/editor hardware hash mismatch: %q != %q", status.MonitorSetHash, editor.MonitorSetHash)
@@ -77,7 +77,7 @@ func TestBuildMarksActiveAndRecommendedProfile(t *testing.T) {
 	saved := profile.FromState("Laptop", []hypr.Monitor{monitor}, nil)
 	saved.UpdatedAt = time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
 
-	document := Build("1.11.0", true, []profile.Profile{saved}, []hypr.Monitor{monitor}, nil)
+	document := Build("1.11.0", true, []profile.Profile{saved}, []hypr.Monitor{monitor}, nil, profile.MatchOptions{})
 
 	if document.SchemaVersion != SchemaVersion {
 		t.Fatalf("schema version = %d, want %d", document.SchemaVersion, SchemaVersion)
@@ -124,7 +124,7 @@ func TestBuildMarksProfilesWithoutConnectedEnabledOutputs(t *testing.T) {
 	available := profile.New("Laptop", []profile.OutputConfig{{Key: connected.HardwareKey(), Enabled: true, Scale: 1}})
 	unavailable := profile.New("Projector", []profile.OutputConfig{{Key: projector.HardwareKey(), Enabled: true, Scale: 1}})
 
-	document := Build("dev", true, []profile.Profile{available, unavailable}, []hypr.Monitor{connected}, nil)
+	document := Build("dev", true, []profile.Profile{available, unavailable}, []hypr.Monitor{connected}, nil, profile.MatchOptions{})
 	if document.Profiles[0].ConnectedEnabledOutputs != 1 || document.Profiles[0].MatchScore != 100 {
 		t.Fatalf("available profile = %#v", document.Profiles[0])
 	}
@@ -150,7 +150,7 @@ func TestBuildRecommendsPartialBasesAndExplicitDisplayPolicies(t *testing.T) {
 			}
 			saved := profile.FromMonitors("Laptop", savedMonitors)
 			saved.DisableUnknownOutputs = policy == "strict"
-			document := Build("test", true, []profile.Profile{saved}, monitors, nil)
+			document := Build("test", true, []profile.Profile{saved}, monitors, nil, profile.MatchOptions{})
 			if document.Profiles[0].MatchScore <= 0 {
 				t.Fatal("fixture must remain a positive hardware match")
 			}
@@ -165,7 +165,7 @@ func TestBuildRecommendsPartialBasesAndExplicitDisplayPolicies(t *testing.T) {
 }
 
 func TestBuildUsesStableEmptyCollectionsAndNullMatches(t *testing.T) {
-	document := Build("dev", false, nil, nil, nil)
+	document := Build("dev", false, nil, nil, nil, profile.MatchOptions{})
 
 	data, err := json.Marshal(document)
 	if err != nil {

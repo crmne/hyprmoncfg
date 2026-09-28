@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
@@ -126,13 +127,14 @@ func (m Model) profileMatchSummaries() []profileMatchSummary {
 		activeName = active.Name
 	}
 	recommendedName := ""
-	if best, _, ok := profile.BestMatch(m.profiles, m.monitors); ok {
+	opts := profile.MatchOptions{LidClosed: m.lidState == lid.Closed}
+	if best, _, ok := profile.BestMatchWith(m.profiles, m.monitors, opts); ok {
 		recommendedName = best.Name
 	}
 
 	for idx, saved := range m.profiles {
 		summaries[idx] = profileMatchSummary{
-			result:      profile.EvaluateMatch(saved, m.monitors),
+			result:      profile.EvaluateMatchWith(saved, m.monitors, opts),
 			active:      saved.Name == activeName,
 			recommended: saved.Name == recommendedName,
 		}
@@ -352,6 +354,10 @@ func matchReasonLabel(kind profile.MatchReasonKind) string {
 		return "not connected, kept off"
 	case profile.MatchReasonConnectedUnknown:
 		return "connected, not in profile"
+	case profile.MatchReasonLidClosedKeptOff:
+		return "built-in, kept off with the lid closed"
+	case profile.MatchReasonLidClosedOn:
+		return "built-in, turned off by the closed lid"
 	default:
 		return ""
 	}

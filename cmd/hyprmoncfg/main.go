@@ -100,7 +100,11 @@ func newStatusCmd(configDir *string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				document = appstatus.Build(buildinfo.Version, false, profiles, monitors, rules)
+				var opts profile.MatchOptions
+				if state, err := lid.ReadState(ctx); err == nil {
+					opts.LidClosed = state == lid.Closed
+				}
+				document = appstatus.Build(buildinfo.Version, false, profiles, monitors, rules, opts)
 			}
 			if jsonOutput {
 				encoder := json.NewEncoder(cmd.OutOrStdout())

@@ -56,7 +56,7 @@ func main() {
 	writeJSON(dir, "monitors.json", monitors)
 	writeJSON(dir, "workspacerules.json", rules)
 	writeJSON(dir, "workspaces.json", []hypr.WorkspaceState{})
-	writeJSON(dir, "status.json", appstatus.Build("1.19.0", true, profiles, monitors, rules))
+	writeJSON(dir, "status.json", appstatus.Build("1.19.0", true, profiles, monitors, rules, profile.MatchOptions{}))
 	writeJSON(dir, "editor.json", appstatus.BuildEditor(profiles, monitors, rules))
 	must(os.Mkdir(filepath.Join(dir, "runtime"), 0700))
 }

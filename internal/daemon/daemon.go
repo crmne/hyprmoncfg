@@ -74,7 +74,10 @@ type Service struct {
 	lastMonitorSet string
 	lastLidState   lid.State
 	lidState       lid.State
-	lidSupported   bool
+	// lidClosed mirrors lidState for readers outside the event loop, such
+	// as status requests, which score profiles with the lid in mind.
+	lidClosed    atomic.Bool
+	lidSupported bool
 
 	readLid      func(context.Context) (lid.State, error)
 	watchLid     func(context.Context, time.Duration) (<-chan lid.State, <-chan error)
@@ -231,7 +234,7 @@ func (s *Service) Run(ctx context.Context) error {
 		s.cfg.Logf("lid events disabled: %v", err)
 	} else {
 		s.lidSupported = true
-		s.lidState = state
+		s.setLidState(state)
 		s.cfg.Logf("lid state: %s", state)
 		lidStates, lidErrs = s.watchLid(ctx, s.cfg.LidPollInterval)
 	}
@@ -502,7 +505,7 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			if state != s.lidState {
 				s.cfg.LaptopToggle.Reset()
-				s.lidState = state
+				s.setLidState(state)
 				s.clearManualOverride()
 				reason := "lid:" + string(state)
 				if state == lid.Open {
@@ -746,7 +749,7 @@ func (s *Service) refreshLidState(ctx context.Context) {
 		return
 	}
 	s.cfg.Logf("lid state: %s", state)
-	s.lidState = state
+	s.setLidState(state)
 	s.clearManualOverride()
 }
 
@@ -777,6 +780,15 @@ func (s *Service) wakeDisplays(ctx context.Context) {
 }
 
 var errWriterBusy = errors.New("display writer is busy")
+
+func (s *Service) setLidState(state lid.State) {
+	s.lidState = state
+	s.lidClosed.Store(state == lid.Closed)
+}
+
+func (s *Service) matchOptions() profile.MatchOptions {
+	return profile.MatchOptions{LidClosed: s.lidClosed.Load()}
+}
 
 // restoresPanelAfterWake lets an apply through the sleep guard in one case:
 // the displays were just asked to wake, the lid is not closed, and a built-in
@@ -872,13 +884,13 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		if err != nil {
 			return err
 		}
-		best, score, ok := profile.BestMatch(profiles, monitors)
+		best, score, ok := profile.BestMatchWith(profiles, monitors, s.matchOptions())
 		// Keep a recognized setup stable until its hardware or lid changes.
 		// A transient wake layout must not select a different saved profile.
 		if s.lastMonitorSet == monitorSet && s.lastLidState == s.lidState {
 			for _, saved := range profiles {
 				if saved.Name == s.lastProfile.Name && profile.EvaluateMatch(saved, monitors).ExactDisplayMatch() {
-					best, score, ok = saved, profile.MatchScore(saved, monitors), true
+					best, score, ok = saved, profile.EvaluateMatchWith(saved, monitors, s.matchOptions()).Score, true
 					break
 				}
 			}
@@ -892,7 +904,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 			// to a guess based only on hardware scores.
 			if active, matched := profile.ExactStateMatch(profiles, monitors, rules); matched &&
 				profile.EvaluateMatch(active, monitors).ExactDisplayMatch() {
-				best, score, ok = active, profile.MatchScore(active, monitors), true
+				best, score, ok = active, profile.EvaluateMatchWith(active, monitors, s.matchOptions()).Score, true
 			}
 		}
 		if !ok {
