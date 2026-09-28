@@ -168,6 +168,18 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) 
 			monitorBlocks = append(monitorBlocks, "monitor = "+hyprlangEscape(CommandForOutput(identifier, disabled, "")))
 		}
 	}
+	for _, output := range disconnectedOutputs(p, monitors, resolver) {
+		identifier := "desc:" + strings.TrimSpace(output.Description)
+		// An absent output has no connector to fall back to.
+		if hyprlangDescSelectorNeedsConnector(identifier) {
+			continue
+		}
+		if useV2 {
+			monitorBlocks = append(monitorBlocks, renderMonitorV2Block(hyprlangEscape(identifier), output, ""))
+		} else {
+			monitorBlocks = append(monitorBlocks, "monitor = "+hyprlangEscape(CommandForOutput(identifier, output, "")))
+		}
+	}
 
 	workspaceLines := make([]string, 0)
 	rules := profile.ResolveWorkspaceRules(p, monitors)
@@ -228,6 +240,14 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) (st
 			monitorBlocks = append(monitorBlocks, renderLuaMonitorCall(identifier, disabled, ""))
 		} else {
 			monitorBlocks = append(monitorBlocks, "hl.monitor("+luaQuote(CommandForOutput(identifier, disabled, ""))+")")
+		}
+	}
+	for _, output := range disconnectedOutputs(p, monitors, resolver) {
+		identifier := "desc:" + strings.TrimSpace(output.Description)
+		if useV2 {
+			monitorBlocks = append(monitorBlocks, renderLuaMonitorCall(identifier, output, ""))
+		} else {
+			monitorBlocks = append(monitorBlocks, "hl.monitor("+luaQuote(CommandForOutput(identifier, output, ""))+")")
 		}
 	}
 
@@ -506,6 +526,41 @@ func resolveProfileOutputs(p profile.Profile, resolver profile.MonitorResolver) 
 		matchedByKey[output.Key] = item
 	}
 	return matched, matchedByKey
+}
+
+// disconnectedOutputs returns the profile's enabled outputs that are not
+// connected right now, so the generated config keeps their rules. Without one,
+// a reconnected display first comes up in Hyprland's default mode and is then
+// switched to the saved mode by the next apply. That second modeset lands while
+// slow displays are still waking, which can knock them off the link again, over
+// and over. With the rule in place Hyprland sets the saved mode the first time.
+//
+// A rule for an absent display must name it by hardware description alone. A
+// connector name could match a different display plugged into that port, so
+// outputs without an unambiguous description are left out, as are mirrors,
+// built-in panels, and descriptions shared with a connected display.
+func disconnectedOutputs(p profile.Profile, monitors []hypr.Monitor, resolver profile.MonitorResolver) []profile.OutputConfig {
+	descriptions := make(map[string]int, len(p.Outputs)+len(monitors))
+	for _, output := range p.Outputs {
+		descriptions[strings.ToLower(strings.TrimSpace(output.Description))]++
+	}
+	for _, monitor := range monitors {
+		descriptions[strings.ToLower(strings.TrimSpace(monitor.Description))]++
+	}
+
+	var outputs []profile.OutputConfig
+	for _, output := range p.Outputs {
+		if _, connected := resolver.ResolveOutput(output); connected {
+			continue
+		}
+		desc := strings.ToLower(strings.TrimSpace(output.Description))
+		if !output.Enabled || output.MirrorOf != "" || desc == "" || descriptions[desc] != 1 ||
+			hypr.IsInternalConnector(output.Name) {
+			continue
+		}
+		outputs = append(outputs, output)
+	}
+	return outputs
 }
 
 func selectorForMonitor(resolver profile.MonitorResolver, monitor hypr.Monitor) string {

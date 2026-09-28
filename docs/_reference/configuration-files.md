@@ -128,6 +128,8 @@ hyprmoncfg adds the include itself, at the end of your root config, and moves it
 
 Saved profiles are authoritative for the connected monitor set. When a connected output is absent from the selected profile, the generated file writes an explicit disabled rule for it. This overrides an earlier wildcard such as Omarchy's preferred/automatic monitor default instead of letting that default leave an unwanted display enabled.
 
+The generated file also keeps the rule for an enabled display in the selected profile that is currently disconnected or powered off, addressed by its hardware description. When that display comes back, Hyprland sets its saved mode straight away instead of starting it in a default mode that the next apply then changes. Some displays take several seconds to wake, and a second mode change during that time can knock them off the link again, over and over. Displays that can only be addressed by connector name (duplicate models, a description another connected display shares, or one Hyprland's legacy syntax cannot express), mirrors, and built-in panels are left out, so a rule never lands on a different display plugged into the same port. Workspace rules still only target connected displays.
+
 The Lua include resolves its own path at load time:
 
 ```lua

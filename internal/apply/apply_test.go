@@ -366,6 +366,99 @@ func TestRenderLuaConfigDisablesConnectedMonitorMissingFromProfile(t *testing.T)
 	}
 }
 
+func disconnectedDeskProfile() (profile.Profile, []hypr.Monitor) {
+	laptop := hypr.Monitor{Name: "DP-1", Description: "LG Electronics 16MR70 311NZSJ039494", Make: "LG Electronics", Model: "16MR70", Serial: "311NZSJ039494"}
+	external := hypr.Monitor{Name: "DP-2", Description: "Microstep MPG321UR-QD", Make: "Microstep", Model: "MPG321UR-QD"}
+	p := profile.New("desk", []profile.OutputConfig{
+		{
+			Key: laptop.HardwareKey(), Name: laptop.Name, Description: laptop.Description, Enabled: true,
+			Width: 2560, Height: 1600, Refresh: 59.97, X: 6700, Y: 1458, Scale: 1.6,
+		},
+		{
+			Key: external.HardwareKey(), Name: external.Name, Description: external.Description, Enabled: true,
+			Width: 3840, Height: 2160, Refresh: 143.99, X: 3820, Y: 927, Scale: 1.33333, VRR: 1,
+		},
+	})
+	return p, []hypr.Monitor{laptop}
+}
+
+func TestRenderConfigKeepsSavedModeForDisconnectedOutput(t *testing.T) {
+	p, connected := disconnectedDeskProfile()
+
+	lua, err := RenderConfig(p, connected, RenderOptions{Format: config.HyprConfigLua, UseMonitorV2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`output = "desc:Microstep MPG321UR-QD",`, `mode = "3840x2160@143.99",`, `position = "3820x927",`} {
+		if !strings.Contains(lua, want) {
+			t.Fatalf("expected the disconnected display to keep its saved rule %q so it reconnects in one modeset:\n%s", want, lua)
+		}
+	}
+	if strings.Contains(lua, `monitor = "desc:Microstep MPG321UR-QD"`) {
+		t.Fatalf("workspaces must stay on connected displays:\n%s", lua)
+	}
+
+	legacy, err := RenderConfig(p, connected, RenderOptions{Format: config.HyprConfigLegacy, UseMonitorV2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"output = desc:Microstep MPG321UR-QD", "mode = 3840x2160@143.99"} {
+		if !strings.Contains(legacy, want) {
+			t.Fatalf("expected legacy config to keep %q:\n%s", want, legacy)
+		}
+	}
+
+	v1, err := RenderConfig(p, connected, RenderOptions{Format: config.HyprConfigLegacy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(v1, "monitor = desc:Microstep MPG321UR-QD,3840x2160@143.99,3820x927,") {
+		t.Fatalf("expected monitor v1 config to keep the disconnected display:\n%s", v1)
+	}
+}
+
+func TestRenderConfigOmitsDisconnectedOutputsWithoutSafeIdentity(t *testing.T) {
+	for name, edit := range map[string]func(*profile.OutputConfig, *[]hypr.Monitor){
+		"disabled": func(o *profile.OutputConfig, _ *[]hypr.Monitor) { o.Enabled = false },
+		"mirror":   func(o *profile.OutputConfig, _ *[]hypr.Monitor) { o.MirrorOf = "lg electronics|16mr70|311nzsj039494" },
+		"no desc":  func(o *profile.OutputConfig, _ *[]hypr.Monitor) { o.Description = "" },
+		"internal": func(o *profile.OutputConfig, _ *[]hypr.Monitor) { o.Name = "eDP-1" },
+		"unsafe":   func(o *profile.OutputConfig, _ *[]hypr.Monitor) { o.Description = "Microstep, MPG321UR-QD" },
+		"connected twin": func(o *profile.OutputConfig, monitors *[]hypr.Monitor) {
+			// Same description, different serial: this is not the saved display.
+			// Strict profiles keep the absent output through ExtendConnected.
+			*monitors = append(*monitors, hypr.Monitor{Name: "DP-3", Description: "Microstep MPG321UR-QD", Make: "Microstep", Model: "MPG321UR-QD", Serial: "OTHER"})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, connected := disconnectedDeskProfile()
+			p.DisableUnknownOutputs = name == "connected twin"
+			for i := range p.Outputs {
+				if p.Outputs[i].Name == "DP-2" {
+					edit(&p.Outputs[i], &connected)
+				}
+			}
+			if name == "unsafe" {
+				rendered, err := RenderConfig(p, connected, RenderOptions{Format: config.HyprConfigLegacy, UseMonitorV2: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(rendered, "Microstep") {
+					t.Fatalf("legacy config cannot name this display by description:\n%s", rendered)
+				}
+				return
+			}
+			rendered, err := RenderConfig(p, connected, RenderOptions{Format: config.HyprConfigLua, UseMonitorV2: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(rendered, "3840x2160@143.99") {
+				t.Fatalf("expected no rule for the disconnected display:\n%s", rendered)
+			}
+		})
+	}
+}
+
 func TestValidateAppliedProfileRejectsEnabledMonitorMissingFromProfile(t *testing.T) {
 	laptop := hypr.Monitor{Name: "eDP-1", Make: "Samsung", Model: "Panel", Serial: "A1", Width: 2880, Height: 1800, RefreshRate: 120, Scale: 1.5}
 	external := hypr.Monitor{Name: "DP-1", Make: "Microstep", Model: "MPG321UR-QD", Serial: "B2", Width: 3840, Height: 2160, RefreshRate: 144, Scale: 1}
