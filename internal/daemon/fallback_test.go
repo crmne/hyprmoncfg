@@ -40,121 +40,184 @@ func msiOutput(t *testing.T, p profile.Profile) profile.OutputConfig {
 	return profile.OutputConfig{}
 }
 
-// connectFor simulates the display connecting and dropping after lasted.
-func connectFor(f *displayFallbacks, at time.Time, lasted time.Duration) bool {
-	f.observeEvent(msiEvent(hypr.EventMonitorAdded), at)
-	return f.observeEvent(msiEvent(hypr.EventMonitorRemoved), at.Add(lasted))
-}
+// clock is a settable time for the tracker.
+type clock struct{ t time.Time }
 
-func TestFallbackIgnoresOrdinaryPowerCyclesAndOneBounce(t *testing.T) {
-	f := newDisplayFallbacks("", t.Logf)
-	start := time.Now()
-	// The MSI bounces once each power-on, and people turn displays off after
-	// using them for a while. Neither is a display failing to stay on.
-	if connectFor(f, start, 2*time.Second) {
-		t.Fatal("one bounce must not step the display down")
-	}
-	for i := 1; i <= 5; i++ {
-		if connectFor(f, start.Add(time.Duration(i)*30*time.Second), 20*time.Second) {
-			t.Fatal("connections that lasted must not count as drops")
-		}
-	}
-	// Hyprland's v1 events carry no description and must not double count.
-	f.observeEvent(hypr.Event{Type: hypr.EventMonitorAdded, Value: "DP-2"}, start)
-	if f.observeEvent(hypr.Event{Type: hypr.EventMonitorRemoved, Value: "DP-2"}, start.Add(time.Second)) {
-		t.Fatal("v1 events must be ignored")
-	}
-	// Short connections spread beyond the window do not add up either.
-	f = newDisplayFallbacks("", t.Logf)
-	for i := 0; i < 3; i++ {
-		if connectFor(f, start.Add(time.Duration(i)*2*fallbackDropWindow), time.Second) {
-			t.Fatal("drops minutes apart must not add up")
-		}
-	}
-}
-
-func TestFallbackStepsDownADisplayThatKeepsDroppingAndRemembersIt(t *testing.T) {
-	dir := t.TempDir()
+func (c *clock) now() time.Time          { return c.t }
+func (c *clock) advance(d time.Duration) { c.t = c.t.Add(d) }
+func trackerAt(dir string, t *testing.T) (*displayFallbacks, *clock) {
 	f := newDisplayFallbacks(dir, t.Logf)
-	p, lg, msi := fallbackDesk()
-
-	// Seen while connected, so its modes are known once it drops.
-	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.VRR != 1 {
-		t.Fatalf("a healthy display must keep its saved settings, got vrr=%d", got.VRR)
-	}
-	start := time.Now()
-	due := false
-	for i := 0; i < fallbackDropThreshold; i++ {
-		due = connectFor(f, start.Add(time.Duration(i)*5*time.Second), 1500*time.Millisecond)
-	}
-	if !due {
-		t.Fatal("repeated drops right after connecting should make the display due")
-	}
-
-	// The step is taken while the display is gone, so the generated config
-	// already holds the gentler rule when it reconnects.
-	stepped := msiOutput(t, f.apply(p, []hypr.Monitor{lg}))
-	if stepped.VRR != 0 || stepped.NormalizedMode() != msiOutput(t, p).NormalizedMode() {
-		t.Fatalf("first step should only turn VRR off, got vrr=%d mode=%s", stepped.VRR, stepped.NormalizedMode())
-	}
-	if _, err := os.Stat(filepath.Join(dir, fallbackStateFile)); err != nil {
-		t.Fatalf("step should be remembered across restarts: %v", err)
-	}
-	if steps := f.describe([]hypr.Monitor{lg, msi}); steps["DP-2"].Running != "without VRR" || steps["DP-2"].Reason != fallbackReasonDropping {
-		t.Fatalf("status should explain the step, got %+v", steps)
-	}
-
-	// A restarted daemon keeps the step once it has seen the display again.
-	restarted := newDisplayFallbacks(dir, t.Logf)
-	if got := msiOutput(t, restarted.apply(p, []hypr.Monitor{lg, msi})); got.VRR != 0 {
-		t.Fatalf("restart forgot the step: vrr=%d", got.VRR)
-	}
-
-	// Still dropping: the next step lowers the refresh rate at the same size.
-	for i := 0; i < fallbackDropThreshold; i++ {
-		connectFor(restarted, start.Add(time.Minute+time.Duration(i)*5*time.Second), time.Second)
-	}
-	if got := msiOutput(t, restarted.apply(p, []hypr.Monitor{lg})); got.NormalizedMode() != "3840x2160@119.88Hz" || got.X != 3820 || got.Scale != 1.33333 {
-		t.Fatalf("second step should drop to 120 Hz in place, got %s at %d scale %v", got.NormalizedMode(), got.X, got.Scale)
-	}
-
-	// Changing the saved settings means the step no longer applies.
-	edited := p
-	edited.Outputs = append([]profile.OutputConfig(nil), p.Outputs...)
-	for i := range edited.Outputs {
-		if edited.Outputs[i].Description == msi.Description {
-			edited.Outputs[i].Refresh = 119.88
-		}
-	}
-	if got := msiOutput(t, restarted.apply(edited, []hypr.Monitor{lg, msi})); got.VRR != 1 || got.Refresh != 119.88 {
-		t.Fatalf("an edited profile should be applied as saved, got vrr=%d refresh=%v", got.VRR, got.Refresh)
-	}
-	if _, err := os.Stat(filepath.Join(dir, fallbackStateFile)); !os.IsNotExist(err) {
-		t.Fatalf("no step left, so the state file should be gone: %v", err)
-	}
+	c := &clock{t: time.Date(2026, 9, 28, 4, 0, 0, 0, time.UTC)}
+	f.now = c.now
+	return f, c
 }
 
-func TestFallbackResetRestoresSavedSettings(t *testing.T) {
-	dir := t.TempDir()
-	f := newDisplayFallbacks(dir, t.Logf)
+func connect(f *displayFallbacks, c *clock) bool {
+	return f.observeEvent(msiEvent(hypr.EventMonitorAdded), c.now())
+}
+
+func drop(f *displayFallbacks, c *clock) bool {
+	return f.observeEvent(msiEvent(hypr.EventMonitorRemoved), c.now())
+}
+
+// bounce is what the MSI does at 144 Hz: connect, then drop a second later.
+func bounce(f *displayFallbacks, c *clock) bool {
+	connect(f, c)
+	c.advance(time.Second)
+	return drop(f, c)
+}
+
+func TestFallbackLeavesDisplaysThatStayOnAlone(t *testing.T) {
+	f, c := trackerAt("", t)
 	p, lg, msi := fallbackDesk()
 	f.apply(p, []hypr.Monitor{lg, msi})
-	for i := 0; i < fallbackDropThreshold; i++ {
-		connectFor(f, time.Now().Add(time.Duration(i)*5*time.Second), time.Second)
+	// Turning a display off after using it, or unplugging and replugging it
+	// by hand, is not a display failing to come up.
+	for _, lasted := range []time.Duration{20 * time.Second, 5 * time.Second} {
+		connect(f, c)
+		c.advance(lasted)
+		if drop(f, c) {
+			t.Fatalf("a %s connection must not mark the display", lasted)
+		}
 	}
+	// Hyprland's v1 events carry no description and are ignored.
+	f.observeEvent(hypr.Event{Type: hypr.EventMonitorAdded, Value: "DP-2"}, c.now())
+	if f.observeEvent(hypr.Event{Type: hypr.EventMonitorRemoved, Value: "DP-2"}, c.now().Add(time.Second)) {
+		t.Fatal("v1 events must be ignored")
+	}
+	connect(f, c)
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.VRR != 1 || got.Refresh != 143.99 {
+		t.Fatalf("a display that stays on keeps its saved settings in one step, got %s vrr=%d", got.NormalizedMode(), got.VRR)
+	}
+	if _, waiting := f.settleDelay(); waiting {
+		t.Fatal("nothing should wait to settle")
+	}
+}
+
+func TestFallbackWakesABouncingDisplayAt60HzThenSwitchesToItsSavedSettings(t *testing.T) {
+	dir := t.TempDir()
+	f, c := trackerAt(dir, t)
+	p, lg, msi := fallbackDesk()
+	f.apply(p, []hypr.Monitor{lg, msi})
+
+	// One bounce at the saved settings is enough.
+	if !bounce(f, c) {
+		t.Fatal("a drop right after connecting should call for a gentle-wake rule now")
+	}
+	if _, err := os.Stat(filepath.Join(dir, fallbackStateFile)); err != nil {
+		t.Fatalf("the gentle wake should be remembered across restarts: %v", err)
+	}
+	// Written while it is gone, so it reconnects at 60 Hz.
+	gone := msiOutput(t, f.apply(p, []hypr.Monitor{lg}))
+	if gone.NormalizedMode() != "3840x2160@60.00Hz" || gone.VRR != 0 || gone.X != 3820 || gone.Scale != 1.33333 {
+		t.Fatalf("disconnected rule should wake at 60 Hz in place, got %s vrr=%d at %d scale %v", gone.NormalizedMode(), gone.VRR, gone.X, gone.Scale)
+	}
+
+	c.advance(time.Second)
+	connect(f, c)
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.NormalizedMode() != "3840x2160@60.00Hz" {
+		t.Fatalf("just reconnected, it should stay at 60 Hz, got %s", got.NormalizedMode())
+	}
+	if wait, ok := f.settleDelay(); !ok || wait != fallbackSettle {
+		t.Fatalf("should wait %s to settle, got %s ok=%v", fallbackSettle, wait, ok)
+	}
+	// A drop while waking gently changes nothing.
+	c.advance(time.Second)
+	if drop(f, c) {
+		t.Fatal("a drop during the gentle wake must not step anything down")
+	}
+	connect(f, c)
+
+	c.advance(fallbackSettle)
+	if wait, ok := f.settleDelay(); !ok || wait != 0 {
+		t.Fatalf("should be due now, got %s ok=%v", wait, ok)
+	}
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.NormalizedMode() != "3840x2160@143.99Hz" || got.VRR != 1 {
+		t.Fatalf("settled, it should get its saved settings, got %s vrr=%d", got.NormalizedMode(), got.VRR)
+	}
+	if _, waiting := f.settleDelay(); waiting {
+		t.Fatal("nothing should wait once switched")
+	}
+	if steps := f.describe([]hypr.Monitor{lg, msi}); steps != nil && steps["DP-2"].Step != profile.FallbackNone {
+		t.Fatalf("a gentle wake that ends at the saved settings is not a fallback, got %+v", steps)
+	}
+
+	// Remembered: after a restart the next power-on wakes gently straight away.
+	restarted, rc := trackerAt(dir, t)
+	restarted.apply(p, []hypr.Monitor{lg, msi})
+	if got := msiOutput(t, restarted.apply(p, []hypr.Monitor{lg})); got.NormalizedMode() != "3840x2160@60.00Hz" {
+		t.Fatalf("restart forgot the gentle wake, got %s", got.NormalizedMode())
+	}
+	connect(restarted, rc)
+	if got := msiOutput(t, restarted.apply(p, []hypr.Monitor{lg, msi})); got.NormalizedMode() != "3840x2160@60.00Hz" {
+		t.Fatalf("after restart it should wake at 60 Hz, got %s", got.NormalizedMode())
+	}
+}
+
+func TestFallbackStepsDownWhenTheSwitchFromAGentleWakeDrops(t *testing.T) {
+	f, c := trackerAt(t.TempDir(), t)
+	p, lg, msi := fallbackDesk()
+	f.apply(p, []hypr.Monitor{lg, msi})
+	bounce(f, c)
 	f.apply(p, []hypr.Monitor{lg})
 
-	f.reset()
-	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.VRR != 1 {
-		t.Fatalf("applying by hand should try the saved settings again, got vrr=%d", got.VRR)
+	settleThenSwitch := func() profile.OutputConfig {
+		c.advance(time.Second)
+		connect(f, c)
+		f.apply(p, []hypr.Monitor{lg, msi})
+		c.advance(fallbackSettle)
+		return msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi}))
 	}
-	if _, err := os.Stat(filepath.Join(dir, fallbackStateFile)); !os.IsNotExist(err) {
-		t.Fatalf("reset should remove the remembered steps: %v", err)
+	if got := settleThenSwitch(); got.VRR != 1 {
+		t.Fatalf("first switch should try the saved settings, got vrr=%d", got.VRR)
+	}
+	// It drops right after the switch: step down, and still wake gently.
+	c.advance(2 * time.Second)
+	if !drop(f, c) {
+		t.Fatal("a drop right after the switch should call for a gentler setting")
+	}
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg})); got.NormalizedMode() != "3840x2160@60.00Hz" {
+		t.Fatalf("still wakes at 60 Hz, got %s", got.NormalizedMode())
+	}
+	if got := settleThenSwitch(); got.NormalizedMode() != "3840x2160@143.99Hz" || got.VRR != 0 {
+		t.Fatalf("second switch should drop VRR only, got %s vrr=%d", got.NormalizedMode(), got.VRR)
+	}
+	if steps := f.describe([]hypr.Monitor{lg, msi}); steps["DP-2"].Running != "without VRR" {
+		t.Fatalf("status should explain the step, got %+v", steps)
+	}
+	c.advance(time.Second)
+	drop(f, c)
+	f.apply(p, []hypr.Monitor{lg})
+	if got := settleThenSwitch(); got.NormalizedMode() != "3840x2160@119.88Hz" {
+		t.Fatalf("third switch should go to 120 Hz, got %s", got.NormalizedMode())
+	}
+
+	// Applying a layout by hand clears the steps but keeps the gentle wake.
+	f.reset()
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg})); got.NormalizedMode() != "3840x2160@60.00Hz" {
+		t.Fatalf("reset must keep the gentle wake, got %s", got.NormalizedMode())
+	}
+	if got := settleThenSwitch(); got.NormalizedMode() != "3840x2160@143.99Hz" || got.VRR != 1 {
+		t.Fatalf("after reset the switch should try the saved settings, got %s vrr=%d", got.NormalizedMode(), got.VRR)
+	}
+}
+
+func TestFallbackKeepsADisplayThatWasOnAtStartupAtItsSavedSettings(t *testing.T) {
+	dir := t.TempDir()
+	f, c := trackerAt(dir, t)
+	p, lg, msi := fallbackDesk()
+	f.apply(p, []hypr.Monitor{lg, msi})
+	bounce(f, c)
+
+	// A restart with the display already on must not drop it to 60 Hz.
+	restarted, _ := trackerAt(dir, t)
+	if got := msiOutput(t, restarted.apply(p, []hypr.Monitor{lg, msi})); got.NormalizedMode() != "3840x2160@143.99Hz" || got.VRR != 1 {
+		t.Fatalf("a display already on should keep its saved settings, got %s vrr=%d", got.NormalizedMode(), got.VRR)
 	}
 }
 
 func TestFallbackStepsDownADisplayThatWakesWithoutAMode(t *testing.T) {
-	f := newDisplayFallbacks("", t.Logf)
+	f, _ := trackerAt("", t)
 	p, lg, msi := fallbackDesk()
 	f.apply(p, []hypr.Monitor{lg, msi})
 
@@ -170,7 +233,7 @@ func TestFallbackStepsDownADisplayThatWakesWithoutAMode(t *testing.T) {
 	}
 
 	// A verified apply in between starts the count over.
-	f = newDisplayFallbacks("", t.Logf)
+	f, _ = trackerAt("", t)
 	f.apply(p, []hypr.Monitor{lg, msi})
 	f.observeFailedApply(p, []hypr.Monitor{lg, modeless})
 	f.observeApplied()
@@ -182,7 +245,7 @@ func TestFallbackStepsDownADisplayThatWakesWithoutAMode(t *testing.T) {
 	// A display asleep by choice is not failing.
 	asleep := modeless
 	asleep.DPMSStatus = false
-	f = newDisplayFallbacks("", t.Logf)
+	f, _ = trackerAt("", t)
 	f.apply(p, []hypr.Monitor{lg, msi})
 	f.observeFailedApply(p, []hypr.Monitor{lg, asleep})
 	f.observeFailedApply(p, []hypr.Monitor{lg, asleep})
@@ -192,20 +255,18 @@ func TestFallbackStepsDownADisplayThatWakesWithoutAMode(t *testing.T) {
 }
 
 func TestFallbackLeavesIdenticalDisplaysAlone(t *testing.T) {
-	f := newDisplayFallbacks("", t.Logf)
+	f, c := trackerAt("", t)
 	p, _, msi := fallbackDesk()
 	twin := msi
 	twin.Name = "DP-3"
 	f.apply(p, []hypr.Monitor{msi, twin})
-	for i := 0; i < fallbackDropThreshold; i++ {
-		connectFor(f, time.Now().Add(time.Duration(i)*5*time.Second), time.Second)
-	}
-	if got := msiOutput(t, f.apply(p, []hypr.Monitor{msi, twin})); got.VRR != 1 {
-		t.Fatal("two displays with one description cannot be told apart and must not be stepped")
+	bounce(f, c)
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{twin})); got.NormalizedMode() != "3840x2160@143.99Hz" || got.VRR != 1 {
+		t.Fatal("two displays with one description cannot be told apart and must not be changed")
 	}
 }
 
-func TestApplyBestWritesTheSteppedRuleWhileTheDisplayIsDisconnected(t *testing.T) {
+func TestApplyBestWritesTheGentleWakeRuleWhileTheDisplayIsDisconnected(t *testing.T) {
 	// Only the LG is connected: the MSI just dropped off again.
 	lgOnly := `[{"id":1,"name":"DP-1","description":"LG Electronics 16MR70 311NZSJ039494","make":"LG Electronics","model":"16MR70","serial":"311NZSJ039494","width":2560,"height":1600,"refreshRate":59.97,"x":6700,"y":1458,"scale":1.6,"transform":0,"dpmsStatus":true,"disabled":false,"mirrorOf":"","availableModes":["2560x1600@59.97Hz"]}]`
 	env := newApplyBestTestEnvWithMonitors(t, lgOnly, lgOnly)
@@ -215,9 +276,7 @@ func TestApplyBestWritesTheSteppedRuleWhileTheDisplayIsDisconnected(t *testing.T
 	}
 	svc := New(env.client, env.store, Config{MonitorsConf: env.monitorsConfPath, HyprConfig: env.hyprlandConfigPath})
 	svc.fallbacks.apply(p, []hypr.Monitor{lg, msi})
-	for i := 0; i < fallbackDropThreshold; i++ {
-		connectFor(svc.fallbacks, time.Now().Add(time.Duration(i)*5*time.Second), time.Second)
-	}
+	bounce(svc.fallbacks, &clock{t: time.Now()})
 
 	if err := svc.applyBest(context.Background()); err != nil {
 		t.Fatalf("applyBest: %v", err)
@@ -228,9 +287,9 @@ func TestApplyBestWritesTheSteppedRuleWhileTheDisplayIsDisconnected(t *testing.T
 	}
 	block := rendered[strings.Index(rendered, "output = desc:Microstep MPG321UR-QD"):]
 	block = block[:strings.Index(block, "}")]
-	for _, want := range []string{"mode = 3840x2160@143.99", "vrr = 0"} {
+	for _, want := range []string{"mode = 3840x2160@60.00", "vrr = 0"} {
 		if !strings.Contains(block, want) {
-			t.Fatalf("the disconnected MSI should reconnect with VRR off; missing %q in:\n%s", want, rendered)
+			t.Fatalf("the disconnected MSI should reconnect at 60 Hz; missing %q in:\n%s", want, rendered)
 		}
 	}
 }
@@ -244,10 +303,16 @@ func TestStatusReportsASteppedDownDisplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := New(env.client, env.store, Config{MonitorsConf: env.monitorsConfPath, HyprConfig: env.hyprlandConfigPath})
+	c := &clock{t: time.Now()}
+	svc.fallbacks.now = c.now
 	svc.fallbacks.apply(p, []hypr.Monitor{lg, msi})
-	for i := 0; i < fallbackDropThreshold; i++ {
-		connectFor(svc.fallbacks, time.Now().Add(time.Duration(i)*5*time.Second), time.Second)
-	}
+	// A gentle wake, a switch to the saved settings, and a drop right after.
+	bounce(svc.fallbacks, c)
+	connect(svc.fallbacks, c)
+	c.advance(fallbackSettle)
+	svc.fallbacks.apply(p, []hypr.Monitor{lg, msi})
+	c.advance(time.Second)
+	drop(svc.fallbacks, c)
 	svc.fallbacks.apply(p, []hypr.Monitor{lg})
 
 	document, err := svc.Status()

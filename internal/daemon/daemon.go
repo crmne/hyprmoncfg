@@ -323,6 +323,21 @@ func (s *Service) Run(ctx context.Context) error {
 		recoveryDelay = min(s.cfg.RecoveryMaxInterval, recoveryDelay*2)
 	}
 
+	// A gently woken display gets its saved settings once it has stayed
+	// connected long enough; this wakes the loop for that apply.
+	settleTimer := time.NewTimer(time.Hour)
+	settleTimer.Stop()
+	defer settleTimer.Stop()
+	var settleCh <-chan time.Time
+	armSettle := func() {
+		settleTimer.Stop()
+		settleCh = nil
+		if wait, ok := s.fallbacks.settleDelay(); ok {
+			settleTimer.Reset(wait + 50*time.Millisecond)
+			settleCh = settleTimer.C
+		}
+	}
+
 	debounceTimer := time.NewTimer(s.cfg.Debounce)
 	if !debounceTimer.Stop() {
 		<-debounceTimer.C
@@ -378,6 +393,12 @@ func (s *Service) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-settleCh:
+			settleCh = nil
+			if systemSuspended {
+				continue
+			}
+			pushTrigger("display-settled", 0)
 		case <-recoveryCh:
 			recoveryCh = nil
 			if !config.IsManaged(s.cfg.ConfigDir) || displayGuard.sleeping || systemSuspended {
@@ -426,6 +447,7 @@ func (s *Service) Run(ctx context.Context) error {
 			if s.fallbacks.observeEvent(ev, time.Now()) {
 				reason = fallbackTriggerPrefix + reason
 			}
+			armSettle()
 			probeGeneration++
 			// A consumed hotplug invalidates any earlier debounce or busy retry.
 			// Other trigger sources must also wait for this generation's probe.
@@ -645,6 +667,7 @@ func (s *Service) Run(ctx context.Context) error {
 			pending = false
 			settlingAfterWake = false
 			endWakeRequest()
+			armSettle()
 			if err != nil {
 				s.cfg.Logf("apply failed: %v", err)
 				scheduleRecovery()

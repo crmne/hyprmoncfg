@@ -85,74 +85,47 @@ to answer right after resume.
 
 ### Displays that won't stay on
 
-Some displays can't hold the settings a profile saved for them. One kind drops off
-the link a second or two after every connect, over and over. Another comes back
-from sleep enabled but without a mode. Retrying the same settings forever
-doesn't help either one, so the daemon steps that display down one setting at a
-time:
+Some displays can't wake straight into a demanding mode such as 4K at 144 Hz. They
+drop off the link a second or two after connecting. When they come back, they
+show "No signal" and go back to sleep. Woken at about 60 Hz and switched to the
+saved mode once awake, they work.
+
+So when a display drops within 4 seconds of connecting at its saved settings,
+the daemon remembers that it needs a gentle wake:
+
+1. While the display is disconnected, its rule in the generated config wakes it
+   at the refresh rate closest to 60 Hz, at the same resolution, with VRR off.
+2. Once it has stayed connected for 10 seconds, the daemon switches it to its
+   saved settings.
+
+Displays that come up cleanly never drop, so they keep coming up in one step.
+
+If that switch makes the display drop again within 8 seconds, the daemon steps
+its settings down one at a time, and keeps the first that sticks:
 
 1. VRR off.
 2. The next lower refresh rate at the same resolution, for example 144 Hz to 120 Hz.
-3. The refresh rate closest to 60 Hz at the same resolution.
+3. The refresh rate closest to 60 Hz.
+
+The same steps apply to a display that comes back from sleep enabled but
+without a mode twice in a row.
 
 Resolution, scale and position never change, so other displays and windows stay
-where they are. The daemon keeps the first step that sticks.
+where they are. The saved profile never changes either. `hyprmoncfg status`
+names each stepped-down display and how it runs now, and the daemon log says
+why. The gentle wake and the steps are remembered per display in
+`~/.config/hyprmoncfg/display-fallbacks.json`, so a restart doesn't repeat the
+struggle.
 
-What counts as a failure:
-- **Dropping:** three connections of under 8 seconds within 3 minutes. A single
-  bounce while a display powers up doesn't count, and neither does turning a
-  display off after using it.
-- **No mode:** two applies in a row that leave the display awake but without a
-  mode.
-
-A step is taken while the display is disconnected, so it reconnects straight
-into the gentler setting instead of switching modes again while it's still
-waking up.
-
-The saved profile never changes. `hyprmoncfg status` names each stepped-down
-display and how it runs now, and the daemon log says why. Steps are remembered
-per display in `~/.config/hyprmoncfg/display-fallbacks.json`, so a restart
-doesn't repeat the struggle.
-
-To try the saved settings again, apply a profile: confirming any layout clears
-every step. Editing the saved mode or VRR of a display also clears its step.
+Confirming any layout clears the steps, so the next switch tries the saved
+settings again. It keeps the gentle wake, because that still ends at the saved
+settings. Editing the saved mode or VRR of a display also clears its steps. To
+forget a gentle wake, delete the file and restart the daemon.
 
 Displays with the same description can't be told apart here, so they are never
-stepped down. The daemon also can't see a display that stays connected but
-shows nothing, because Hyprland and the kernel report that the same as a
-working one.
-
-### Optional laptop power-aware refresh
-
-Start the daemon with `--power-aware-refresh` to adapt enabled independent
-internal panels on AC/battery changes, detected at the normal polling interval.
-It preserves resolution, scale, placement and calibration. On AC it chooses the
-highest advertised refresh at that resolution; on battery it chooses the highest
-advertised rate at or below 60Hz, or the lowest advertised rate if none qualifies.
-Missing modes or unknown power telemetry leave the saved mode unchanged.
-External displays, saved profile files and OS power profiles are not changed.
-Manual profile overrides and interactive previews take precedence. The option
-is off by default; frontend preference controls are not implemented yet.
-
-When every enabled display is DPMS-off, the daemon treats monitor add/remove events as part of display sleep rather than physical hotplug. It keeps the current profile in place, waits for the displays to wake, and then waits for two seconds without another monitor event before matching once. A real dock or undock that happened while the machine slept is still applied after the monitor set stabilizes.
-
-Suspend gets the same respect. The daemon listens for logind's sleep signal, and a lid close that suspends the machine is treated as suspend, not clamshell: the pending switch is discarded instead of being carried across the nap, because by the time it would run, the lid is open again and acting on the stale close would turn the panel off in your face. On resume the daemon re-reads the physical lid switch, tells Hyprland to wake every display -- so both screens light up from the lid opening, not from your first keypress -- and re-matches once the monitor set settles. Opening the lid wakes the displays the same way. As a last line of defense, every apply re-reads the lid switch first, so a stale cached lid state can never decide what happens to your panel.
-
-The daemon uses the **same apply engine** as the TUI. There is no separate "best effort" code path. If the TUI can apply a profile correctly, so can the daemon.
-
-When the daemon is running, it is also the canonical writer. The TUI, CLI, and integrations connect to `$XDG_RUNTIME_DIR/hyprmoncfgd.sock` and ask the daemon to preview, confirm, revert, save, or delete through the same versioned IPC protocol. If the daemon is not running, the TUI and CLI acquire the writer lock and use the core engine directly.
-
-Interactive profile changes are deliberate overrides. After you confirm one, the daemon keeps it in place until the monitor set or lid state changes. Automatic matching then resumes.
-
-### Slow or unfamiliar docks
-
-Connecting a dock can temporarily stall compositor reads. Each monitor or workspace-rule query uses a 750 ms deadline by default. The daemon's apply engine uses the same per-read limit for version, workspace, Lua verification, and post-reload monitor reads. Hyprland can stall reads while a reload removes or adds a display, so after a reload a slow Lua verification or monitor read is asked again until the three-second validation window closes; only a definite failure or an unanswered window rolls back. A timed-out apply read returns a retryable error; if config was already written, the engine first attempts rollback with its separate recovery context. Topology checks run in a coalesced worker so the event loop can still consume new hotplug and suspend events while that read is pending. Each consumed hotplug cancels older pending debounce/retry timers; reconciliation waits for the newest probe and a fresh debounce, including when another trigger arrives during that probe. Results and queued triggers from an older topology, before suspend, or before an explicit lid-open wake are discarded. A hotplug awaiting a probe when the lid opens is checked again after waking, so an older DPMS-off snapshot cannot cancel wake reconciliation. Transient query failures retry without requiring another monitor event, and reconciliation defers while an interactive writer owns the display lock.
-
-Automatic reconciliation still runs serially, including its bounded reads and profile apply/rollback; event consumption can wait for that reconciliation to finish. The read deadlines are not an overall apply timeout: reloads, display writes, rollback, and post-apply commands retain their existing lifecycle. The terminal editor retains its separate asynchronous refresh with an eight-second overall context; the Omarchy panel uses the bounded daemon IPC queries.
-
-DRM connector paths are needed only to distinguish displays with the same hardware identity. Distinct identities, including different serial numbers of the same model, skip DRM entirely. Ambiguous sets share one process-wide probe: a stuck driver may occupy that worker until it returns, but subsequent callers wait only until their own deadlines. No canceled result or incomplete identity snapshot is returned as fresh state.
-
-An unfamiliar display can extend a partially matching profile; if no profile matches, the daemon builds a temporary layout from the connected displays. Query deadlines bound waiting for compositor responses; they do not speed up physical dock enumeration. Applying and reverting layouts still use the serialized apply engine.
+changed. The daemon also can't see a display that stays connected but shows
+nothing, because Hyprland and the kernel report that the same as a working one.
+The gentle wake exists because the drop before that silence is visible.
 
 ## Profile matching
 

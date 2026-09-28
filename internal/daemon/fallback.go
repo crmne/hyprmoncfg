@@ -15,23 +15,37 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
-// Some displays will not stay on in the settings a profile saved for them.
-// They drop off the link moments after every connect, or they come back from
-// a wake without a mode. Rather than retry the same thing forever, the daemon
-// steps such a display down one setting at a time (VRR off, then a lower
-// refresh rate, then about 60 Hz) and keeps the first one that sticks. The
-// saved profile never changes: the step is live state, remembered per display
-// so a restart does not start the struggle over, and it is dropped as soon as
-// someone applies a layout by hand or the saved settings change.
+// Some displays will not come up in the settings a profile saved for them.
+// Some cannot wake straight into a demanding mode such as 4K at 144 Hz: they
+// drop off the link a second after connecting, and when they come back they
+// sit on "No signal" and go back to sleep. Woken at about 60 Hz and switched
+// to the saved mode once awake, they work. So a display that drops right after
+// connecting at its saved settings is remembered as needing a gentle wake:
+// from then on its rule wakes it at about 60 Hz, and the daemon switches it to
+// the saved settings once it has stayed connected for a few seconds.
+//
+// If that switch makes it drop again, or it keeps coming back from a wake
+// without a mode, the daemon steps its settings down one at a time (VRR off,
+// then a lower refresh rate, then about 60 Hz) and keeps the first that
+// sticks. The saved profile never changes. Both are live state, remembered per
+// display so a restart does not start the struggle over. Applying a layout by
+// hand drops the steps; the gentle wake stays, because it still ends at the
+// saved settings.
 //
 // What this cannot see is a display that stays connected but shows nothing.
 // Nothing Hyprland or the kernel reports tells that apart from a working one.
 const (
-	// A normal display connects once. Some bounce a single time while
-	// powering up, so one short connection is not a failure.
+	// A connection this short that ends on its own is a drop, not someone
+	// turning the display off after using it.
 	fallbackShortConnection = 8 * time.Second
-	fallbackDropWindow      = 3 * time.Minute
-	fallbackDropThreshold   = 3
+	// The bounce that marks a display for a gentle wake comes a second or two
+	// after connecting. Unplugging and replugging by hand takes longer, and
+	// must not slow down every future wake of a display that works.
+	fallbackBounce = 4 * time.Second
+	// How long a gently woken display stays connected before it gets its
+	// saved settings. Switching a second after connecting knocked the
+	// display that needed this off again; ten seconds held.
+	fallbackSettle = 10 * time.Second
 	// Applies that left the display enabled but without a mode.
 	fallbackNoModeThreshold = 2
 	fallbackStateFile       = "display-fallbacks.json"
@@ -52,17 +66,22 @@ type displayFallback struct {
 	// setting means the profile changed and the step no longer applies.
 	Saved string `json:"saved"`
 	// Running says how the display runs now, in words.
-	Running string    `json:"running"`
+	Running string    `json:"running,omitempty"`
 	Since   time.Time `json:"since"`
+	// GentleWake wakes the display at about 60 Hz before its settings.
+	GentleWake bool `json:"gentle_wake,omitempty"`
 }
 
 type displayFallbacks struct {
 	path string
 	logf func(string, ...any)
 
+	now    func() time.Time
+	settle time.Duration
+
 	mu          sync.Mutex
 	connectedAt map[string]time.Time
-	drops       map[string][]time.Time
+	switchedAt  map[string]time.Time
 	noMode      map[string]int
 	due         map[string]string
 	lastSeen    map[string]hypr.Monitor
@@ -72,8 +91,10 @@ type displayFallbacks struct {
 func newDisplayFallbacks(configDir string, logf func(string, ...any)) *displayFallbacks {
 	f := &displayFallbacks{
 		logf:        logf,
+		now:         time.Now,
+		settle:      fallbackSettle,
 		connectedAt: map[string]time.Time{},
-		drops:       map[string][]time.Time{},
+		switchedAt:  map[string]time.Time{},
 		noMode:      map[string]int{},
 		due:         map[string]string{},
 		lastSeen:    map[string]hypr.Monitor{},
@@ -97,9 +118,11 @@ func fallbackKey(description string) string {
 	return strings.ToLower(strings.TrimSpace(description))
 }
 
-// observeEvent counts a display dropping off shortly after it connected. It
-// returns true when that makes the display due for a gentler setting. Only
-// Hyprland's v2 events name the display, so the v1 duplicate is ignored.
+// observeEvent watches displays drop right after connecting. It returns true
+// when that calls for a new rule while the display is gone: a first drop at
+// the saved settings asks for a gentle wake from now on, and a drop right after
+// the switch from a gentle wake asks for a gentler setting. Only Hyprland's v2
+// events name the display, so the v1 duplicate is ignored.
 func (f *displayFallbacks) observeEvent(ev hypr.Event, now time.Time) bool {
 	parts := strings.SplitN(ev.Value, ",", 3)
 	if len(parts) != 3 {
@@ -115,26 +138,57 @@ func (f *displayFallbacks) observeEvent(ev hypr.Event, now time.Time) bool {
 	switch ev.Type {
 	case hypr.EventMonitorAdded:
 		f.connectedAt[key] = now
+		delete(f.switchedAt, key)
 	case hypr.EventMonitorRemoved:
-		connected, ok := f.connectedAt[key]
+		connected, wasConnected := f.connectedAt[key]
+		switched, wasSwitched := f.switchedAt[key]
 		delete(f.connectedAt, key)
-		if !ok || now.Sub(connected) > fallbackShortConnection {
-			return false
-		}
-		recent := f.drops[key][:0]
-		for _, drop := range f.drops[key] {
-			if now.Sub(drop) <= fallbackDropWindow {
-				recent = append(recent, drop)
+		delete(f.switchedAt, key)
+		entry := f.active[key]
+		switch {
+		case !entry.GentleWake:
+			if !wasConnected || now.Sub(connected) > fallbackBounce {
+				return false
 			}
-		}
-		f.drops[key] = append(recent, now)
-		if len(f.drops[key]) >= fallbackDropThreshold {
-			delete(f.drops, key)
+			entry.GentleWake = true
+			if entry.Since.IsZero() {
+				entry.Since = now
+			}
+			f.active[key] = entry
+			f.save()
+			f.logf("%s dropped right after connecting at its saved settings; it will wake at about 60 Hz first from now on", parts[1]+" ("+parts[2]+")")
+			return true
+		case wasSwitched && now.Sub(switched) <= fallbackShortConnection:
 			f.due[key] = fallbackReasonDropping
 			return true
 		}
+		// A drop while still waking gently changes nothing: the rule for
+		// the next connect is the gentle one already.
 	}
 	return false
+}
+
+// settleDelay is how long until a gently woken display is due its saved
+// settings, and false when none is waiting.
+func (f *displayFallbacks) settleDelay() (time.Duration, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	now := f.now()
+	var wait time.Duration
+	waiting := false
+	for key, connected := range f.connectedAt {
+		if !f.active[key].GentleWake {
+			continue
+		}
+		if _, done := f.switchedAt[key]; done {
+			continue
+		}
+		remaining := max(0, connected.Add(f.settle).Sub(now))
+		if !waiting || remaining < wait {
+			wait, waiting = remaining, true
+		}
+	}
+	return wait, waiting
 }
 
 // observeFailedApply counts enabled, awake displays left without a mode by an
@@ -169,19 +223,29 @@ func (f *displayFallbacks) observeApplied() {
 }
 
 // reset drops every step, for when someone applies a layout by hand: that is
-// a request for exactly those settings.
+// a request for exactly those settings. A gentle wake stays, because it still
+// ends at the saved settings.
 func (f *displayFallbacks) reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	clear(f.drops)
 	clear(f.noMode)
 	clear(f.due)
-	if len(f.active) == 0 {
-		return
+	changed := false
+	for key, entry := range f.active {
+		if entry.Step == profile.FallbackNone {
+			continue
+		}
+		changed = true
+		if entry.GentleWake {
+			f.active[key] = displayFallback{GentleWake: true, Since: entry.Since}
+		} else {
+			delete(f.active, key)
+		}
 	}
-	clear(f.active)
-	f.save()
-	f.logf("display fallbacks cleared; using saved settings again")
+	if changed {
+		f.save()
+		f.logf("display fallbacks cleared; using saved settings again")
+	}
 }
 
 // apply takes any step that has become due and returns the profile with every
@@ -220,9 +284,15 @@ func (f *displayFallbacks) apply(p profile.Profile, monitors []hypr.Monitor) pro
 		}
 		monitor, known := f.lastSeen[key]
 		settings := output.NormalizedMode() + " vrr " + strconv.Itoa(output.VRR)
-		current, stepped := f.active[key]
+		current := f.active[key]
+		stepped := current.Step != profile.FallbackNone
 		if stepped && current.Saved != settings {
-			delete(f.active, key)
+			current = displayFallback{GentleWake: current.GentleWake, Since: current.Since}
+			if current.GentleWake {
+				f.active[key] = current
+			} else {
+				delete(f.active, key)
+			}
 			stepped, changed = false, true
 		}
 		if reason, due := f.due[key]; due && known {
@@ -233,7 +303,7 @@ func (f *displayFallbacks) apply(p profile.Profile, monitors []hypr.Monitor) pro
 			}
 			if next, ok := profile.NextFallback(output, monitor, from); ok {
 				current = displayFallback{Step: next, Reason: reason, Saved: settings,
-					Running: profile.DescribeFallback(output, monitor, next), Since: time.Now()}
+					Running: profile.DescribeFallback(output, monitor, next), Since: f.now(), GentleWake: current.GentleWake}
 				f.active[key] = current
 				stepped, changed = true, true
 				f.logf("%s %s at its saved settings; running it %s (the saved profile is unchanged)",
@@ -242,9 +312,26 @@ func (f *displayFallbacks) apply(p profile.Profile, monitors []hypr.Monitor) pro
 				f.logf("%s %s, and it is already at its gentlest settings", displayLabel(monitor), fallbackReasonText(reason))
 			}
 		}
-		if stepped && known {
-			p.Outputs[i] = profile.OutputWithFallback(output, monitor, current.Step)
+		if !known {
+			continue
 		}
+		applied := output
+		if stepped {
+			applied = profile.OutputWithFallback(output, monitor, current.Step)
+		}
+		if current.GentleWake {
+			_, connected := resolver.ResolveOutput(output)
+			connectedAt, recent := f.connectedAt[key]
+			// Connected with no connect seen means it was already on when
+			// the daemon started, so it is awake.
+			settled := connected && (!recent || f.now().Sub(connectedAt) >= f.settle)
+			if !settled {
+				applied = profile.OutputWithFallback(output, monitor, profile.FallbackSafeRefresh)
+			} else if _, done := f.switchedAt[key]; !done && recent {
+				f.switchedAt[key] = f.now()
+			}
+		}
+		p.Outputs[i] = applied
 	}
 	if changed {
 		f.save()
@@ -253,6 +340,7 @@ func (f *displayFallbacks) apply(p profile.Profile, monitors []hypr.Monitor) pro
 }
 
 // describe returns the remembered step of each connected display, by connector.
+// A gentle wake alone is not reported: the display still runs as saved.
 func (f *displayFallbacks) describe(monitors []hypr.Monitor) map[string]displayFallback {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -261,7 +349,7 @@ func (f *displayFallbacks) describe(monitors []hypr.Monitor) map[string]displayF
 	}
 	steps := map[string]displayFallback{}
 	for _, monitor := range monitors {
-		if step, ok := f.active[fallbackKey(monitor.Description)]; ok {
+		if step, ok := f.active[fallbackKey(monitor.Description)]; ok && step.Step != profile.FallbackNone {
 			steps[monitor.Name] = step
 		}
 	}
