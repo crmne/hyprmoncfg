@@ -196,3 +196,90 @@ func removeInternalMonitorOrderRefs(order []string, internalKeys map[string]bool
 	}
 	return out
 }
+
+// KeepBuiltInPanelOn is the other half of the closed-lid rule: the built-in
+// panel may stay off only while an external display actually shows a picture.
+// When every external the profile keeps on is modeless, asleep or missing, and
+// a connected built-in panel would be off, it returns p with that panel on, to
+// the right of the other enabled displays so nothing overlaps. Some drivers
+// only bring a modeless external back once another output is lit; without
+// this, a clamshell or external-only profile can leave the machine dark until
+// the lid is opened. The returned names are the panels it turned on.
+func KeepBuiltInPanelOn(p Profile, monitors []hypr.Monitor) (Profile, []string) {
+	if hasUsableExternalOutput(p, monitors) {
+		return p, nil
+	}
+	adjusted := cloneProfile(p)
+	adjusted.Normalize()
+	resolver := NewMonitorResolver(monitors)
+	matchCounts := hypr.MonitorMatchCounts(monitors)
+
+	right, top := 0, 0
+	for _, output := range adjusted.Outputs {
+		if !output.Enabled || output.MirrorOf != "" {
+			continue
+		}
+		m := hypr.Monitor{Width: output.Width, Height: output.Height, Scale: output.Scale, Transform: output.Transform}
+		w, _ := m.LogicalSize()
+		if output.X+w > right {
+			right, top = output.X+w, output.Y
+		}
+	}
+
+	var turnedOn []string
+	for _, monitor := range monitors {
+		if !monitor.IsInternal() {
+			continue
+		}
+		idx := -1
+		for i := range adjusted.Outputs {
+			if found, ok := resolver.ResolveOutput(adjusted.Outputs[i]); ok && found.Name == monitor.Name {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 && adjusted.Outputs[idx].Enabled {
+			return p, nil
+		}
+		output := OutputConfig{
+			Key:      hypr.MonitorOutputKey(monitor, matchCounts),
+			MatchKey: monitor.HardwareKey(),
+			Name:     monitor.Name,
+			Make:     monitor.Make,
+			Model:    monitor.Model,
+			Serial:   monitor.Serial,
+		}
+		if idx >= 0 {
+			output = adjusted.Outputs[idx]
+		}
+		if output.Width <= 0 || output.Height <= 0 {
+			for _, mode := range monitor.AvailableModes {
+				if w, h, hz, ok := hypr.ParseMode(mode); ok && w*h > output.Width*output.Height {
+					output.Mode, output.Width, output.Height, output.Refresh = mode, w, h, hz
+				}
+			}
+		}
+		if output.Width <= 0 || output.Height <= 0 {
+			continue
+		}
+		if output.Scale <= 0 {
+			output.Scale = 1
+		}
+		output.Enabled, output.MirrorOf = true, ""
+		output.X, output.Y = right, top
+		m := hypr.Monitor{Width: output.Width, Height: output.Height, Scale: output.Scale, Transform: output.Transform}
+		w, _ := m.LogicalSize()
+		right += w
+		if idx >= 0 {
+			adjusted.Outputs[idx] = output
+		} else {
+			adjusted.Outputs = append(adjusted.Outputs, output)
+		}
+		turnedOn = append(turnedOn, monitor.Name)
+	}
+	if len(turnedOn) == 0 {
+		return p, nil
+	}
+	adjusted.Normalize()
+	return adjusted, turnedOn
+}

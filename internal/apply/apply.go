@@ -52,6 +52,12 @@ type Engine struct {
 	MonitorsConfPath   string
 	HyprlandConfigPath string
 	Logf               func(format string, args ...any)
+	// TolerateModeless accepts an output that had no mode before the apply
+	// and still has none after it. The daemon sets it while it turns the
+	// built-in panel on because no external shows a picture: that apply
+	// succeeds by lighting the panel, and the external may take a moment
+	// longer to come back.
+	TolerateModeless bool
 }
 
 type RevertState struct {
@@ -410,7 +416,7 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 		}
 		if err != nil {
 			lastErr = err
-		} else if err := ValidateAppliedProfile(p, before, applied); err != nil {
+		} else if err := validateAppliedProfile(p, before, applied, e.TolerateModeless); err != nil {
 			lastErr = err
 		} else {
 			return applied, nil
@@ -636,6 +642,10 @@ func ValidateLayout(outputs []profile.OutputConfig) error {
 }
 
 func ValidateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hypr.Monitor) error {
+	return validateAppliedProfile(p, before, after, false)
+}
+
+func validateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hypr.Monitor, tolerateModeless bool) error {
 	var problems []error
 	p = profile.ExtendConnected(p, before)
 	p.Normalize()
@@ -670,6 +680,9 @@ func ValidateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hy
 
 		if applied.Disabled {
 			problems = append(problems, fmt.Errorf("%s was disabled after apply", monitor.Name))
+			continue
+		}
+		if tolerateModeless && (monitor.Width <= 0 || monitor.Height <= 0) && (applied.Width <= 0 || applied.Height <= 0) {
 			continue
 		}
 		if applied.X != output.X || applied.Y != output.Y {

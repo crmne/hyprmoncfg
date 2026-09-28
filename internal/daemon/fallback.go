@@ -194,6 +194,19 @@ func (f *displayFallbacks) settleDelay() (time.Duration, bool) {
 // observeFailedApply counts enabled, awake displays left without a mode by an
 // apply that asked for one.
 func (f *displayFallbacks) observeFailedApply(effective profile.Profile, monitors []hypr.Monitor) {
+	// A missing mode says the settings are too much only when something else
+	// is lit. With nothing showing a picture, some drivers leave every
+	// external modeless until another output comes on, whatever its mode.
+	lit := false
+	for _, monitor := range monitors {
+		if !monitor.Disabled && monitor.DPMSStatus && monitor.Width > 0 && monitor.Height > 0 && monitor.Name != "FALLBACK" {
+			lit = true
+			break
+		}
+	}
+	if !lit {
+		return
+	}
 	resolver := profile.NewMonitorResolver(monitors)
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -972,6 +972,10 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	}
 
 	effective = s.fallbacks.apply(effective, monitors)
+	effective, litPanels := profile.KeepBuiltInPanelOn(effective, monitors)
+	if len(litPanels) > 0 {
+		s.cfg.Logf("no external display shows a picture; keeping %s on until one does", strings.Join(litPanels, ", "))
+	}
 
 	if !toggleChanged && s.applied.matches(effective, monitors, rules) {
 		s.lastSeenHash = hash
@@ -982,7 +986,9 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		s.cfg.Logf("restoring manually selected profile %q after an external change", target.Name)
 	}
 
-	snapshot, err := s.engine.Apply(ctx, effective, monitors)
+	engine := s.engine
+	engine.TolerateModeless = len(litPanels) > 0
+	snapshot, err := engine.Apply(ctx, effective, monitors)
 	if err != nil {
 		// Displays the apply left enabled but without a mode count toward
 		// stepping them down on a later attempt.

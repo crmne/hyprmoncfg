@@ -167,3 +167,62 @@ func TestClosedLidDoesNotTrustUnusableOrTargetDisabledExternal(t *testing.T) {
 		})
 	}
 }
+
+// Issue #67: with the built-in panel off, this laptop's HDMI came back from a
+// power cycle without a mode and stayed dark until the panel was switched on.
+func issue67Setup(externalWidth int) (Profile, []hypr.Monitor) {
+	internal := hypr.Monitor{Name: "eDP-1", Make: "BOE", Model: "Panel", Serial: "I1", Disabled: true,
+		AvailableModes: []string{"1920x1080@60.00Hz", "1920x1080@144.00Hz"}}
+	external := hypr.Monitor{Name: "HDMI-A-1", Make: "HKC", Model: "27E1QA", Serial: "E1",
+		Width: externalWidth, Height: externalWidth * 9 / 16, DPMSStatus: true}
+	p := New("casa", []OutputConfig{
+		{Key: internal.HardwareKey(), Name: internal.Name, Enabled: false, Scale: 1.25, Width: 1920, Height: 1080, Refresh: 144},
+		{Key: external.HardwareKey(), Name: external.Name, Enabled: true, Scale: 1, Width: 2560, Height: 1440, Refresh: 144},
+	})
+	return p, []hypr.Monitor{internal, external}
+}
+
+func TestKeepBuiltInPanelOnWhenNoExternalShowsAPicture(t *testing.T) {
+	p, monitors := issue67Setup(0)
+	adjusted, turnedOn := KeepBuiltInPanelOn(p, monitors)
+	if len(turnedOn) != 1 || turnedOn[0] != "eDP-1" {
+		t.Fatalf("expected eDP-1 to be turned on, got %v", turnedOn)
+	}
+	panel, _ := adjusted.OutputByKey(monitors[0].HardwareKey())
+	external, _ := adjusted.OutputByKey(monitors[1].HardwareKey())
+	if !panel.Enabled || panel.Width != 1920 || panel.Scale != 1.25 || panel.X != 2560 {
+		t.Fatalf("panel should come on with its saved mode, right of the external: %+v", panel)
+	}
+	if !external.Enabled || external.Width != 2560 {
+		t.Fatalf("the external must stay as saved: %+v", external)
+	}
+	if original, _ := p.OutputByKey(monitors[0].HardwareKey()); original.Enabled {
+		t.Fatal("the saved profile must not change")
+	}
+
+	// Hyprland's synthetic FALLBACK head is not a picture either.
+	withFallback := append(monitors, hypr.Monitor{Name: "FALLBACK", Width: 1920, Height: 1080, DPMSStatus: true})
+	if _, turnedOn := KeepBuiltInPanelOn(p, withFallback); len(turnedOn) != 1 {
+		t.Fatal("FALLBACK must not count as a working display")
+	}
+}
+
+func TestKeepBuiltInPanelOnLeavesAWorkingSetupAlone(t *testing.T) {
+	p, monitors := issue67Setup(2560)
+	if adjusted, turnedOn := KeepBuiltInPanelOn(p, monitors); turnedOn != nil || adjusted.Outputs[0].Enabled != p.Outputs[0].Enabled {
+		t.Fatalf("a usable external keeps the panel off, got %v", turnedOn)
+	}
+	// A panel the profile already keeps on needs nothing.
+	p, monitors = issue67Setup(0)
+	for i := range p.Outputs {
+		p.Outputs[i].Enabled = true
+	}
+	if _, turnedOn := KeepBuiltInPanelOn(p, monitors); turnedOn != nil {
+		t.Fatalf("panel already on, got %v", turnedOn)
+	}
+	// A desktop has no built-in panel to turn on.
+	p, monitors = issue67Setup(0)
+	if _, turnedOn := KeepBuiltInPanelOn(p, monitors[1:]); turnedOn != nil {
+		t.Fatalf("no built-in panel, got %v", turnedOn)
+	}
+}

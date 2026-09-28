@@ -167,7 +167,9 @@ conflict, and offer an explicit refresh or remap before applying.
 
 Lid-close policy may switch off the internal screen only after another real
 output is usable. A modeless output or synthetic `FALLBACK` does not satisfy that
-condition. Distinguish intentional DPMS sleep from a failed wake before starting
+condition. The same holds when the profile itself turns the internal screen off:
+with no external showing a picture, the daemon keeps a connected internal screen
+on until one does. The saved profile is not changed. Distinguish intentional DPMS sleep from a failed wake before starting
 recovery. Keep the machine's sleep and lock policy intact.
 
 The daemon owns recovery while it owns monitor management. A bounded attempt may

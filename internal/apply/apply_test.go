@@ -1840,3 +1840,25 @@ func TestApplyNeverLeavesTheConfigWithoutMonitorRules(t *testing.T) {
 		t.Fatalf("expected a note pointing at the new file, got:\n%s", retired)
 	}
 }
+
+func TestValidateToleratesAnOutputThatStaysModelessOnlyWhenAsked(t *testing.T) {
+	panel := hypr.Monitor{Name: "eDP-1", Make: "BOE", Model: "Panel", Serial: "I1", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1, DPMSStatus: true}
+	external := hypr.Monitor{Name: "HDMI-A-1", Make: "HKC", Model: "27E1QA", Serial: "E1", DPMSStatus: true}
+	p := profile.New("casa", []profile.OutputConfig{
+		{Key: panel.HardwareKey(), Name: panel.Name, Enabled: true, Width: 1920, Height: 1080, Refresh: 60, Scale: 1},
+		{Key: external.HardwareKey(), Name: external.Name, Enabled: true, Width: 2560, Height: 1440, Refresh: 144, Scale: 1, X: 1920},
+	})
+	before := []hypr.Monitor{panel, external}
+	if err := validateAppliedProfile(p, before, before, false); err == nil {
+		t.Fatal("a modeless output fails validation by default")
+	}
+	if err := validateAppliedProfile(p, before, before, true); err != nil {
+		t.Fatalf("the rescue apply should accept an external that is still coming back: %v", err)
+	}
+	// It only forgives an output that was already modeless.
+	lit := external
+	lit.Width, lit.Height = 2560, 1440
+	if err := validateAppliedProfile(p, []hypr.Monitor{panel, lit}, before, true); err == nil {
+		t.Fatal("an output that lost its mode during the apply must still fail")
+	}
+}
