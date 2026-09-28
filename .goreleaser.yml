@@ -6,6 +6,7 @@ release:
   github:
     owner: crmne
     name: hyprmoncfg
+  name_template: "hyprmoncfg {{ .Version }}"
   extra_files:
     - glob: ".release-assets/hyprmoncfg-{{ .Version }}-deps.tar.xz"
 
