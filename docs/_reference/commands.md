@@ -16,7 +16,7 @@ Running `hyprmoncfg` with no arguments opens the TUI.
 | `hyprmoncfg tui` | Open the TUI (explicit) |
 | `hyprmoncfg monitors` | List connected monitors with hardware details |
 | `hyprmoncfg profiles` | List saved profiles |
-| `hyprmoncfg status` | Show the active profile, daemon state, and connected displays |
+| `hyprmoncfg status` | Show the active profile, daemon state, and connected displays, naming any enabled display without a usable mode and any the daemon runs below its saved settings |
 | `hyprmoncfg status --json` | Print the stable status schema as JSON |
 | `hyprmoncfg save <name>` | Save current monitor state as a named profile |
 | `hyprmoncfg apply <name>` | Apply a saved profile |

@@ -116,13 +116,6 @@ func newStatusCmd(configDir *string) *cobra.Command {
 			if document.Daemon.Running {
 				daemonState = "running"
 			}
-			enabledMonitors := 0
-			for _, monitor := range document.Monitors {
-				if monitor.Enabled {
-					enabledMonitors++
-				}
-			}
-
 			fmt.Fprintf(cmd.OutOrStdout(), "Active profile: %s\n", activeProfile)
 			if document.RecommendedProfile != nil && document.RecommendedProfile.Name != activeProfile {
 				fmt.Fprintf(cmd.OutOrStdout(), "Recommended profile: %s\n", document.RecommendedProfile.Name)
@@ -135,20 +128,7 @@ func newStatusCmd(configDir *string) *cobra.Command {
 						running, installed)
 				}
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Displays: %d enabled, %d connected\n", enabledMonitors, len(document.Monitors))
-			for _, monitor := range document.Monitors {
-				if monitor.Enabled && (monitor.Width <= 0 || monitor.Height <= 0) {
-					fmt.Fprintf(cmd.OutOrStdout(), "Display %s: no usable mode (%dx%d)\n", monitor.Name, monitor.Width, monitor.Height)
-				}
-				if fallback := monitor.Fallback; fallback != nil {
-					why := "kept disconnecting right after connecting"
-					if fallback.Reason == "no_mode" {
-						why = "kept coming back without a mode"
-					}
-					fmt.Fprintf(cmd.OutOrStdout(), "Display %s: %s at its saved settings, so it runs %s; the saved profile is unchanged and applying a profile tries its saved settings again\n",
-						monitor.Name, why, fallback.Running)
-				}
-			}
+			writeDisplayStatus(cmd.OutOrStdout(), document.Monitors)
 			fmt.Fprintf(cmd.OutOrStdout(), "Saved profiles: %d\n", len(document.Profiles))
 			return nil
 		},
@@ -824,5 +804,38 @@ func confirmApplyWithInput(timeoutSec int, input io.Reader, output io.Writer, si
 		return false, nil
 	case <-time.After(time.Duration(timeoutSec) * time.Second):
 		return false, nil
+	}
+}
+
+// writeDisplayStatus summarizes the displays. Enabled is not the same as
+// working: a display can be enabled yet have no mode, so those are counted and
+// named separately, as are displays the daemon runs below their saved settings.
+func writeDisplayStatus(w io.Writer, monitors []appstatus.MonitorSummary) {
+	enabled, modeless := 0, 0
+	for _, monitor := range monitors {
+		if monitor.Enabled {
+			enabled++
+			if monitor.Width <= 0 || monitor.Height <= 0 {
+				modeless++
+			}
+		}
+	}
+	if modeless > 0 {
+		fmt.Fprintf(w, "Displays: %d enabled (%d without a usable mode), %d connected\n", enabled, modeless, len(monitors))
+	} else {
+		fmt.Fprintf(w, "Displays: %d enabled, %d connected\n", enabled, len(monitors))
+	}
+	for _, monitor := range monitors {
+		if monitor.Enabled && (monitor.Width <= 0 || monitor.Height <= 0) {
+			fmt.Fprintf(w, "Display %s: no usable mode (%dx%d)\n", monitor.Name, monitor.Width, monitor.Height)
+		}
+		if fallback := monitor.Fallback; fallback != nil {
+			why := "kept disconnecting right after connecting"
+			if fallback.Reason == "no_mode" {
+				why = "kept coming back without a mode"
+			}
+			fmt.Fprintf(w, "Display %s: %s at its saved settings, so it runs %s. The saved profile is unchanged; applying a profile tries its saved settings again.\n",
+				monitor.Name, why, fallback.Running)
+		}
 	}
 }
