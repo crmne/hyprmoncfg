@@ -60,6 +60,7 @@ type Service struct {
 	notifyMu       sync.RWMutex
 	notify         func()
 	applied        *appliedState
+	fallbacks      *displayFallbacks
 	lastSeenHash   string
 	lastProfile    profile.Profile
 	lastMonitorSet string
@@ -177,6 +178,7 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 			Logf:               cfg.Logf,
 		},
 		cfg:          cfg,
+		fallbacks:    newDisplayFallbacks(cfg.ConfigDir, cfg.Logf),
 		lidState:     lid.Unknown,
 		readLid:      lid.ReadState,
 		watchLid:     lid.Watch,
@@ -340,6 +342,11 @@ func (s *Service) Run(ctx context.Context) error {
 		if settlingAfterWake {
 			delay = s.cfg.WakeSettle
 		}
+		// A display due for a gentler setting has just disconnected. Write
+		// its new rule before it comes back, so it reconnects in one modeset.
+		if strings.HasPrefix(reason, fallbackTriggerPrefix) {
+			delay = 0
+		}
 		pushTrigger(reason, delay)
 	}
 
@@ -392,6 +399,9 @@ func (s *Service) Run(ctx context.Context) error {
 				s.cfg.LaptopToggle.Reset()
 			}
 			s.cfg.Logf("monitor event received: %s connector=%s", ev.Type, name)
+			if s.fallbacks.observeEvent(ev, time.Now()) {
+				reason = fallbackTriggerPrefix + reason
+			}
 			probeGeneration++
 			// A consumed hotplug invalidates any earlier debounce or busy retry.
 			// Other trigger sources must also wait for this generation's probe.
@@ -841,6 +851,11 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	}
 
 	effective := profile.ExtendConnected(target, monitors)
+	defer func() {
+		if resultErr == nil {
+			s.fallbacks.observeApplied()
+		}
+	}()
 	if s.cfg.PowerAwareRefresh && !manualHold && !toggleChanged {
 		if battery, known := s.batteryState(); known {
 			effective = profile.WithPowerRefresh(effective, monitors, battery)
@@ -867,6 +882,8 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		}
 	}
 
+	effective = s.fallbacks.apply(effective, monitors)
+
 	if !toggleChanged && s.applied.matches(effective, monitors, rules) {
 		s.lastSeenHash = hash
 		_, err := s.cfg.LaptopToggle.Sync(effective, monitors)
@@ -878,6 +895,11 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 
 	snapshot, err := s.engine.Apply(ctx, effective, monitors)
 	if err != nil {
+		// Displays the apply left enabled but without a mode count toward
+		// stepping them down on a later attempt.
+		if after, queryErr := s.queryMonitors(ctx); queryErr == nil {
+			s.fallbacks.observeFailedApply(effective, after)
+		}
 		return applyQueryError(err)
 	}
 	if toggleChanged {

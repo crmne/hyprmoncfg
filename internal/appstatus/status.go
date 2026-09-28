@@ -126,6 +126,18 @@ type MonitorSummary struct {
 	// its own image. A mirroring monitor shares the position of its source, so
 	// anything drawing a layout has to leave it out and name it separately.
 	MirrorOf string `json:"mirror_of,omitempty"`
+	// Fallback is set when the daemon runs this display below its saved
+	// settings because it would not stay on at them. The profile is unchanged.
+	Fallback *MonitorFallback `json:"fallback,omitempty"`
+}
+
+// MonitorFallback explains a display the daemon stepped down. Reason is
+// "dropping" (it kept disconnecting right after connecting) or "no_mode" (it
+// kept coming back without a mode). Running says how it runs now, in words,
+// such as "without VRR" or "at 120 Hz without VRR".
+type MonitorFallback struct {
+	Reason  string `json:"reason"`
+	Running string `json:"running"`
 }
 
 // EditorDocument is the richer, on-demand view used by compact graphical

@@ -16,6 +16,8 @@ Each profile has a canonical JSON file. The filename is a simplified version of 
 
 hyprmoncfg also writes generated `home-office.conf` and `home-office.lua` sidecars next to the JSON file. These are fallback exports for people who want to stop using hyprmoncfg but keep the saved layouts as Hyprland config snippets. The JSON remains the source of truth used by hyprmoncfg and `hyprmoncfgd`.
 
+`hyprmoncfgd` also keeps `~/.config/hyprmoncfg/display-fallbacks.json` while a display runs below its saved settings because it would not stay on at them (see [the daemon guide](/daemon/#displays-that-wont-stay-on)). It is live state, not a profile. Applying any profile clears it and makes the daemon try the saved settings again; deleting the file does the same after the daemon restarts.
+
 {% include alert.html type="warning" title="Every Profile File Is A Match Candidate" content="`hyprmoncfgd` scans every `*.json` file in this directory. Old backups, temporary experiments, and duplicate layouts are not ignored just because you forgot about them." %}
 
 Override the storage directory with `--config-dir`:

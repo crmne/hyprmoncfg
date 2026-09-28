@@ -88,6 +88,14 @@ Monitor summaries add `usable` and `health` (`usable`, `off`, `sleeping`,
 `no_signal`, or `synthetic`). `enabled` alone is not evidence of a working mode.
 Older daemons omit these fields; clients must not interpret absence as failure.
 
+A monitor summary adds `fallback` when the daemon runs that display below its
+saved settings because it would not stay on at them. It has a `reason`
+(`dropping`: it kept disconnecting right after connecting; `no_mode`: it kept
+coming back without a mode) and `running`, a plain description such as
+`without VRR` or `at 120 Hz without VRR`. The saved profile is unchanged, and
+confirming or committing any preview clears every fallback. Absent means the
+display runs at its saved settings, or the daemon predates the field.
+
 Editor documents add `workspace_persistence_supported`. Only when true may an
 editor offer `workspaces.persist_all`. Missing capability means unavailable, not
 false user intent. The typed client rejects sending this setting to older

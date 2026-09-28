@@ -140,6 +140,14 @@ func newStatusCmd(configDir *string) *cobra.Command {
 				if monitor.Enabled && (monitor.Width <= 0 || monitor.Height <= 0) {
 					fmt.Fprintf(cmd.OutOrStdout(), "Display %s: no usable mode (%dx%d)\n", monitor.Name, monitor.Width, monitor.Height)
 				}
+				if fallback := monitor.Fallback; fallback != nil {
+					why := "kept disconnecting right after connecting"
+					if fallback.Reason == "no_mode" {
+						why = "kept coming back without a mode"
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "Display %s: %s at its saved settings, so it runs %s; the saved profile is unchanged and applying a profile tries its saved settings again\n",
+						monitor.Name, why, fallback.Running)
+				}
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Saved profiles: %d\n", len(document.Profiles))
 			return nil

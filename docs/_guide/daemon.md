@@ -60,8 +60,8 @@ centered against the adjacent independent display using logical dimensions. For
 simultaneous arrivals, each new display becomes the next neighbor. The backend
 chooses the greatest advertised pixel area, then the highest refresh at that
 resolution, with VRR off and 8-bit sRGB. Existing output settings and an enabled
-workspace plan are preserved; the saved profile is not overwritten. Mode fallback,
-physical-size scale recommendations, and explicit failed-wake/cold-start rescue
+workspace plan are preserved; the saved profile is not overwritten.
+Physical-size scale recommendations and explicit failed-wake/cold-start rescue
 remain separate follow-up work.
 
 Failed automatic applies retry independently of monitor-change events, starting
@@ -73,6 +73,45 @@ restarts reconciliation. Verification reports all failed outputs, not just the
 first. Monitor/workspace discovery queries have a 750ms timeout. This does not
 prove physical projector readiness or recover an all-DPMS-off failed wake which
 cannot yet be distinguished from deliberate sleep.
+
+### Displays that won't stay on
+
+Some displays can't hold the settings a profile saved for them. One kind drops off
+the link a second or two after every connect, over and over. Another comes back
+from sleep enabled but without a mode. Retrying the same settings forever
+doesn't help either one, so the daemon steps that display down one setting at a
+time:
+
+1. VRR off.
+2. The next lower refresh rate at the same resolution, for example 144 Hz to 120 Hz.
+3. The refresh rate closest to 60 Hz at the same resolution.
+
+Resolution, scale and position never change, so other displays and windows stay
+where they are. The daemon keeps the first step that sticks.
+
+What counts as a failure:
+- **Dropping:** three connections of under 8 seconds within 3 minutes. A single
+  bounce while a display powers up doesn't count, and neither does turning a
+  display off after using it.
+- **No mode:** two applies in a row that leave the display awake but without a
+  mode.
+
+A step is taken while the display is disconnected, so it reconnects straight
+into the gentler setting instead of switching modes again while it's still
+waking up.
+
+The saved profile never changes. `hyprmoncfg status` names each stepped-down
+display and how it runs now, and the daemon log says why. Steps are remembered
+per display in `~/.config/hyprmoncfg/display-fallbacks.json`, so a restart
+doesn't repeat the struggle.
+
+To try the saved settings again, apply a profile: confirming any layout clears
+every step. Editing the saved mode or VRR of a display also clears its step.
+
+Displays with the same description can't be told apart here, so they are never
+stepped down. The daemon also can't see a display that stays connected but
+shows nothing, because Hyprland and the kernel report that the same as a
+working one.
 
 ### Optional laptop power-aware refresh
 

@@ -47,6 +47,13 @@ func (s *Service) Status() (appstatus.Document, error) {
 	}
 	document := appstatus.Build(buildinfo.Version, true, profiles, monitors, rules)
 	document.Daemon.Unmanaged = !config.IsManaged(s.cfg.ConfigDir)
+	if steps := s.fallbacks.describe(monitors); steps != nil {
+		for i := range document.Monitors {
+			if step, ok := steps[document.Monitors[i].Name]; ok {
+				document.Monitors[i].Fallback = &appstatus.MonitorFallback{Reason: step.Reason, Running: step.Running}
+			}
+		}
+	}
 	if manual, ok := s.manualOverride(profile.MonitorSetHash(monitors)); ok {
 		document.Daemon.ProfileOverride = manual.Name
 	}
@@ -348,6 +355,9 @@ func (s *Service) commitPreview(owner string, transactionID string, save bool) e
 		}
 	}
 	s.clearPending(pending.id)
+	// A layout someone confirmed by hand is a request for exactly those
+	// settings, so give any stepped-down display another chance at them.
+	s.fallbacks.reset()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

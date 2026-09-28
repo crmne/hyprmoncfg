@@ -177,6 +177,17 @@ hardware removal, or an interactive preview; resume appropriately. Preserve
 healthy displays and expose all affected outputs. Cold startup must not depend on
 a persisted external-only generated file to make the first screen accessible.
 
+A display that will not stay on at its saved settings is stepped down one setting
+at a time and keeps the first that sticks: VRR off, then the next lower refresh at
+the same resolution, then about 60 Hz. The triggers are repeated drops right after
+connecting, or repeated modeless wakes. Resolution, scale and position never
+change, so nothing else moves. The step is live state, remembered per display
+across restarts. It never edits the profile, is shown in status, and clears when
+someone confirms a layout or edits that display's saved mode. It is decided
+while the display is disconnected, so the display reconnects in one modeset.
+Ambiguous identities are never stepped. A display that stays connected but shows
+nothing is out of reach, and the docs say so.
+
 ## Feedback and notification routing
 
 After a new setup has actually been applied, send one normal desktop notification:
