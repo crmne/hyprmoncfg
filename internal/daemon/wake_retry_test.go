@@ -82,6 +82,10 @@ func TestRunRestoresTheLaptopPanelWhenTheExternalStaysAsleepAfterLidOpen(t *test
 	env.lidStates <- lid.Closed
 	waitFor(t, time.Second, func() bool { return env.logs.contains("lid closed: forced internal outputs off") }, "clamshell apply")
 	waitFor(t, time.Second, func() bool { return reloadCount(env.logPath) == 2 }, "clamshell reload")
+	// Let that apply finish verifying before the displays change under it.
+	waitFor(t, 2*time.Second, func() bool {
+		return strings.Count(env.logs.all(), "automatic reconciliation completed") >= 2
+	}, "clamshell reconciliation")
 
 	// The external falls asleep and stays asleep through the lid opening.
 	stuck := append([]hypr.Monitor(nil), clamshell...)
