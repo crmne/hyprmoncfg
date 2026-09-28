@@ -25,5 +25,9 @@ cp go.mod go.sum "$cache_dir/"
   GOMODCACHE="$cache_dir/go-mod" GOPROXY=off go mod verify
 )
 mkdir -p "$destination"
-tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+# Go leaves its module cache read-only. Packed as is, every package build
+# extracts folders its own clean-up cannot delete (yay and makepkg -c print a
+# wall of "Permission denied"). Go verifies modules against go.sum, not file
+# modes, so ship them owner-writable.
+tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+w \
   --exclude='*.lock' -C "$cache_dir" -c go-mod | xz -T2 > "$archive"
