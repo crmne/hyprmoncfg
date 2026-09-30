@@ -43,10 +43,11 @@ Existing tools try to help but bring their own problems. Some need a Python runt
 
 ## Demo
 
-Historical recording from before 1.19. The current page order and display
-presentation are shown in the screenshots below.
+Plug in your monitors, arrange them once, save the arrangement as a profile, and
+it comes back whenever those monitors do. The film animates a rebuild of the TUI
+that is checked against real captures, with sample displays.
 
-<video class="screenshot" src="{{ '/assets/images/demo.mp4' | relative_url }}" autoplay loop muted playsinline controls style="width:100%; max-width:1400px; border-radius:8px;">
+<video class="screenshot" src="{{ '/assets/videos/hyprmoncfg-film.mp4' | relative_url }}" poster="{{ '/assets/videos/hyprmoncfg-film-poster.jpg' | relative_url }}" controls playsinline preload="metadata" style="width:100%; max-width:1400px; border-radius:8px;">
   Your browser does not support the video tag.
 </video>
 

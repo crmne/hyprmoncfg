@@ -22,10 +22,11 @@ hero:
         <img class="theme-image light terminal-trove-badge-image" src="/assets/images/terminal-trove-tool-of-the-week-light.svg" alt="Terminal Trove Tool of the Week" width="220" height="58"><img class="theme-image dark terminal-trove-badge-image" src="/assets/images/terminal-trove-tool-of-the-week-dark.svg" alt="Terminal Trove Tool of the Week" width="220" height="58">
       link: https://terminaltrove.com/hyprmoncfg/
   image:
-    src: /assets/images/screenshots/layout-dark.png
-    alt: hyprmoncfg 1.19 layout editor with sample displays
-    width: 1924
-    height: 1084
+    src: /assets/videos/hyprmoncfg-loop-poster.jpg
+    video: /assets/videos/hyprmoncfg-loop.mp4
+    alt: A desk with a laptop and two monitors beside the hyprmoncfg TUI. The monitors are plugged in, arranged, saved as a profile, and come back in the same arrangement.
+    width: 1600
+    height: 900
 features:
   - icon: 🖥️
     title: Visual Layout Editor

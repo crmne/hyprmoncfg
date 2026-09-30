@@ -10,3 +10,14 @@
   };
   plausible.init();
 </script>
+<script>
+  // Visitors who prefer reduced motion get the poster instead of the looping hero video.
+  document.addEventListener("DOMContentLoaded", function() {
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    document.querySelectorAll("video[data-reduced-motion-still]").forEach(function(video) {
+      video.removeAttribute("autoplay");
+      video.pause();
+      video.controls = true;
+    });
+  });
+</script>

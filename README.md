@@ -37,6 +37,10 @@ daemon guide for highlights, limits, and defaults.
 
 hyprmoncfg is a visual multi-monitor layout editor and automatic profile switcher for Hyprland. Drag displays into place, save each setup as a hardware-aware profile, and let the daemon apply the right one when monitors or your laptop lid change.
 
+https://github.com/user-attachments/assets/6591b191-fb10-469a-9668-aaf0a9842204
+
+The film animates a rebuild of the TUI that is checked against real captures, with sample displays. [Download it in full quality](https://github.com/crmne/hyprmoncfg/releases/download/v1.22.0/hyprmoncfg-film.mp4).
+
 ![hyprmoncfg 1.22 layout editor](docs/assets/images/screenshots/layout-dark.png)
 
 Actual TUI capture with synthetic display/profile data. See the

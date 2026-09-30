@@ -1,0 +1,48 @@
+{% comment %}
+  Site override of the theme's vp_image include: an image with a `video` key
+  renders as a silent looping video with the image as its poster. Everything
+  else is the theme's include unchanged.
+{% endcomment %}
+{% assign vpi = include.image %}
+{% if vpi.video %}
+  {% assign vpi_class = 'VPImage' %}
+  {% if include.class and include.class != '' %}
+    {% assign vpi_class = vpi_class | append: ' ' | append: include.class %}
+  {% endif %}
+  <video class="{{ vpi_class }}" autoplay loop muted playsinline preload="metadata"
+    poster="{{ vpi.src | relative_url }}" width="{{ vpi.width }}" height="{{ vpi.height }}"
+    aria-label="{{ vpi.alt | default: include.default_alt | escape }}" data-reduced-motion-still>
+    <source src="{{ vpi.video | relative_url }}" type="video/mp4">
+    <img src="{{ vpi.src | relative_url }}" alt="{{ vpi.alt | default: include.default_alt | escape }}" width="{{ vpi.width }}" height="{{ vpi.height }}">
+  </video>
+{% else %}
+{% assign vpi_alt = vpi.alt | default: include.default_alt %}
+{% assign vpi_width = vpi.width | default: include.default_width %}
+{% assign vpi_height = vpi.height | default: include.default_height %}
+{% assign vpi_class = 'VPImage' %}
+{% if include.class and include.class != '' %}
+  {% assign vpi_class = vpi_class | append: ' ' | append: include.class %}
+{% endif %}
+{% assign vpi_light = vpi.light %}
+{% assign vpi_dark = vpi.dark %}
+{% assign vpi_src = nil %}
+{% if vpi.src %}
+  {% assign vpi_src = vpi.src %}
+{% elsif vpi.path %}
+  {% assign vpi_src = vpi.path %}
+{% elsif vpi_light == nil and vpi_dark == nil %}
+  {% assign vpi_src = vpi %}
+{% endif %}
+{% if vpi_light and vpi_dark %}
+  {% capture vpi_light_resolved %}{% if vpi_light contains '://' or vpi_light contains 'data:' %}{{ vpi_light }}{% else %}{{ vpi_light | relative_url }}{% endif %}{% endcapture %}
+  {% capture vpi_dark_resolved %}{% if vpi_dark contains '://' or vpi_dark contains 'data:' %}{{ vpi_dark }}{% else %}{{ vpi_dark | relative_url }}{% endif %}{% endcapture %}
+  <img class="{{ vpi_class }} light" src="{{ vpi_light_resolved }}" alt="{{ vpi_alt | escape }}" width="{{ vpi_width }}" height="{{ vpi_height }}">
+  <img class="{{ vpi_class }} dark" src="{{ vpi_dark_resolved }}" alt="{{ vpi_alt | escape }}" width="{{ vpi_width }}" height="{{ vpi_height }}">
+{% else %}
+  {% assign vpi_single = vpi_light | default: vpi_dark | default: vpi_src %}
+  {% if vpi_single %}
+    {% capture vpi_single_resolved %}{% if vpi_single contains '://' or vpi_single contains 'data:' %}{{ vpi_single }}{% else %}{{ vpi_single | relative_url }}{% endif %}{% endcapture %}
+    <img class="{{ vpi_class }}" src="{{ vpi_single_resolved }}" alt="{{ vpi_alt | escape }}" width="{{ vpi_width }}" height="{{ vpi_height }}">
+  {% endif %}
+{% endif %}
+{% endif %}
