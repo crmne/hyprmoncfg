@@ -64,7 +64,21 @@ workspace plan are preserved; the saved profile is not overwritten.
 Physical-size scale recommendations and explicit failed-wake/cold-start rescue
 remain separate follow-up work.
 
-Failed automatic applies retry independently of monitor-change events, starting
+When no saved profile matches, usable live displays keep their mode, position,
+rotation, scale and signal settings. Existing workspace assignments are imported.
+Only modeless or disabled displays need an automatic extended layout; an
+overlapping initial arrangement is rebuilt rather than preserved.
+
+If verification rejects a layout and rollback leaves every intended display
+usable, the daemon pauses automatic attempts for that same request and restored
+state. This prevents repeatedly switching between a rejected mode and a working
+one. Editing the profile, changing the display state or workspace rules, or
+explicitly running `hyprmoncfg manage` permits another attempt. Confirmed previews
+also clear the pause. VRR activity and scanout buffer format changes do not clear
+it. The pause is held for the running daemon session and logged as
+`automatic retry paused`; it does not rewrite saved profiles.
+
+Other failed automatic applies retry independently of monitor-change events, starting
 after 2 seconds with capped exponential backoff up to 30 seconds. Transient busy
 reads and writer contention retry after the normal debounce interval. Successful
 application stops retries. Preview ownership defers retries; suspend, intentional

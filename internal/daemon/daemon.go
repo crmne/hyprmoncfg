@@ -61,6 +61,7 @@ type Service struct {
 	notifyMu      sync.RWMutex
 	notify        func()
 	applied       *appliedState
+	rejected      *rejectedAutomaticApply
 	fallbacks     *displayFallbacks
 	// luaDialect remembers whether the running Hyprland reads a Lua config,
 	// for when it is too busy to say. Waking displays right after resume is
@@ -671,7 +672,10 @@ func (s *Service) Run(ctx context.Context) error {
 			settlingAfterWake = false
 			endWakeRequest()
 			armSettle()
-			if err != nil {
+			if errors.Is(err, errAutomaticApplyRejected) {
+				s.cfg.Logf("automatic retry paused: %v", err)
+				stopRecovery()
+			} else if err != nil {
 				s.cfg.Logf("apply failed: %v", err)
 				scheduleRecovery()
 			} else {
@@ -914,7 +918,12 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 				target = fallback
 			} else {
 				s.cfg.Logf("no matching profile for monitor set %s", hash)
-				target = profile.ExtendConnected(profile.Profile{Name: "draft"}, monitors)
+				rules, err = s.queryWorkspaceRules(ctx)
+				if err != nil {
+					return err
+				}
+				rulesReady = true
+				target = liveDraft(monitors, rules)
 			}
 		} else {
 			if s.lidState.Known() {
@@ -994,6 +1003,10 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		_, err := s.cfg.LaptopToggle.Sync(effective, monitors)
 		return err
 	}
+	if s.rejected.matches(effective, monitors, rules) {
+		return errAutomaticApplyRejected
+	}
+	s.rejected = nil
 	if manualHold {
 		s.cfg.Logf("restoring manually selected profile %q after an external change", target.Name)
 	}
@@ -1006,6 +1019,13 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		// stepping them down on a later attempt.
 		if after, queryErr := s.queryMonitors(ctx); queryErr == nil {
 			s.fallbacks.observeFailedApply(effective, after)
+			if errors.Is(err, apply.ErrVerificationFailed) && intendedOutputsUsable(effective, after) {
+				if afterRules, rulesErr := s.queryWorkspaceRules(ctx); rulesErr == nil {
+					s.rejected = rememberRejected(effective, after, afterRules)
+					s.cfg.Logf("automatic layout rejected; keeping the usable restored layout until displays, workspace rules or the requested layout change")
+					return errors.Join(errAutomaticApplyRejected, err)
+				}
+			}
 		}
 		return applyQueryError(err)
 	}

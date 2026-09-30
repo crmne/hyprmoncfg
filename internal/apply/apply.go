@@ -42,6 +42,10 @@ const (
 // window is an unanswered question, not a failed apply.
 var applyValidationTimeout = 3 * time.Second
 
+// ErrVerificationFailed means the compositor answered but did not apply the
+// requested layout. It is distinct from an unanswered compositor query.
+var ErrVerificationFailed = errors.New("display configuration verification failed")
+
 type Engine struct {
 	Client *hypr.Client
 	// QueryTimeout bounds each compositor read, independently of the apply's
@@ -410,6 +414,9 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 			return nil, err
 		}
 		if errors.Is(err, ErrQueryTimeout) && ctx.Err() != nil {
+			if errors.Is(lastErr, ErrVerificationFailed) {
+				return nil, fmt.Errorf("%w: %w", ctx.Err(), lastErr)
+			}
 			// The window closed without an answer. Keep the timeout visible so
 			// the daemon treats it as a busy compositor and retries later.
 			return nil, err
@@ -417,7 +424,7 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 		if err != nil {
 			lastErr = err
 		} else if err := validateAppliedProfile(p, before, applied, e.TolerateModeless); err != nil {
-			lastErr = err
+			lastErr = fmt.Errorf("%w: %w", ErrVerificationFailed, err)
 		} else {
 			return applied, nil
 		}

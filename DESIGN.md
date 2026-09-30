@@ -184,6 +184,12 @@ hardware removal, or an interactive preview; resume appropriately. Preserve
 healthy displays and expose all affected outputs. Cold startup must not depend on
 a persisted external-only generated file to make the first screen accessible.
 
+A rejected automatic apply that rolls back to usable intended displays pauses
+for the unchanged request and restored state. Explicit management, a confirmed
+preview, changed profile or meaningful display/workspace state permits another
+attempt. This is separate from continued recovery for missing/modeless outputs;
+live VRR activity and buffer formats must not restart a rejected modeset.
+
 A display that drops right after connecting at its saved settings is
 remembered as needing a gentle wake. Its rule wakes it at about 60 Hz, with VRR
 off and at the same resolution, and the daemon switches it to the saved settings
