@@ -71,6 +71,9 @@ yay -S hyprmoncfg-bin
 yay -S hyprmoncfg-git
 ```
 
+If a source-package upgrade fails with `Permission denied` while removing
+`src/go-mod`, see [recovering an AUR upgrade blocked by an old Go cache](PACKAGING.md#recovering-an-aur-upgrade-blocked-by-an-old-go-cache).
+
 Fedora COPR:
 
 ```bash
