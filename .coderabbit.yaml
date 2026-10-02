@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit reviews every pull request. With request_changes_workflow, a pull
+# request with nothing to fix gets an approval and one with findings gets a
+# "changes requested" review, which Copilot Triage reads to place it on the
+# maintainer's board.
+reviews:
+  profile: chill
+  request_changes_workflow: true
