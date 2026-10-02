@@ -42,6 +42,38 @@ cached under `.cache/packaging/<version>/`. Managed downstream checkouts live in
 `.cache/packaging/repos/`, with pending update records in `.cache/packaging/state/`.
 These directories are ignored by Git.
 
+## Recovering an AUR upgrade blocked by an old Go cache
+
+An existing `hyprmoncfg` source build can leave read-only directories under
+`src/go-mod`. On the next upgrade, `makepkg` may fail at
+`Removing existing $srcdir/ directory...` with `Permission denied` for files in
+that cache. It can then report `An unknown error has occurred` and yay can report
+`signal: user defined signal 1`. The failure happens during cleanup, before the
+new sources are extracted or compiled.
+
+Commit `4006abe` makes the offline dependency archive owner-writable and is
+included in v1.22.0. That prevents newly extracted archives from carrying the old
+permissions, but cannot repair a cache left by an earlier build: makepkg tries
+to remove that cache before extracting the fixed archive. A `prepare()` change
+in the new recipe would also run too late for this cleanup failure.
+
+After the failed build has exited, remove only its Go module cache using Go's
+cache-aware cleanup. For yay's default build directory:
+
+```sh
+GOMODCACHE="$HOME/.cache/yay/hyprmoncfg/src/go-mod" go clean -modcache
+```
+
+Run this as the user who owns the build directory, without `sudo`. If the error
+shows a different build location, use that location's `src/go-mod` as the
+absolute `GOMODCACHE` path. The command removes downloaded build dependencies;
+it does not remove the installed application or saved monitor profiles. Retry
+the original update command afterward, for example `yay -S hyprmoncfg` or
+`omarchy update`.
+
+See [Go's module-cache cleanup documentation](https://go.dev/ref/mod#go-clean-modcache)
+for why ordinary recursive deletion can fail on these directories.
+
 ## Updating every package
 
 After the GitHub release has finished publishing:
