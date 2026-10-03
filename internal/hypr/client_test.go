@@ -307,3 +307,45 @@ func TestDropSyntheticMonitorsKeepsRealConnectors(t *testing.T) {
 		t.Fatalf("filtering dropped a real connector: %+v", got)
 	}
 }
+
+func TestBatchRefusesCommandsThatWouldSplitTheBatch(t *testing.T) {
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "calls.log")
+	hyprctlPath := filepath.Join(tmp, "hyprctl")
+	script := `#!/usr/bin/env bash
+printf '%s\n' "$*" >> "` + logPath + `"
+`
+	if err := os.WriteFile(hyprctlPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake hyprctl: %v", err)
+	}
+	t.Setenv("HYPRLAND_INSTANCE_SIGNATURE", "sig-test")
+
+	client := &Client{hyprctl: hyprctlPath}
+	for _, command := range []string{
+		"keyword workspace 2, monitor:desc:DEMO ; dispatch exec /tmp/evil ; X, default:true",
+		"keyword workspace 2, monitor:desc:DEMO;dispatch exec /tmp/evil",
+		"keyword workspace 2, monitor:desc:DEMO\ndispatch exec /tmp/evil",
+	} {
+		if err := client.Batch(context.Background(), []string{"keyword monitor DP-1,preferred,auto,1", command}); err == nil {
+			t.Fatalf("expected Batch to refuse %q", command)
+		}
+	}
+	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+		t.Fatalf("expected hyprctl not to run for an unsafe batch, stat err: %v", err)
+	}
+
+	if err := client.Batch(context.Background(), []string{
+		"keyword monitor DP-1,preferred,auto,1",
+		`dispatch hl.dsp.workspace.move({ workspace = "dev docs", monitor = "DP-1" })`,
+	}); err != nil {
+		t.Fatalf("Batch refused safe commands: %v", err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	want := "--instance sig-test --batch keyword monitor DP-1,preferred,auto,1 ; dispatch hl.dsp.workspace.move({ workspace = \"dev docs\", monitor = \"DP-1\" })\n"
+	if string(data) != want {
+		t.Fatalf("unexpected hyprctl calls:\nwant:\n%s\ngot:\n%s", want, data)
+	}
+}

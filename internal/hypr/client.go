@@ -287,9 +287,22 @@ func (c *Client) BatchKeywordWorkspace(ctx context.Context, values []string) err
 	return c.Batch(ctx, commands)
 }
 
+// BatchSafe reports whether command can travel inside one hyprctl --batch
+// argument. hyprctl splits that argument on every ";", so a value carrying one
+// (such as an EDID-controlled monitor description) would end the command and
+// run whatever follows it as another hyprctl command.
+func BatchSafe(command string) bool {
+	return !strings.ContainsAny(command, ";\r\n\x00")
+}
+
 func (c *Client) Batch(ctx context.Context, commands []string) error {
 	if len(commands) == 0 {
 		return nil
+	}
+	for _, command := range commands {
+		if !BatchSafe(command) {
+			return fmt.Errorf("refusing unsafe hyprctl batch command %q", command)
+		}
 	}
 	cmd, err := c.commandContext(ctx, "--batch", strings.Join(commands, " ; "))
 	if err != nil {

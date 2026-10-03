@@ -153,12 +153,27 @@ func workspaceCommandsForProfile(p profile.Profile, monitors []hypr.Monitor, lua
 		}
 
 		selector := resolver.SelectorForOutput(output, monitor)
-		if !luaDispatch {
-			commands = append(commands, "keyword workspace "+render.WorkspaceRuleCommand(rule.Workspace, selector, rule.Default, rule.Persistent))
+		if !hypr.BatchSafe(selector) {
+			// A description that would split the hyprctl batch falls back to
+			// the kernel-assigned connector name.
+			selector = monitor.Name
 		}
-		commands = append(commands, workspaceMoveCommand(rule.Workspace, monitor.Name, luaDispatch))
+		if !luaDispatch {
+			commands = appendBatchSafe(commands, "keyword workspace "+render.WorkspaceRuleCommand(rule.Workspace, selector, rule.Default, rule.Persistent))
+		}
+		commands = appendBatchSafe(commands, workspaceMoveCommand(rule.Workspace, monitor.Name, luaDispatch))
 	}
 	return commands
+}
+
+// appendBatchSafe drops a command hyprctl --batch would split, so one hostile
+// or unusual value skips its own rule instead of failing the whole apply or
+// revert.
+func appendBatchSafe(commands []string, command string) []string {
+	if !hypr.BatchSafe(command) {
+		return commands
+	}
+	return append(commands, command)
 }
 
 func SnapshotCommands(monitors []hypr.Monitor) []string {
@@ -578,7 +593,7 @@ func keywordifyMonitorCommands(commands []string) []string {
 func snapshotWorkspaceRuleCommands(rules []hypr.WorkspaceRule) []string {
 	commands := make([]string, 0, len(rules))
 	for _, rule := range rules {
-		commands = append(commands, "keyword workspace "+render.WorkspaceRuleCommand(rule.WorkspaceString, rule.Monitor, rule.Default, rule.Persistent))
+		commands = appendBatchSafe(commands, "keyword workspace "+render.WorkspaceRuleCommand(rule.WorkspaceString, rule.Monitor, rule.Default, rule.Persistent))
 	}
 	return commands
 }
@@ -589,7 +604,7 @@ func snapshotWorkspaceMoveCommands(workspaces []hypr.WorkspaceState, luaDispatch
 		if strings.HasPrefix(workspace.Name, "special:") || workspace.Monitor == "" {
 			continue
 		}
-		commands = append(commands, workspaceMoveCommand(workspace.Name, workspace.Monitor, luaDispatch))
+		commands = appendBatchSafe(commands, workspaceMoveCommand(workspace.Name, workspace.Monitor, luaDispatch))
 	}
 	return commands
 }

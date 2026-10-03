@@ -187,6 +187,48 @@ func TestSnapshotStateUsesLuaDispatcherForWorkspacePlacement(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCommandsForProfileUseConnectorForBatchSplittingDescription(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "DP-3", Description: "DEMO ; dispatch exec /tmp/evil ; X", Make: "DEMO", Model: "; dispatch exec /tmp/evil ; X", Serial: "A1"},
+	}
+	p := profile.New("desk", []profile.OutputConfig{
+		{Key: monitors[0].HardwareKey(), Name: monitors[0].Name, Enabled: true, Scale: 1},
+	})
+	p.Workspaces = profile.WorkspaceSettings{
+		Enabled:  true,
+		Strategy: profile.WorkspaceStrategyManual,
+		Rules: []profile.WorkspaceRule{
+			{Workspace: "2", OutputKey: monitors[0].HardwareKey(), OutputName: monitors[0].Name, Default: true, Persistent: true},
+		},
+	}
+
+	got := WorkspaceCommandsForProfile(p, monitors)
+	want := []string{
+		"keyword workspace 2, monitor:DP-3, default:true, persistent:true",
+		"dispatch moveworkspacetomonitor 2 DP-3",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected workspace commands:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestSnapshotStateSkipsWorkspaceRulesThatWouldSplitTheBatch(t *testing.T) {
+	commands := snapshotState(nil, []hypr.WorkspaceRule{
+		{WorkspaceString: "1", Monitor: "DP-1"},
+		{WorkspaceString: "2", Monitor: "desc:DEMO ; dispatch exec /tmp/evil ; X"},
+	}, []hypr.WorkspaceState{
+		{Name: "1", Monitor: "DP-1"},
+		{Name: "a;b", Monitor: "DP-1"},
+	}, false)
+	want := []string{
+		"keyword workspace 1, monitor:DP-1",
+		"dispatch moveworkspacetomonitor 1 DP-1",
+	}
+	if strings.Join(commands, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("unexpected snapshot commands:\ngot:  %q\nwant: %q", commands, want)
+	}
+}
+
 func TestCommandsForProfileResolveDuplicateMonitorsByConnector(t *testing.T) {
 	monitors := []hypr.Monitor{
 		{Name: "DP-5", Description: "VIE C24PULSE 0x01010101", Make: "VIE", Model: "C24PULSE", Serial: "0x01010101"},
