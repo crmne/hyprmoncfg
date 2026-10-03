@@ -129,6 +129,9 @@ func (s *Service) Manage() error {
 		s.cfg.ClaimWatcher(ctx)
 		cancel()
 	}
+	s.writeMu.Lock()
+	s.rejected = nil
+	s.writeMu.Unlock()
 	s.cfg.Logf("monitor management on")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -374,6 +377,7 @@ func (s *Service) commitPreview(owner string, transactionID string, save bool) e
 	} else {
 		s.clearManualOverride()
 	}
+	s.rejected = nil
 	// Record what the confirmed profile left on screen, so the next automatic
 	// pass recognizes the current state instead of applying it a second time.
 	if monitors, err := s.queryMonitors(ctx); err != nil {

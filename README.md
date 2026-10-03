@@ -167,6 +167,12 @@ systemctl --user enable --now hyprmoncfgd
 
 The daemon scores profiles in `~/.config/hyprmoncfg/profiles/` against the connected displays. A partial match can provide the base for a temporary extended layout without changing the saved profile. Unfamiliar displays are added unless the profile explicitly sets `disable_unknown_outputs: true`; deliberately disabled known displays remain off. Missing saved displays are allowed for undocking. Delete throwaway profiles before relying on automatic switching.
 
+When no profile matches, automatic setup retains a usable existing layout,
+including portrait rotation and the current resolution. A rejected automatic
+apply that rolls back to usable displays is paused instead of repeatedly
+flipping modes. Edit the profile or run `hyprmoncfg manage` to retry; modeless
+outputs retain automatic recovery. See [daemon behavior](docs/_guide/daemon.md).
+
 When a dock is still connecting, monitor and workspace reads have short deadlines and desktop clients can show a connecting state while retrying. Unique hardware identities skip DRM connector probing; ambiguous identities use one shared probe with bounded waiting. See [daemon behavior](https://hyprmoncfg.dev/daemon/) and the [editor IPC reference](https://hyprmoncfg.dev/ipc/) for the matching and snapshot contracts.
 
 Newly connected displays extend the matching layout to the right, touching its rightmost display. Automatically extended layouts appear as unsaved drafts in the editor and panel; save one to name and reuse it. Workspace planning follows the profile's settings, or defaults to sequential groups of three across nine workspaces when planning was disabled. In the TUI, press `U` to toggle disabling displays outside the profile, then save. The corresponding profile JSON setting is `disable_unknown_outputs` (default `false`). Displays explicitly saved as disabled stay disabled.
