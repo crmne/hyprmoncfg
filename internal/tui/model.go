@@ -2550,9 +2550,9 @@ func (d snapDirection) relation() string {
 // reflowAfterResize keeps a layout packed when an output's logical size
 // changes. Scale, mode, and transform all move an output's right and bottom
 // edges while its top-left corner stays put, so without this the displays
-// beside it gap or overlap. Everything past the old right or bottom edge
-// moves with that edge: flush neighbors stay flush, deliberate gaps keep
-// their width, and a row of displays shifts together.
+// beside it gap or overlap. Displays attached to it past the old right or
+// bottom edge move with that edge, so its row and column keep their spacing;
+// profile.ReflowAfterResize defines which displays are attached.
 func (m *Model) reflowAfterResize(index, oldWidth, oldHeight int) {
 	outputs := m.currentProfileOutputs()
 	profile.ReflowAfterResize(outputs, index, oldWidth, oldHeight)

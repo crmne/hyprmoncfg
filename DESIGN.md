@@ -364,7 +364,12 @@ the TUI calls it directly. A drop snaps within the snap distance and leaves any
 overlap by the nearest clear edge, or is refused and returns; exact moves
 (nudges, typed coordinates, Place beside, 0,0) are refused when they would
 overlap; edits that would grow a display into a neighbour are refused unless
-the layout already overlapped. The TUI drag freezes the canvas transform at the
+the layout already overlapped. A scale, mode, or rotation change moves only the
+displays attached to the resized one: its row past the old right edge, its
+column past the old bottom edge, displays on its corners, displays continuing
+those rows and columns, and any display a moving one would land on. Being
+stacked above or below a moving display in another row does not by itself move
+a display (`profile.ReflowAfterResize`). The TUI drag freezes the canvas transform at the
 press and derives the position from the grab origin, validating only on drop.
 
 Brightness stays a live hardware control in the compact panel, outside the expanded

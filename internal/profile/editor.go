@@ -346,27 +346,130 @@ func (o OutputConfig) LogicalSize() (int, int) {
 
 // ReflowAfterResize keeps flush neighbors and deliberate gaps intact when a
 // mode, scale, or transform changes an output's logical size.
+//
+// Outputs move as they always have, horizontally when past the old right edge
+// and vertically when past the old bottom edge, but only when attached to the
+// resized output. An output is attached when it touches the old rectangle
+// (beside it or on a corner), overlaps the new one, or shares its row (past
+// the right edge with overlapping vertical spans) or its column (past the
+// bottom edge with overlapping horizontal spans). Attachment spreads from a
+// moving output to another past the same edge in its row or column, to one
+// meeting it corner to corner that moves the same way, and to any output past
+// an edge that it would land on. Gaps along a moving row or column keep their
+// size. Being stacked above or below a moving display in another row does
+// not by itself make a display move. Mirrored or modeless outputs, which have
+// no area of their own, never move. The result depends only on geometry, not
+// on output order. A moving output can still meet one that stays put, or one
+// moving on the other axis, as it could before; the edit is then refused as
+// an overlap unless the layout already overlapped.
 func ReflowAfterResize(outputs []OutputConfig, index, oldWidth, oldHeight int) {
-	if index < 0 || index >= len(outputs) || !outputs[index].Enabled {
+	if index < 0 || index >= len(outputs) || !reflowable(outputs[index]) {
 		return
 	}
 	resized := outputs[index]
 	newWidth, newHeight := resized.LogicalSize()
 	dx := newWidth - oldWidth
 	dy := newHeight - oldHeight
+	if dx == 0 && dy == 0 {
+		return
+	}
 	oldRight := resized.X + oldWidth
 	oldBottom := resized.Y + oldHeight
-	for idx := range outputs {
-		if idx == index || !outputs[idx].Enabled {
+
+	type rect struct{ x1, y1, x2, y2 int }
+	rects := make([]rect, len(outputs))
+	pastRight := make([]bool, len(outputs))
+	pastBottom := make([]bool, len(outputs))
+	candidate := make([]bool, len(outputs))
+	for idx, output := range outputs {
+		if idx == index || !reflowable(output) {
 			continue
 		}
-		if dx != 0 && outputs[idx].X >= oldRight {
+		width, height := output.LogicalSize()
+		rects[idx] = rect{output.X, output.Y, output.X + width, output.Y + height}
+		pastRight[idx] = dx != 0 && output.X >= oldRight
+		pastBottom[idx] = dy != 0 && output.Y >= oldBottom
+		candidate[idx] = pastRight[idx] || pastBottom[idx]
+	}
+	overlaps := func(a, b rect) bool {
+		return spansOverlap(a.x1, a.x2, b.x1, b.x2) && spansOverlap(a.y1, a.y2, b.y1, b.y2)
+	}
+	touching := func(a, b rect) bool {
+		return a.x1 <= b.x2 && a.x2 >= b.x1 && a.y1 <= b.y2 && a.y2 >= b.y1
+	}
+	shifted := func(idx int) rect {
+		r := rects[idx]
+		if pastRight[idx] {
+			r.x1, r.x2 = r.x1+dx, r.x2+dx
+		}
+		if pastBottom[idx] {
+			r.y1, r.y2 = r.y1+dy, r.y2+dy
+		}
+		return r
+	}
+
+	oldRect := rect{resized.X, resized.Y, oldRight, oldBottom}
+	newRect := rect{resized.X, resized.Y, resized.X + newWidth, resized.Y + newHeight}
+	// Row and column spans cover the old and new size, so a display beside
+	// the part an output grows into still counts as beside it.
+	spanRight, spanBottom := resized.X+max(oldWidth, newWidth), resized.Y+max(oldHeight, newHeight)
+	attached := func(idx int) bool {
+		r := rects[idx]
+		return touching(r, oldRect) || overlaps(r, newRect) ||
+			(pastRight[idx] && spansOverlap(r.y1, r.y2, resized.Y, spanBottom)) ||
+			(pastBottom[idx] && spansOverlap(r.x1, r.x2, resized.X, spanRight))
+	}
+	cornered := func(a, b rect) bool {
+		return (a.x2 == b.x1 || b.x2 == a.x1) && (a.y2 == b.y1 || b.y2 == a.y1)
+	}
+	linked := func(a, b int) bool {
+		return (pastRight[a] && pastRight[b] && spansOverlap(rects[a].y1, rects[a].y2, rects[b].y1, rects[b].y2)) ||
+			(pastBottom[a] && pastBottom[b] && spansOverlap(rects[a].x1, rects[a].x2, rects[b].x1, rects[b].x2)) ||
+			(pastRight[a] == pastRight[b] && pastBottom[a] == pastBottom[b] && cornered(rects[a], rects[b]))
+	}
+
+	moving := make([]bool, len(outputs))
+	var queue []int
+	join := func(idx int) {
+		if candidate[idx] && !moving[idx] {
+			moving[idx] = true
+			queue = append(queue, idx)
+		}
+	}
+	for idx := range outputs {
+		if candidate[idx] && attached(idx) {
+			join(idx)
+		}
+	}
+	// Outputs left behind keep their place, so one pass per joining output
+	// finds both its links and anything it would land on.
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		landing := shifted(current)
+		for other := range outputs {
+			if candidate[other] && !moving[other] && (linked(current, other) || overlaps(landing, rects[other])) {
+				join(other)
+			}
+		}
+	}
+
+	for idx := range outputs {
+		if !moving[idx] {
+			continue
+		}
+		if pastRight[idx] {
 			outputs[idx].X += dx
 		}
-		if dy != 0 && outputs[idx].Y >= oldBottom {
+		if pastBottom[idx] {
 			outputs[idx].Y += dy
 		}
 	}
+}
+
+// reflowable reports whether an output has its own area in the layout.
+func reflowable(output OutputConfig) bool {
+	return output.Enabled && output.MirrorOf == "" && output.Width > 0 && output.Height > 0
 }
 
 func AnalyzeSnap(outputs []OutputConfig, selectedIndex, threshold int) SnapAnalysis {
