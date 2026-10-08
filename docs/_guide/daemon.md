@@ -83,6 +83,15 @@ so the panel comes back without waiting for the external. The wake command uses
 the Lua or legacy syntax Hyprland last reported, even when Hyprland is too busy
 to answer right after resume.
 
+While the displays are asleep, a monitor with input auto-switching can scan its
+other inputs when the source stops sending signal. The scan drops the output's
+link and lights it again on the way back to the same input. That relight is a
+link flap, not a request for light: the daemon logs
+`display link flap during sleep; keeping displays asleep`, puts the output back
+to sleep, and does not reconcile, so the screens stay dark. A relight without a
+preceding link drop — a newly connected display, or the user asking for light —
+wakes the displays and reconciles as usual.
+
 ### Displays that won't stay on
 
 Some displays can't wake straight into a demanding mode such as 4K at 144 Hz. They

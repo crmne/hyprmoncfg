@@ -348,6 +348,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 	pending := false
 	wakeRetries := 0
+	flaps := newLinkFlaps()
 	requestWake := func() {
 		s.wakeDisplays(ctx)
 		wakeRetries = wakeRetryLimit
@@ -447,7 +448,10 @@ func (s *Service) Run(ctx context.Context) error {
 				s.cfg.LaptopToggle.Reset()
 			}
 			s.cfg.Logf("monitor event received: %s connector=%s", ev.Type, name)
-			if s.fallbacks.observeEvent(ev, time.Now()) {
+			if ev.Type == hypr.EventMonitorRemoved && displayGuard.sleeping {
+				flaps.Removed(name, time.Now())
+			}
+			if s.fallbacks.observeEvent(ev, time.Now(), displayGuard.sleeping) {
 				reason = fallbackTriggerPrefix + reason
 			}
 			armSettle()
@@ -485,6 +489,7 @@ func (s *Service) Run(ctx context.Context) error {
 				pending = false
 				settlingAfterWake = false
 				endWakeRequest()
+				flaps.Reset()
 				stopDebounce()
 				continue
 			}
@@ -493,6 +498,7 @@ func (s *Service) Run(ctx context.Context) error {
 			s.refreshLidState(ctx)
 			requestWake()
 			displayGuard.sleeping = false
+			flaps.Reset()
 			settlingAfterWake = true
 			pushTrigger("resume", s.cfg.WakeSettle)
 		case state, ok := <-lidStates:
@@ -517,6 +523,7 @@ func (s *Service) Run(ctx context.Context) error {
 					// Opening the lid is an explicit ask for light. Wake the
 					// displays instead of waiting for a keypress to do it.
 					requestWake()
+					flaps.Reset()
 					if displayGuard.sleeping {
 						displayGuard.sleeping = false
 						settlingAfterWake = true
@@ -585,9 +592,26 @@ func (s *Service) Run(ctx context.Context) error {
 					continue
 				}
 				s.cfg.Logf("display sleep detected; pausing automatic switching")
+				flaps.Reset()
 				deferForDisplaySleep("")
 				continue
 			case displaySleepExited:
+				if !s.wakeRequested.Load() {
+					if relit, ok := flaps.RelitDuringSleep(monitors, time.Now()); ok {
+						// An input-auto-switching monitor scanned its other
+						// inputs while the source was quiet and came back to
+						// the same one. Hyprland lights the re-added output;
+						// nobody asked for light, so put it back to sleep
+						// instead of reconciling a wake that did not happen.
+						flaps.Consume(relit)
+						displayGuard.sleeping = true
+						s.cfg.Logf("display link flap during sleep; keeping displays asleep: %s", strings.Join(relit, ", "))
+						s.sleepDisplays(ctx)
+						deferForDisplaySleep("")
+						continue
+					}
+				}
+				flaps.Reset()
 				endWakeRequest()
 				s.cfg.LaptopToggle.Reset()
 				settlingAfterWake = true
@@ -596,6 +620,9 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			if displayGuard.sleeping {
+				if topologyChanged || probe.reason != "poll" {
+					s.cfg.Logf("automatic switching deferred while displays sleep: %s", probe.reason)
+				}
 				continue
 			}
 
@@ -663,6 +690,7 @@ func (s *Service) Run(ctx context.Context) error {
 				endWakeRequest()
 				if displayGuard.MarkSleeping() {
 					s.cfg.Logf("display sleep detected; pausing automatic switching")
+					flaps.Reset()
 				}
 				deferForDisplaySleep("")
 				continue
@@ -753,19 +781,13 @@ func (s *Service) refreshLidState(ctx context.Context) {
 	s.clearManualOverride()
 }
 
-// wakeDisplays turns every output's DPMS on. Opening the lid or resuming from
-// sleep is the user asking for light; without this the screens stay dark until
-// a keypress, and an external monitor left undriven can take half a minute to
-// come back on its own.
-func (s *Service) wakeDisplays(ctx context.Context) {
-	wakeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	// Ask briefly and keep the rest of the budget for the wake itself. Without
-	// an answer, use the dialect seen last: guessing legacy sends Lua-mode
-	// Hyprland a command it rejects, and the displays stay dark.
+// luaDispatchFor reports which DPMS dispatch syntax Hyprland accepts. Ask
+// briefly and keep the rest of the caller's budget for the dispatch itself.
+// Without an answer, use the dialect seen last: guessing legacy sends
+// Lua-mode Hyprland a command it rejects.
+func (s *Service) luaDispatchFor(ctx context.Context) bool {
 	luaDispatch := s.luaDialect.Load()
-	versionCtx, cancelVersion := context.WithTimeout(wakeCtx, s.cfg.QueryTimeout)
+	versionCtx, cancelVersion := context.WithTimeout(ctx, s.cfg.QueryTimeout)
 	info, err := s.client.Version(versionCtx)
 	cancelVersion()
 	if err == nil && info.Version != "" {
@@ -774,8 +796,29 @@ func (s *Service) wakeDisplays(ctx context.Context) {
 			s.luaDialect.Store(luaDispatch)
 		}
 	}
-	if err := s.client.WakeDisplays(wakeCtx, luaDispatch); err != nil {
+	return luaDispatch
+}
+
+// wakeDisplays turns every output's DPMS on. Opening the lid or resuming from
+// sleep is the user asking for light; without this the screens stay dark until
+// a keypress, and an external monitor left undriven can take half a minute to
+// come back on its own.
+func (s *Service) wakeDisplays(ctx context.Context) {
+	wakeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := s.client.WakeDisplays(wakeCtx, s.luaDispatchFor(wakeCtx)); err != nil {
 		s.cfg.Logf("could not wake displays: %v", err)
+	}
+}
+
+// sleepDisplays turns every output's DPMS off. A link flap during display
+// sleep lights the re-added output only because Hyprland starts new outputs
+// with DPMS on; nothing asked for light, so the displays stay dark.
+func (s *Service) sleepDisplays(ctx context.Context) {
+	sleepCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := s.client.SleepDisplays(sleepCtx, s.luaDispatchFor(sleepCtx)); err != nil {
+		s.cfg.Logf("could not put displays back to sleep: %v", err)
 	}
 }
 

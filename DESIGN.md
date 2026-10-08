@@ -175,7 +175,9 @@ output is usable. A modeless output or synthetic `FALLBACK` does not satisfy tha
 condition. The same holds when the profile itself turns the internal screen off:
 with no external showing a picture, the daemon keeps a connected internal screen
 on until one does. The saved profile is not changed. Distinguish intentional DPMS sleep from a failed wake before starting
-recovery. Keep the machine's sleep and lock policy intact.
+recovery. Keep the machine's sleep and lock policy intact. A relight caused by
+a display's input scan during sleep is a link flap, not a wake: the displays
+stay asleep and nothing reconciles.
 
 The daemon owns recovery while it owns monitor management. A bounded attempt may
 end, but an unresolved intended output must remain scheduled for another attempt

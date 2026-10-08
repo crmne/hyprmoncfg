@@ -265,6 +265,15 @@ func (c *Client) WakeDisplays(ctx context.Context, luaDispatch bool) error {
 	return c.Dispatch(ctx, "dpms", "on")
 }
 
+// SleepDisplays turns DPMS off for every output. It is the mirror of
+// WakeDisplays, used to undo a relight nobody asked for.
+func (c *Client) SleepDisplays(ctx context.Context, luaDispatch bool) error {
+	if luaDispatch {
+		return c.Dispatch(ctx, `hl.dsp.dpms({ action = "disable" })`)
+	}
+	return c.Dispatch(ctx, "dpms", "off")
+}
+
 func (c *Client) BatchKeywordMonitor(ctx context.Context, values []string) error {
 	if len(values) == 0 {
 		return nil
