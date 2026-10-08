@@ -122,8 +122,10 @@ func fallbackKey(description string) string {
 // when that calls for a new rule while the display is gone: a first drop at
 // the saved settings asks for a gentle wake from now on, and a drop right after
 // the switch from a gentle wake asks for a gentler setting. Only Hyprland's v2
-// events name the display, so the v1 duplicate is ignored.
-func (f *displayFallbacks) observeEvent(ev hypr.Event, now time.Time) bool {
+// events name the display, so the v1 duplicate is ignored. A drop while the
+// displays are asleep is an input scan or an unplug, not a display that cannot
+// hold its settings, so sleeping drops are bookkeeping only.
+func (f *displayFallbacks) observeEvent(ev hypr.Event, now time.Time, sleeping bool) bool {
 	parts := strings.SplitN(ev.Value, ",", 3)
 	if len(parts) != 3 {
 		return false
@@ -144,6 +146,9 @@ func (f *displayFallbacks) observeEvent(ev hypr.Event, now time.Time) bool {
 		switched, wasSwitched := f.switchedAt[key]
 		delete(f.connectedAt, key)
 		delete(f.switchedAt, key)
+		if sleeping {
+			return false
+		}
 		entry := f.active[key]
 		switch {
 		case !entry.GentleWake:

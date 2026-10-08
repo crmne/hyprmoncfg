@@ -53,11 +53,11 @@ func trackerAt(dir string, t *testing.T) (*displayFallbacks, *clock) {
 }
 
 func connect(f *displayFallbacks, c *clock) bool {
-	return f.observeEvent(msiEvent(hypr.EventMonitorAdded), c.now())
+	return f.observeEvent(msiEvent(hypr.EventMonitorAdded), c.now(), false)
 }
 
 func drop(f *displayFallbacks, c *clock) bool {
-	return f.observeEvent(msiEvent(hypr.EventMonitorRemoved), c.now())
+	return f.observeEvent(msiEvent(hypr.EventMonitorRemoved), c.now(), false)
 }
 
 // bounce is what the MSI does at 144 Hz: connect, then drop a second later.
@@ -81,8 +81,8 @@ func TestFallbackLeavesDisplaysThatStayOnAlone(t *testing.T) {
 		}
 	}
 	// Hyprland's v1 events carry no description and are ignored.
-	f.observeEvent(hypr.Event{Type: hypr.EventMonitorAdded, Value: "DP-2"}, c.now())
-	if f.observeEvent(hypr.Event{Type: hypr.EventMonitorRemoved, Value: "DP-2"}, c.now().Add(time.Second)) {
+	f.observeEvent(hypr.Event{Type: hypr.EventMonitorAdded, Value: "DP-2"}, c.now(), false)
+	if f.observeEvent(hypr.Event{Type: hypr.EventMonitorRemoved, Value: "DP-2"}, c.now().Add(time.Second), false) {
 		t.Fatal("v1 events must be ignored")
 	}
 	connect(f, c)
@@ -91,6 +91,29 @@ func TestFallbackLeavesDisplaysThatStayOnAlone(t *testing.T) {
 	}
 	if _, waiting := f.settleDelay(); waiting {
 		t.Fatal("nothing should wait to settle")
+	}
+}
+
+// A link drop while the displays are asleep is an input scan or an unplug,
+// not a display that cannot hold its settings. An input-auto-switching
+// monitor drops and returns a second later when its sleeping source goes
+// quiet, and that must not slow down every future wake of the display.
+func TestFallbackDoesNotMarkASleepingLinkDrop(t *testing.T) {
+	f, c := trackerAt("", t)
+	p, lg, msi := fallbackDesk()
+	f.apply(p, []hypr.Monitor{lg, msi})
+
+	f.observeEvent(msiEvent(hypr.EventMonitorAdded), c.now(), true)
+	c.advance(time.Second)
+	if f.observeEvent(msiEvent(hypr.EventMonitorRemoved), c.now(), true) {
+		t.Fatal("a link drop while the displays sleep must not call for a gentler rule")
+	}
+
+	// The same drop while the displays are lit is the bounce this exists for.
+	f.observeEvent(msiEvent(hypr.EventMonitorAdded), c.now(), false)
+	c.advance(time.Second)
+	if !f.observeEvent(msiEvent(hypr.EventMonitorRemoved), c.now(), false) {
+		t.Fatal("a drop right after connecting while awake should call for a gentle-wake rule")
 	}
 }
 
