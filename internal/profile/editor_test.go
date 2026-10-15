@@ -504,3 +504,85 @@ func TestReflowAfterResizeMovesADisplayAMoverWouldLandOn(t *testing.T) {
 		t.Fatalf("positions = %v, want %v", got, want)
 	}
 }
+
+func TestApplyEditorEditKeepsAutoAndExplicitRotationExclusive(t *testing.T) {
+	base := Profile{Outputs: []OutputConfig{{
+		Key: "panel", Name: "DSI-1", Enabled: true, Width: 1200, Height: 1920, Scale: 1, Transform: 3,
+	}}}
+
+	auto := true
+	got, err := ApplyEditorEdit(base, EditorEdit{OutputKey: "panel", RotationAuto: &auto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Outputs[0].RotationAuto {
+		t.Fatal("expected auto rotation to be recorded")
+	}
+
+	// Choosing an explicit rotation must clear auto, or a profile would claim
+	// both at once.
+	rotation := 1
+	got, err = ApplyEditorEdit(got, EditorEdit{OutputKey: "panel", Transform: &rotation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Outputs[0].RotationAuto || got.Outputs[0].Transform != 1 {
+		t.Fatalf("explicit rotation should clear auto, got auto=%v transform=%d",
+			got.Outputs[0].RotationAuto, got.Outputs[0].Transform)
+	}
+
+	// Turning auto off on its own keeps the last captured rotation.
+	off := false
+	got, err = ApplyEditorEdit(got, EditorEdit{OutputKey: "panel", RotationAuto: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Outputs[0].RotationAuto || got.Outputs[0].Transform != 1 {
+		t.Fatalf("clearing auto should keep the stored rotation, got auto=%v transform=%d",
+			got.Outputs[0].RotationAuto, got.Outputs[0].Transform)
+	}
+}
+
+func TestPreserveUnreportedSettingsKeepsAutoRotation(t *testing.T) {
+	// A layout-only edit rebuilds the draft from live state, which cannot
+	// report that rotation is auto. It has to survive that rebuild.
+	saved := Profile{Outputs: []OutputConfig{{
+		Key: "panel", Name: "DSI-1", Enabled: true, Width: 1200, Height: 1920, Scale: 1,
+		Transform: 3, RotationAuto: true,
+	}}}
+	draft := Profile{Outputs: []OutputConfig{{
+		Key: "panel", Name: "DSI-1", Enabled: true, Width: 1200, Height: 1920, Scale: 1, Transform: 1,
+	}}}
+	PreserveUnreportedSettings(&draft, saved)
+	if !draft.Outputs[0].RotationAuto {
+		t.Fatal("a layout-only edit should preserve auto rotation")
+	}
+}
+
+func TestApplyEditorEditRestoresSavedAutoRotation(t *testing.T) {
+	// An editor resetting a saved auto output names the captured transform and
+	// auto together. That is not a contradiction: auto keeps a transform so
+	// turning auto off has somewhere to land, so both must be honoured.
+	base := Profile{Outputs: []OutputConfig{{
+		Key: "panel", Name: "DSI-1", Enabled: true, Width: 1200, Height: 1920, Scale: 1, Transform: 1,
+	}}}
+	rotation, auto := 3, true
+	got, err := ApplyEditorEdit(base, EditorEdit{OutputKey: "panel", Transform: &rotation, RotationAuto: &auto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Outputs[0].RotationAuto || got.Outputs[0].Transform != 3 {
+		t.Fatalf("restoring a saved auto output should set both, got auto=%v transform=%d",
+			got.Outputs[0].RotationAuto, got.Outputs[0].Transform)
+	}
+
+	// Naming only a transform is the user choosing an angle, which clears auto.
+	off, rotation2 := false, 2
+	got, err = ApplyEditorEdit(got, EditorEdit{OutputKey: "panel", Transform: &rotation2, RotationAuto: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Outputs[0].RotationAuto {
+		t.Fatal("choosing an angle should clear auto")
+	}
+}

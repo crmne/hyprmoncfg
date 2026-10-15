@@ -147,6 +147,7 @@ type MonitorFallback struct {
 type EditorDocument struct {
 	MonitorSetHash                string                     `json:"monitor_set_hash,omitempty"`
 	WorkspacePersistenceSupported bool                       `json:"workspace_persistence_supported"`
+	RotationAutoSupported         bool                       `json:"rotation_auto_supported"`
 	Profile                       profile.Profile            `json:"profile"`
 	Profiles                      []profile.Profile          `json:"profiles"`
 	Displays                      []EditorDisplay            `json:"displays"`
@@ -189,13 +190,16 @@ func BuildEditor(profiles []profile.Profile, monitors []hypr.Monitor, rules []hy
 	document := EditorDocument{
 		MonitorSetHash:                HardwareSnapshotHash(monitors),
 		WorkspacePersistenceSupported: true,
-		Profile:                       draft,
-		Profiles:                      append([]profile.Profile{}, profiles...),
-		Displays:                      make([]EditorDisplay, 0, len(monitors)),
-		WorkspacePlan:                 BuildEditorDraft(draft).WorkspacePlan,
-		ProfileWorkspacePlans:         make(map[string][]WorkspacePlan, len(profiles)),
-		SourceProfile:                 sourceName,
-		SuggestedProfile:              suggestedName,
+		// Advertised so a panel built against an older protocol can leave the
+		// rotation choice out instead of offering an edit this daemon drops.
+		RotationAutoSupported: true,
+		Profile:               draft,
+		Profiles:              append([]profile.Profile{}, profiles...),
+		Displays:              make([]EditorDisplay, 0, len(monitors)),
+		WorkspacePlan:         BuildEditorDraft(draft).WorkspacePlan,
+		ProfileWorkspacePlans: make(map[string][]WorkspacePlan, len(profiles)),
+		SourceProfile:         sourceName,
+		SuggestedProfile:      suggestedName,
 	}
 	for _, saved := range profiles {
 		document.ProfileWorkspacePlans[saved.Name] = BuildEditorDraft(saved).WorkspacePlan

@@ -22,6 +22,15 @@ func rememberApplied(requested profile.Profile, monitors []hypr.Monitor) *applie
 	requested.Workspaces.Rules = slices.Clone(requested.Workspaces.Rules)
 	live := profile.FromMonitors(requested.Name, monitors)
 	live.Workspaces = requested.Workspaces
+	// An auto rotation is owned by something outside hyprmoncfg, so it is not
+	// part of the baseline we remember. Without this, the sensor turning the
+	// panel would read as drift from the remembered snapshot, and every
+	// rotation would rewrite the generated config and reload Hyprland.
+	for i := range live.Outputs {
+		if output, ok := requested.OutputByKey(live.Outputs[i].Key); ok && output.RotationAuto {
+			live.Outputs[i].RotationAuto = true
+		}
+	}
 	// Retain precise requested scales when hyprctl rounded their readback.
 	resolver := profile.NewMonitorResolver(monitors)
 	for _, output := range requested.Outputs {

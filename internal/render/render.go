@@ -42,6 +42,9 @@ func LiveOutputRule(p profile.Profile, monitors []hypr.Monitor, connector string
 		}
 		identifier := resolver.SelectorForOutput(item.config, item.monitor)
 		if opts.Format != config.HyprConfigLua {
+			// item.config already has auto resolved to this monitor's live
+			// rotation (see resolveProfileOutputs), because a live rule always
+			// states a transform.
 			return CommandForOutput(item.monitor.Name, item.config, ""), true
 		}
 		if opts.UseMonitorV2 {
@@ -544,11 +547,29 @@ func resolveProfileOutputs(p profile.Profile, resolver profile.MonitorResolver) 
 		if !ok {
 			continue
 		}
+		output = resolveAutoRotation(output, monitor)
 		item := matchedOutput{config: output, monitor: monitor}
 		matched = append(matched, item)
 		matchedByKey[output.Key] = item
 	}
 	return matched, matchedByKey
+}
+
+// resolveAutoRotation replaces an auto rotation with the display's live one, at
+// the point where a profile output is paired with the monitor it matched.
+//
+// It has to happen here rather than in the renderers because a generated
+// Hyprland rule always states a transform: a rule that leaves it out means
+// transform 0, not "leave the rotation alone". Omitting the field would pin
+// every reload to normal, which is the bug auto exists to avoid. Resolving once
+// here also means the keyword, Lua, and monitorv2 renderers need no change, and
+// a disabled output keeps its stored value because nothing renders it anyway.
+func resolveAutoRotation(output profile.OutputConfig, monitor hypr.Monitor) profile.OutputConfig {
+	if !output.RotationAuto {
+		return output
+	}
+	output.Transform = monitor.Transform
+	return output
 }
 
 // disconnectedOutputs returns the profile's enabled outputs that are not

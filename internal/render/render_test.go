@@ -73,3 +73,50 @@ func TestLiveOutputRuleRendersOneEnabledOutput(t *testing.T) {
 		t.Fatal("a disabled output has no live rule to set")
 	}
 }
+
+func TestAutoRotationRendersTheLiveTransform(t *testing.T) {
+	// A generated rule always states a transform: leaving it out means
+	// transform 0, not "leave the rotation alone". So an auto output must
+	// render the display's live rotation, or every reload pins it to normal.
+	panel := hypr.Monitor{Name: "DSI-1", Description: "NYM Panel", Make: "NYM", Model: "Panel", Serial: "I1",
+		Width: 1200, Height: 1920, RefreshRate: 50, Scale: 1, Transform: 3}
+	monitors := []hypr.Monitor{panel}
+	p := profile.New("Tablet", []profile.OutputConfig{
+		{Key: panel.HardwareKey(), Name: panel.Name, Enabled: true, Width: 1200, Height: 1920,
+			Refresh: 50, X: 0, Scale: 1, Transform: 1, RotationAuto: true},
+	})
+
+	// The stored Transform is deliberately stale (1) to prove auto ignores it
+	// in favour of the live value (3).
+	if keyword, ok := LiveOutputRule(p, monitors, "DSI-1", Options{Format: config.HyprConfigLegacy}); !ok ||
+		!strings.Contains(keyword, ",transform,3,") {
+		t.Fatalf("auto keyword rule should carry the live transform, got (ok=%v): %s", ok, keyword)
+	}
+
+	lua, ok := LiveOutputRule(p, monitors, "DSI-1", Options{Format: config.HyprConfigLua, UseMonitorV2: true})
+	if !ok || !strings.Contains(lua, "transform = 3,") {
+		t.Fatalf("auto Lua rule should carry the live transform (ok=%v):\n%s", ok, lua)
+	}
+
+	rendered, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLua, UseMonitorV2: true})
+	if err != nil {
+		t.Fatalf("RenderConfig: %v", err)
+	}
+	if !strings.Contains(rendered, "transform = 3,") || strings.Contains(rendered, "transform = 1,") {
+		t.Fatalf("rendered config should carry the live transform, not the stored one:\n%s", rendered)
+	}
+}
+
+func TestExplicitRotationStillRendersItsStoredValue(t *testing.T) {
+	panel := hypr.Monitor{Name: "DSI-1", Description: "NYM Panel", Make: "NYM", Model: "Panel", Serial: "I1",
+		Width: 1200, Height: 1920, RefreshRate: 50, Scale: 1, Transform: 3}
+	monitors := []hypr.Monitor{panel}
+	p := profile.New("Tablet", []profile.OutputConfig{
+		{Key: panel.HardwareKey(), Name: panel.Name, Enabled: true, Width: 1200, Height: 1920,
+			Refresh: 50, X: 0, Scale: 1, Transform: 1},
+	})
+	if keyword, ok := LiveOutputRule(p, monitors, "DSI-1", Options{Format: config.HyprConfigLegacy}); !ok ||
+		!strings.Contains(keyword, ",transform,1,") {
+		t.Fatalf("an explicit rotation should render its stored value, got (ok=%v): %s", ok, keyword)
+	}
+}

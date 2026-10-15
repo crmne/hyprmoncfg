@@ -1980,3 +1980,37 @@ func TestEngineApplySkipsLuaReloadWhenConfigAndDisplaysAlreadyMatch(t *testing.T
 		t.Fatalf("generated Lua config should hold the rules without a probe, got:\n%s", rendered)
 	}
 }
+
+func TestValidateAppliedProfileToleratesAutoRotation(t *testing.T) {
+	// An auto rotation is set by an external authority (an orientation sensor,
+	// or the user's own script). Any applied rotation satisfies it: validating
+	// against the value captured at save time would reject every apply that
+	// landed on a different rotation.
+	before := hypr.Monitor{Name: "DSI-1", Make: "NYM", Model: "Panel", Serial: "I1",
+		Width: 1200, Height: 1920, RefreshRate: 50, Scale: 1, Transform: 3}
+	p := profile.New("tablet", []profile.OutputConfig{{
+		Key: before.HardwareKey(), Name: before.Name, Enabled: true,
+		Width: 1200, Height: 1920, Refresh: 50, Scale: 1, Transform: 3, RotationAuto: true,
+	}})
+
+	rotated := before
+	rotated.Transform = 1
+	if err := ValidateAppliedProfile(p, []hypr.Monitor{before}, []hypr.Monitor{rotated}); err != nil {
+		t.Fatalf("auto rotation should tolerate a different applied rotation: %v", err)
+	}
+}
+
+func TestValidateAppliedProfileRejectsExplicitRotationMismatch(t *testing.T) {
+	before := hypr.Monitor{Name: "DSI-1", Make: "NYM", Model: "Panel", Serial: "I1",
+		Width: 1200, Height: 1920, RefreshRate: 50, Scale: 1, Transform: 3}
+	p := profile.New("tablet", []profile.OutputConfig{{
+		Key: before.HardwareKey(), Name: before.Name, Enabled: true,
+		Width: 1200, Height: 1920, Refresh: 50, Scale: 1, Transform: 3,
+	}})
+
+	rotated := before
+	rotated.Transform = 1
+	if err := ValidateAppliedProfile(p, []hypr.Monitor{before}, []hypr.Monitor{rotated}); err == nil {
+		t.Fatal("an explicit rotation that was not applied should still fail validation")
+	}
+}

@@ -190,6 +190,7 @@ type editableOutput struct {
 	Scale             float64
 	VRR               int
 	Transform         int
+	RotationAuto      bool
 	Focused           bool
 	DPMSStatus        bool
 	IsInternal        bool
@@ -2639,7 +2640,10 @@ func (m *Model) adjustInspectorFieldUnguarded(delta int) {
 	case 5:
 		output.VRR = wrapValue(output.VRR+delta, 0, 2)
 	case 6:
+		// Stepping picks an explicit transform, which is the same choice as
+		// selecting one from the picker, so it turns auto off with it.
 		output.Transform = wrapValue(output.Transform+delta, 0, 7)
+		output.RotationAuto = false
 	case 9:
 		targets := []string{""}
 		for i, other := range m.editOutputs {
@@ -3590,6 +3594,9 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 	case 5:
 		return vrrLabel(output.VRR)
 	case 6:
+		if output.RotationAuto {
+			return rotationAutoLabel
+		}
 		return transformLabel(output.Transform)
 	case 7:
 		return fmt.Sprintf("%d", output.X)
@@ -3661,6 +3668,9 @@ func (m Model) layoutFieldIssue(output editableOutput, field int) (string, bool)
 			return "invalid", true
 		}
 	case 6:
+		if output.RotationAuto {
+			break
+		}
 		if output.Transform < 0 || output.Transform > 7 {
 			return "invalid", true
 		}
@@ -3850,6 +3860,7 @@ func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, ha
 		Scale:             scaling.Round(scaling.Clamp(saved.Scale)),
 		VRR:               saved.VRR,
 		Transform:         saved.Transform,
+		RotationAuto:      saved.RotationAuto,
 		IsInternal:        isInternalOutputName(saved.Name),
 		MirrorOf:          saved.MirrorOf,
 		Bitdepth:          saved.Bitdepth,
@@ -4059,6 +4070,7 @@ func (o editableOutput) profileOutput() profile.OutputConfig {
 		Scale:             scaling.Round(scaling.Clamp(o.Scale)),
 		VRR:               o.VRR,
 		Transform:         o.Transform,
+		RotationAuto:      o.RotationAuto,
 		MirrorOf:          o.MirrorOf,
 		Bitdepth:          o.Bitdepth,
 		CM:                o.CM,
@@ -4749,6 +4761,19 @@ func triStateLabel(v int) string {
 	default:
 		return "auto"
 	}
+}
+
+// rotationAutoLabel is the Rotation field's auto choice. It sits outside the
+// eight transforms because auto is not a transform: it means the rotation is
+// set elsewhere and this layout should not hold one.
+const rotationAutoLabel = "auto"
+
+// rotationOptions is the Rotation picker's order. The parser matches on these
+// labels, so the two must not drift apart.
+var rotationOptions = []string{
+	"normal", "90", "180", "270",
+	"flipped", "flipped+90", "flipped+180", "flipped+270",
+	rotationAutoLabel,
 }
 
 func transformLabel(v int) string {

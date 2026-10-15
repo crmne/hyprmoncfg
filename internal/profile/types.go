@@ -28,6 +28,7 @@ type OutputConfig struct {
 	Scale             float64 `json:"scale"`
 	VRR               int     `json:"vrr,omitempty"`
 	Transform         int     `json:"transform"`
+	RotationAuto      bool    `json:"rotation_auto,omitempty"`
 	MirrorOf          string  `json:"mirror_of,omitempty"`
 	Bitdepth          int     `json:"bitdepth,omitempty"`
 	CM                string  `json:"cm,omitempty"`

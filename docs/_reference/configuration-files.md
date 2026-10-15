@@ -32,6 +32,13 @@ hyprmoncfgd --config-dir /path/to/profiles
 Each profile stores:
 
 - **Monitor outputs**: hardware identity (make, model, serial), resolution, refresh rate, scale, position, transform, VRR mode
+
+Rotation is normally explicit, but an output can instead be set to **Auto**, which
+keeps the display's own rotation. That is for a panel whose orientation an
+external authority controls, such as a 2-in-1 following an orientation sensor. It
+is stored as `rotation_auto` alongside `transform`, which keeps the last captured
+value, so a profile moved between machines still has a usable rotation if auto is
+later turned off.
 - **Workspace settings**: strategy, max workspaces, group size, monitor order, explicit rules
 
 Generated workspace plans support `workspaces.persist_all: true` to keep every

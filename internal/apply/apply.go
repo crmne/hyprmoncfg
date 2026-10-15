@@ -817,7 +817,11 @@ func validateAppliedProfile(p profile.Profile, before []hypr.Monitor, after []hy
 			problems = append(problems, fmt.Errorf("%s scale mismatch: wanted %s, got %s", monitor.Name, scaling.Format(output.Scale), scaling.Format(applied.Scale)))
 			continue
 		}
-		if applied.Transform != output.Transform {
+		// An auto rotation is set by an external authority, so any applied
+		// rotation satisfies it. Validating it against the stored value would
+		// reject every apply that landed on a different rotation than the one
+		// captured when the profile was saved.
+		if !output.RotationAuto && applied.Transform != output.Transform {
 			problems = append(problems, fmt.Errorf("%s transform mismatch: wanted %d, got %d", monitor.Name, output.Transform, applied.Transform))
 			continue
 		}

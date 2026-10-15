@@ -118,6 +118,28 @@ EDID dimensions need a documented fallback, initially 1x. Never infer a projecto
 viewing distance from its physical-size metadata. Show the recommendation and allow
 an exact override in both clients.
 
+### Auto rotation
+
+Rotation can be set by an external authority rather than by the layout: a 2-in-1
+panel follows an orientation sensor, typically `iio-sensor-proxy` driving
+`hyprctl`, possibly through the user's own script. That is live hardware state,
+the same category as brightness, not a property of the desk layout. Rotation
+therefore offers an auto setting alongside the eight transforms.
+
+Auto is per output and is stored as `rotation_auto` beside the existing
+`transform`, which keeps the last captured value. Choosing either clear the
+other, so a profile never claims both. Auto resolves to the display's live
+rotation at the moment a rule is generated, because a generated Hyprland rule
+always states a transform: a rule that leaves it out means transform 0, not
+"leave the rotation alone". Omitting the field would pin the panel to normal on
+every reload, which is the failure auto exists to prevent.
+
+Matching treats auto like `cm: auto`: any live rotation satisfies it, and it
+never counts as drift, so a rotation taken by the sensor does not restart a
+preview or re-assert the saved layout. An explicit rotation keeps its strict
+comparison, so a display that really is asked to stay rotated still fails when
+it is not.
+
 Maximum resolution and refresh describe a valid advertised **pair**, not two
 independent maxima. If application fails, try the preferred advertised mode,
 then lower supported refresh/resolution candidates in a bounded recovery pass.

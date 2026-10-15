@@ -19,6 +19,7 @@ type EditorEdit struct {
 	Scale                 *float64           `json:"scale,omitempty"`
 	VRR                   *int               `json:"vrr,omitempty"`
 	Transform             *int               `json:"transform,omitempty"`
+	RotationAuto          *bool              `json:"rotation_auto,omitempty"`
 	MirrorOf              *string            `json:"mirror_of,omitempty"`
 	X                     *int               `json:"x,omitempty"`
 	Y                     *int               `json:"y,omitempty"`
@@ -111,6 +112,7 @@ func PreserveUnreportedSettings(draft *Profile, saved Profile) {
 		}
 		output := &draft.Outputs[idx]
 		output.VRR = stored.VRR
+		output.RotationAuto = stored.RotationAuto
 		output.Bitdepth = stored.Bitdepth
 		output.CM = stored.CM
 		output.MinLuminance = stored.MinLuminance
@@ -196,11 +198,21 @@ func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 			}
 			output.VRR = *edit.VRR
 		}
+		// Auto and an explicit rotation are one choice in the interface, but
+		// the stored form keeps both: an auto output retains the last captured
+		// transform, so turning auto off has somewhere to land, and an editor
+		// resetting a saved auto output names both at once. Naming only a
+		// transform is the user picking an angle, which is what turns auto off.
 		if edit.Transform != nil {
 			if *edit.Transform < 0 || *edit.Transform > 7 {
 				return Profile{}, fmt.Errorf("invalid transform %d", *edit.Transform)
 			}
 			output.Transform = *edit.Transform
+		}
+		if edit.RotationAuto != nil {
+			output.RotationAuto = *edit.RotationAuto
+		} else if edit.Transform != nil {
+			output.RotationAuto = false
 		}
 		if edit.MirrorOf != nil {
 			target := strings.TrimSpace(*edit.MirrorOf)

@@ -3641,3 +3641,25 @@ func TestFooterTellsTheInspectorHowToChangeAValue(t *testing.T) {
 		t.Fatalf("workspace footer should advertise exact count entry: %s", workspaces)
 	}
 }
+
+func TestRotationPickerOffersAutoOutsideTheEightTransforms(t *testing.T) {
+	if len(rotationOptions) != 9 {
+		t.Fatalf("rotation picker should offer 8 transforms plus auto, got %d", len(rotationOptions))
+	}
+	if rotationOptions[len(rotationOptions)-1] != rotationAutoLabel {
+		t.Fatalf("auto should be its own choice, got %q", rotationOptions[len(rotationOptions)-1])
+	}
+
+	// Each of the first eight choices maps to the transform at its index, and
+	// none of them may be "auto", or the parser could never select a rotation.
+	seen := make(map[string]bool, 8)
+	for i, label := range rotationOptions[:8] {
+		if label == rotationAutoLabel {
+			t.Fatalf("auto must not collide with transform %d", i)
+		}
+		if seen[label] {
+			t.Fatalf("duplicate rotation choice %q", label)
+		}
+		seen[label] = true
+	}
+}

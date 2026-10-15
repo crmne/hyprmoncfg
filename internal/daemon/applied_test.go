@@ -169,3 +169,37 @@ func TestOpeningTheLidRematchesInsteadOfKeepingTheClosedLayout(t *testing.T) {
 		t.Fatalf("opening the lid kept %q", svc.lastProfile.Name)
 	}
 }
+
+func TestAppliedStateTreatsAutoRotationAsExternalNotDrift(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "DSI-1", Make: "NYM", Model: "Panel", Serial: "I1", Width: 1200, Height: 1920,
+			RefreshRate: 50, Scale: 1, Transform: 3, DPMSStatus: true, ColorManagementPreset: "srgb"},
+	}
+	requested := profile.FromMonitors("Tablet", monitors)
+	requested.Outputs[0].RotationAuto = true
+	state := rememberApplied(requested, monitors)
+
+	// The orientation sensor turns the panel. That is not drift: matching must
+	// still hold, or every rotation would rewrite the config and reload
+	// Hyprland, which is the behaviour auto exists to stop.
+	rotated := []hypr.Monitor{monitors[0]}
+	rotated[0].Transform = 1
+	if !state.matches(requested, rotated, nil) {
+		t.Fatal("an auto rotation should not read as drift from the remembered state")
+	}
+}
+
+func TestAppliedStateStillDetectsExplicitRotationDrift(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "DSI-1", Make: "NYM", Model: "Panel", Serial: "I1", Width: 1200, Height: 1920,
+			RefreshRate: 50, Scale: 1, Transform: 3, DPMSStatus: true, ColorManagementPreset: "srgb"},
+	}
+	requested := profile.FromMonitors("Tablet", monitors)
+	state := rememberApplied(requested, monitors)
+
+	rotated := []hypr.Monitor{monitors[0]}
+	rotated[0].Transform = 1
+	if state.matches(requested, rotated, nil) {
+		t.Fatal("an explicit rotation that changed underneath us is still drift")
+	}
+}

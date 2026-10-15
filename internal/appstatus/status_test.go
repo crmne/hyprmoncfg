@@ -274,3 +274,19 @@ func TestEditorScaleOptionsPreserveValidCurrentScaleOutsideGrid(t *testing.T) {
 		t.Fatalf("scale options = %v, want %v", got, want)
 	}
 }
+
+func TestBuildEditorAdvertisesRotationAuto(t *testing.T) {
+	// The panel withholds the Auto rotation choice unless the daemon says it
+	// understands the edit, so an older daemon cannot be offered one it drops.
+	monitor := hypr.Monitor{
+		Name: "DSI-1", Make: "NYM", Model: "Panel", Serial: "I1",
+		Width: 1200, Height: 1920, RefreshRate: 50, Scale: 1, Transform: 3,
+	}
+	document := BuildEditor(nil, []hypr.Monitor{monitor}, nil)
+	if !document.RotationAutoSupported {
+		t.Fatal("BuildEditor should advertise rotation_auto support")
+	}
+	if !document.WorkspacePersistenceSupported {
+		t.Fatal("the existing capability flag should be unaffected")
+	}
+}

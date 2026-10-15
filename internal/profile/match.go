@@ -359,7 +359,7 @@ func outputConfigsShareEffectiveState(a, b OutputConfig) bool {
 		a.X == b.X &&
 		a.Y == b.Y &&
 		stateScalesEqual(a.Width, a.Height, a.Scale, b.Scale) &&
-		a.Transform == b.Transform &&
+		rotationsAgree(a, b) &&
 		effectiveBitdepth(a.Bitdepth) == effectiveBitdepth(b.Bitdepth) &&
 		colorPresetsAgree(a.CM, b.CM) &&
 		effectiveSDRMultiplier(a.SDRBrightness) == effectiveSDRMultiplier(b.SDRBrightness) &&
@@ -388,6 +388,22 @@ func effectiveCM(value string) string {
 func colorPresetsAgree(requested, live string) bool {
 	requested, live = effectiveCM(requested), effectiveCM(live)
 	return requested == live || requested == "auto" && (live == "srgb" || live == "wide")
+}
+
+// rotationsAgree compares rotation the way colorPresetsAgree compares color
+// management. When the requested side is auto, rotation is not ours to hold:
+// an external authority (an orientation sensor, or a user's own script) sets
+// it, and any live rotation is a match. Only the requested side is flexible, so
+// a saved explicit rotation still fails against a live one it did not ask for.
+//
+// This has to strip auto before the comparison rather than compare the raw
+// fields, because an auto output's stored Transform is left at whatever was
+// captured, and that stale value must not veto a live rotation.
+func rotationsAgree(requested, live OutputConfig) bool {
+	if requested.RotationAuto {
+		return true
+	}
+	return live.Transform == requested.Transform
 }
 
 func effectiveSDRMultiplier(value float64) float64 {
