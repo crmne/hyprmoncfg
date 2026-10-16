@@ -56,7 +56,7 @@ both themes, workspace planning, and profiles.
 - **Hotplug and lid-aware daemon** -- apply the right profile automatically when monitors change or the laptop lid closes
 - **Workspace planner** -- assign workspaces across monitors with sequential, interleave, or manual strategies
 - **Safe apply with revert** -- reload Hyprland, verify the result, and revert unless you confirm
-- **One-writer IPC** -- when the daemon is running, the TUI, CLI, and desktop panels send changes through it instead of racing over config files
+- **One-writer IPC** -- once the daemon owns the writer lock and serves IPC, the TUI, CLI, and desktop panels send changes through it instead of racing over config files
 - **Include-chain verification** -- refuse to write generated monitor config that Hyprland is not reading
 - **Hyprland 0.55 Lua config support** -- write Lua automatically when `hyprland.lua` is active, while preserving legacy `.conf` setups
 - **One hard runtime dependency** -- Hyprland; UPower is optional for immediate lid events
@@ -200,7 +200,7 @@ On Omarchy versions that launch `omarchy-hyprland-monitor-watch`, `hyprmoncfgd` 
 
 Omarchy's lock/wake script reads `~/.config/hypr/monitors.lua` directly, before its remembered scale. To prevent it from resetting the laptop's scale and position, hyprmoncfg keeps a marked, connector-specific wake rule at the top of that file, alongside Omarchy's remembered scale. Your existing rules and defaults stay intact. Canceling a preview restores the previous wake settings; turning management off removes the marked block. Read-only dotfiles are left alone with a diagnostic. Omarchy still controls lid recovery and uses its preferred mode when re-enabling an entirely disabled panel; hyprmoncfg then restores the full profile.
 
-When the daemon is running, it is the canonical monitor-config writer. The TUI, CLI, and desktop integrations use its versioned Unix-socket IPC; when it is absent, the TUI and CLI keep working through the same core engine in direct mode. A profile selected interactively stays selected until the next monitor hotplug or lid change, when automatic matching resumes.
+Once the daemon acquires the per-session writer lock, it starts serving IPC as the canonical monitor-config writer. If another writer holds the lock, the daemon waits; its IPC is unavailable until it acquires ownership. The TUI, CLI, and desktop integrations use its versioned Unix-socket IPC; when it is absent, the TUI and CLI keep working through the same core engine in direct mode. A profile selected interactively stays selected until the next monitor hotplug or lid change, when automatic matching resumes.
 
 ## Omarchy Quattro panel
 

@@ -101,8 +101,11 @@ func newRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ownership, err := writerlock.TryAcquire()
+			ownership, err := claimWriterOwnership(ctx, logf)
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				return fmt.Errorf("claim monitor writer ownership: %w", err)
 			}
 			defer ownership.Close()
@@ -153,6 +156,15 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newVersionCmd("hyprmoncfgd"))
 
 	return cmd
+}
+
+func claimWriterOwnership(ctx context.Context, logf func(string, ...any)) (*writerlock.Lock, error) {
+	ownership, err := writerlock.TryAcquire()
+	if !errors.Is(err, writerlock.ErrBusy) {
+		return ownership, err
+	}
+	logf("monitor writer is already active; waiting for the direct editor or other daemon to exit")
+	return writerlock.Acquire(ctx, 100*time.Millisecond)
 }
 
 func newVersionCmd(name string) *cobra.Command {

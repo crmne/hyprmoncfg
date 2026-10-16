@@ -280,7 +280,11 @@ systemctl --user stop hyprmoncfgd
 hyprmoncfgd --profile conference-projector
 ```
 
-The daemon owns a per-session writer lock. A second daemon or direct writer exits instead of fighting over the generated monitor config.
+The daemon owns a per-session writer lock. If a direct editor or another daemon
+already owns it, a starting daemon logs the contention and waits without changing
+monitor configuration or repeatedly exiting under systemd. Close the direct
+editor to let the daemon start serving IPC. Stopping the service also cancels
+the wait. Direct writers still use the lock rather than racing another writer.
 
 ## Logs
 
