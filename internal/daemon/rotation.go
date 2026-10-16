@@ -219,7 +219,7 @@ func (s *Service) SetRotation(params ipc.RotationParams) error {
 	if turnChanged {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if err := s.applyAutomatic(ctx); err != nil {
+		if err := s.applyBest(ctx); err != nil {
 			s.cfg.Logf("rotate after a rotation change: %v", err)
 		}
 	}

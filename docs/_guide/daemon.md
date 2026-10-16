@@ -97,7 +97,9 @@ prove physical projector readiness.
 Resuming or opening the lid is a request for light. When displays still report
 DPMS off right afterwards, the daemon treats it as a wake that did not take and
 repeats it up to three times before treating the displays as asleep by choice.
-It stops early once any display is seen awake or the layout applies. If the
+It stops early once every enabled display in the layout is awake, so a lit laptop
+panel doesn't end the wake while an external display is still off. After three
+retries it stops, and the awake displays stay usable. If the
 built-in panel is off while the lid is open (it was switched off with the lid
 shut and the external stayed asleep), the daemon applies the profile anyway,
 so the panel comes back without waiting for the external. The wake command uses
