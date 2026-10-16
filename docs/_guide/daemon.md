@@ -282,6 +282,11 @@ hyprmoncfgd --profile conference-projector
 
 The daemon owns a per-session writer lock. A second daemon or direct writer exits instead of fighting over the generated monitor config.
 
+Starting with monitor management off preserves the handoff: it does not restore
+the generated include. Read-only dialect discovery still runs, so a later wake
+uses the correct Lua or legacy syntax even if Hyprland is temporarily too busy
+to report its version. Use `hyprmoncfg manage` to opt back in.
+
 ## Logs
 
 ```bash
