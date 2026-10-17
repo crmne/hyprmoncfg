@@ -117,7 +117,7 @@ install -Dm755 bin/hyprmoncfgd ~/.local/bin/hyprmoncfgd
 
 [`native-packages.yaml`](native-packages.yaml) declares binary packages, AUR
 recipes, and downstream repositories; native recipes live in [`packaging/`](packaging/).
-Install the shared CLI with `gem install native-packages --version 0.7.0`, build
+Install the shared CLI with `gem install native-packages --version 0.10.0`, build
 packages and AUR recipes with `native-packages build --release v<version>`, and track
 destinations with `native-packages status`. The other distributions' source recipes use
 `ruby scripts/package_sources.rb prepare <version>`.
