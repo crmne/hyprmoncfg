@@ -47,6 +47,9 @@ func (s *Service) Status() (appstatus.Document, error) {
 	}
 	document := appstatus.Build(buildinfo.Version, true, profiles, monitors, rules, s.matchOptions())
 	document.Daemon.Unmanaged = !config.IsManaged(s.cfg.ConfigDir)
+	if s.cfg.WatchOrientation != nil {
+		document.Rotation = s.rotation.status()
+	}
 	if steps := s.fallbacks.describe(monitors); steps != nil {
 		for i := range document.Monitors {
 			if step, ok := steps[document.Monitors[i].Name]; ok {
@@ -84,7 +87,7 @@ func (s *Service) EditorState() (appstatus.EditorDocument, error) {
 	if err != nil {
 		return appstatus.EditorDocument{}, err
 	}
-	return appstatus.BuildEditor(profiles, monitors, rules), nil
+	return appstatus.BuildEditorWith(profiles, monitors, rules, s.editorRotation()), nil
 }
 
 // Read workspace rules between two bounded hardware reads. A dock change in
@@ -253,7 +256,7 @@ func (s *Service) SetProfileAuto(params ipc.ProfileAutoParams) error {
 	if err != nil {
 		return err
 	}
-	active, ok := profile.ExactStateMatch(profiles, monitors, rules)
+	active, ok := profile.OrientedExactStateMatch(profiles, monitors, rules, s.rotation.turn())
 	if !ok {
 		return errors.New("save or select a profile before turning automatic selection off")
 	}
@@ -300,6 +303,8 @@ func (s *Service) Preview(owner string, params ipc.PreviewParams) (ipc.Transacti
 	if state, stateErr := lid.ReadState(ctx); stateErr == nil && state == lid.Closed {
 		effective, _ = profile.ApplyClosedLidPolicy(target, monitors)
 	}
+	// A preview of an upright layout on a turned device keeps the turn.
+	effective = profile.Oriented(effective, s.rotation.turn())
 	snapshot, err := s.engine.Apply(ctx, effective, monitors, apply.ApplyModeInteractive)
 	if err != nil {
 		return ipc.Transaction{}, applyQueryError(err)
@@ -375,8 +380,11 @@ func (s *Service) commitPreview(owner string, transactionID string, save bool) e
 	// automatic setup stays automatic, while an already pinned profile keeps
 	// its pin updated to the newly saved layout. Doing this here keeps save and
 	// selection-mode changes atomic even if the panel is rebuilt mid-preview.
+	// The pin is the profile that was asked for. Lid and rotation adjust it
+	// again on every apply, and a turned layout pinned as is would be turned
+	// twice.
 	if !pending.saveOnCommit || pending.wasManual {
-		s.setManualOverride(pending.monitorSet, pending.profile)
+		s.setManualOverride(pending.monitorSet, pending.requested)
 	} else {
 		s.clearManualOverride()
 	}

@@ -93,3 +93,28 @@ func TestLiveOutputRuleRendersOneEnabledOutput(t *testing.T) {
 		t.Fatal("a disabled output has no live rule to set")
 	}
 }
+
+func TestRenderTurnsTouchInputWithARotatingPanel(t *testing.T) {
+	panel := hypr.Monitor{Name: "eDP-1", Description: "BOE 0x0BCA", Make: "BOE", Model: "0x0BCA", Width: 1920, Height: 1200, RefreshRate: 60, Scale: 1}
+	p := profile.FromMonitors("Tablet", []hypr.Monitor{panel})
+	p.Outputs[0].RotationAuto = true
+	p.Outputs[0].Transform = 1
+	lua, err := RenderConfig(p, []hypr.Monitor{panel}, Options{Format: config.HyprConfigLua, UseMonitorV2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(lua, "hl.config({ input = { touchdevice = { transform = 1 }, tablet = { transform = 1 } } })") {
+		t.Fatalf("Lua config does not turn touch input:\n%s", lua)
+	}
+	legacy, err := RenderConfig(p, []hypr.Monitor{panel}, Options{Format: config.HyprConfigLegacy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(legacy, "touchdevice {\n    transform = 1\n  }\n  tablet {\n    transform = 1\n  }") {
+		t.Fatalf("legacy config does not turn touch input:\n%s", legacy)
+	}
+	p.Outputs[0].RotationAuto = false
+	if fixed, _ := RenderConfig(p, []hypr.Monitor{panel}, Options{Format: config.HyprConfigLua, UseMonitorV2: true}); strings.Contains(fixed, "touchdevice") {
+		t.Fatalf("a panel that does not rotate changed touch input:\n%s", fixed)
+	}
+}

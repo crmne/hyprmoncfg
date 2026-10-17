@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/crmne/hyprmoncfg/internal/appstatus"
 	"github.com/crmne/hyprmoncfg/internal/config"
 )
 
@@ -46,5 +47,31 @@ func TestDoctorReportsMissingGeneratedMonitorConfig(t *testing.T) {
 	got := output.String()
 	if !strings.Contains(got, "PROBLEM") || !strings.Contains(got, "does not exist") {
 		t.Fatalf("doctor output did not report the missing generated file:\n%s", got)
+	}
+}
+
+func TestRotationSummarySaysHowPanelsTurn(t *testing.T) {
+	for _, tc := range []struct {
+		rotation appstatus.Rotation
+		want     string
+	}{
+		{appstatus.Rotation{}, "Automatic rotation: no orientation sensor"},
+		{appstatus.Rotation{Available: true, Quarters: 1}, "Automatic rotation: following the sensor, turned 90°"},
+		{appstatus.Rotation{Available: true, Locked: true, Quarters: 2}, "Automatic rotation: locked, upside down"},
+		{appstatus.Rotation{Available: true, Paused: true}, "Automatic rotation: paused while folded as a laptop, upright"},
+	} {
+		if got := rotationSummary(tc.rotation); got != tc.want {
+			t.Errorf("rotationSummary(%+v) = %q, want %q", tc.rotation, got, tc.want)
+		}
+	}
+}
+
+func TestRotationRejectsUnknownActions(t *testing.T) {
+	cmd := newRotationCmd()
+	cmd.SetArgs([]string{"spin"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown rotation action") {
+		t.Fatalf("err = %v", err)
 	}
 }

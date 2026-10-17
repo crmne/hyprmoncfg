@@ -65,6 +65,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newDoctorCmd(&monitorsConf, &hyprConfig))
 	root.AddCommand(newManageCmd(&configDir, &monitorsConf, &hyprConfig))
 	root.AddCommand(newUnmanageCmd(&configDir, &monitorsConf, &hyprConfig))
+	root.AddCommand(newRotationCmd())
 	root.AddCommand(newVersionCmd("hyprmoncfg"))
 
 	return root
@@ -579,6 +580,89 @@ func resolveHyprConfigForCLI(cmd *cobra.Command, monitorsConf string, hyprConfig
 		}
 	}
 	return config.ResolveHyprlandConfig(version, monitorsConf, hyprConfig)
+}
+
+func newRotationCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "rotation [status|lock|unlock|toggle]",
+		Short: "Show or lock automatic rotation of built-in panels",
+		Long: "Built-in panels set to rotate automatically follow the device's orientation sensor.\n" +
+			"lock holds the current rotation, unlock follows the sensor again, and toggle switches between them.\n" +
+			"Bind `hyprmoncfg rotation toggle` to a key for a rotation lock. Needs hyprmoncfgd.",
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: []string{"status", "lock", "unlock", "toggle"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			action := "status"
+			if len(args) == 1 {
+				action = args[0]
+			}
+			return runRotation(cmd, action)
+		},
+	}
+	return cmd
+}
+
+func runRotation(cmd *cobra.Command, action string) error {
+	switch action {
+	case "status", "lock", "unlock", "toggle":
+	default:
+		return fmt.Errorf("unknown rotation action %q: use status, lock, unlock or toggle", action)
+	}
+	ctx, cancel := context.WithTimeout(cmd.Context(), 20*time.Second)
+	defer cancel()
+	path, err := ipc.SocketPath()
+	if err != nil {
+		return err
+	}
+	client, err := ipc.Dial(ctx, path)
+	if err != nil {
+		return errors.New("automatic rotation needs hyprmoncfgd: start it with systemctl --user start hyprmoncfgd.service")
+	}
+	defer client.Close()
+
+	status, err := client.Status(ctx)
+	if err != nil {
+		return err
+	}
+	if status.Rotation == nil {
+		return errors.New("this hyprmoncfgd does not support automatic rotation; update and restart it")
+	}
+	locked := status.Rotation.Locked
+	switch action {
+	case "lock":
+		locked = true
+	case "unlock":
+		locked = false
+	case "toggle":
+		locked = !locked
+	}
+	if action != "status" {
+		if !status.Rotation.Available {
+			return errors.New("no orientation sensor: install iio-sensor-proxy on a device with an accelerometer")
+		}
+		if err := client.SetRotationLock(ctx, locked); err != nil {
+			return err
+		}
+		if status, err = client.Status(ctx); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), rotationSummary(*status.Rotation))
+	return nil
+}
+
+func rotationSummary(rotation appstatus.Rotation) string {
+	if !rotation.Available {
+		return "Automatic rotation: no orientation sensor"
+	}
+	turn := [...]string{"upright", "turned 90°", "upside down", "turned 270°"}[((rotation.Quarters%4)+4)%4]
+	switch {
+	case rotation.Locked:
+		return "Automatic rotation: locked, " + turn
+	case rotation.Paused:
+		return "Automatic rotation: paused while folded as a laptop, upright"
+	}
+	return "Automatic rotation: following the sensor, " + turn
 }
 
 func newVersionCmd(name string) *cobra.Command {

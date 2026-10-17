@@ -91,6 +91,7 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 			{"r", "Reset from live Hyprland state"},
 			{"?", "Show these keys"},
 			{"R", "Restart the daemon after an upgrade"},
+			{"L", "Lock or unlock automatic rotation of built-in panels"},
 			{"q", "Quit"},
 		},
 	})

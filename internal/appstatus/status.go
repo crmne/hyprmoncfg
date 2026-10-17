@@ -48,6 +48,24 @@ type Document struct {
 	RecommendedProfile *ProfileMatch     `json:"recommended_profile"`
 	Profiles           []ProfileSummary  `json:"profiles"`
 	Monitors           []MonitorSummary  `json:"monitors"`
+	// Rotation reports the orientation sensor that turns built-in panels set
+	// to rotate automatically. Absent means the daemon predates it or no
+	// daemon is running.
+	Rotation *Rotation `json:"rotation,omitempty"`
+}
+
+// Rotation is the live state of automatic rotation. Available means an
+// accelerometer reports the orientation. Quarters is the turn applied now,
+// counterclockwise like Hyprland transforms. Locked holds it. On a
+// convertible, Paused means it is folded as a laptop, where panels stay
+// upright.
+type Rotation struct {
+	Available   bool   `json:"available"`
+	Orientation string `json:"orientation,omitempty"`
+	Quarters    int    `json:"quarters"`
+	Locked      bool   `json:"locked"`
+	TabletMode  bool   `json:"tablet_mode,omitempty"`
+	Paused      bool   `json:"paused,omitempty"`
 }
 
 type Daemon struct {
@@ -177,6 +195,16 @@ type EditorDisplay struct {
 	Workspace      string    `json:"workspace,omitempty"`
 	AvailableModes []string  `json:"available_modes"`
 	ScaleOptions   []float64 `json:"scale_options"`
+	// RotationAutoSupported is true for a built-in panel on a device with an
+	// orientation sensor: only then may an editor offer automatic rotation.
+	RotationAutoSupported bool `json:"rotation_auto_supported"`
+}
+
+// EditorRotation is what the editor needs to know about the orientation
+// sensor: whether it exists, and how far it turns the live layout.
+type EditorRotation struct {
+	Available bool
+	Quarters  int
 }
 
 // BuildEditor turns live Hyprland state into an editable profile without
@@ -185,7 +213,13 @@ type EditorDisplay struct {
 // when the live layout is custom. This lets a compact editor change scale or
 // position without silently erasing HDR, ICC, or luminance configuration.
 func BuildEditor(profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) EditorDocument {
-	draft, sourceName, suggestedName := profile.EditorProfileFromState(profiles, monitors, rules)
+	return BuildEditorWith(profiles, monitors, rules, EditorRotation{})
+}
+
+// BuildEditorWith builds the editor document for live state the orientation
+// sensor may have turned. The draft always describes the upright layout.
+func BuildEditorWith(profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, rotation EditorRotation) EditorDocument {
+	draft, sourceName, suggestedName := profile.EditorProfileFromOrientedState(profiles, monitors, rules, rotation.Quarters)
 	document := EditorDocument{
 		MonitorSetHash:                HardwareSnapshotHash(monitors),
 		WorkspacePersistenceSupported: true,
@@ -216,15 +250,16 @@ func BuildEditor(profiles []profile.Profile, monitors []hypr.Monitor, rules []hy
 			modes = append([]string{current}, modes...)
 		}
 		document.Displays = append(document.Displays, EditorDisplay{
-			Key:            hypr.MonitorOutputKey(monitor, matchCounts),
-			Focused:        monitor.Focused,
-			Internal:       monitor.IsInternal(),
-			DPMS:           monitor.DPMSStatus,
-			PhysicalWidth:  monitor.PhysicalWidth,
-			PhysicalHeight: monitor.PhysicalHeight,
-			Workspace:      monitor.ActiveWorkspace.Name,
-			AvailableModes: modes,
-			ScaleOptions:   editorScaleOptions(monitor.Width, monitor.Height, monitor.Scale),
+			Key:                   hypr.MonitorOutputKey(monitor, matchCounts),
+			Focused:               monitor.Focused,
+			Internal:              monitor.IsInternal(),
+			DPMS:                  monitor.DPMSStatus,
+			PhysicalWidth:         monitor.PhysicalWidth,
+			PhysicalHeight:        monitor.PhysicalHeight,
+			Workspace:             monitor.ActiveWorkspace.Name,
+			RotationAutoSupported: rotation.Available && monitor.IsInternal(),
+			AvailableModes:        modes,
+			ScaleOptions:          editorScaleOptions(monitor.Width, monitor.Height, monitor.Scale),
 		})
 	}
 
@@ -270,7 +305,7 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 	}
 
 	activeName := ""
-	if active, ok := profile.ExactStateMatch(profiles, monitors, rules); ok {
+	if active, ok := profile.OrientedExactStateMatch(profiles, monitors, rules, opts.OrientationQuarters); ok {
 		activeName = active.Name
 		document.ActiveProfile = &ProfileReference{Name: active.Name}
 	}

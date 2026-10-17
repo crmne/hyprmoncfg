@@ -19,6 +19,7 @@ type EditorEdit struct {
 	Scale                 *float64           `json:"scale,omitempty"`
 	VRR                   *int               `json:"vrr,omitempty"`
 	Transform             *int               `json:"transform,omitempty"`
+	RotationAuto          *bool              `json:"rotation_auto,omitempty"`
 	MirrorOf              *string            `json:"mirror_of,omitempty"`
 	X                     *int               `json:"x,omitempty"`
 	Y                     *int               `json:"y,omitempty"`
@@ -69,10 +70,20 @@ type SnapAnalysis struct {
 // profile-only settings are recovered from the exact active profile, or from
 // the best hardware match when the layout is custom.
 func EditorProfileFromState(profiles []Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) (draft Profile, sourceName, suggestedName string) {
+	return EditorProfileFromOrientedState(profiles, monitors, rules, 0)
+}
+
+// EditorProfileFromOrientedState builds the draft from live state taken
+// while the device is turned by quarters. Drafts and the profiles they come
+// from always describe the upright layout.
+func EditorProfileFromOrientedState(profiles []Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, quarters int) (draft Profile, sourceName, suggestedName string) {
 	draft = FromState("", monitors, rules)
 
 	var source *Profile
-	if active, ok := ExactStateMatch(profiles, monitors, rules); ok {
+	var exact *Profile
+	if index, ok := exactStateMatchIndex(OrientedProfiles(profiles, quarters), monitors, rules); ok {
+		active := profiles[index]
+		exact = &active
 		sourceName = active.Name
 		suggestedName = active.Name
 		draft.Name = active.Name
@@ -92,6 +103,7 @@ func EditorProfileFromState(profiles []Profile, monitors []hypr.Monitor, rules [
 	if sourceName != "" {
 		PreserveExactScales(&draft, *source)
 	}
+	uprightDraft(&draft, quarters, exact)
 	return draft, sourceName, suggestedName
 }
 
@@ -120,6 +132,7 @@ func PreserveUnreportedSettings(draft *Profile, saved Profile) {
 		output.MaxAvgLuminance = stored.MaxAvgLuminance
 		output.SDREOTF = stored.SDREOTF
 		output.ICC = stored.ICC
+		output.RotationAuto = stored.RotationAuto
 	}
 }
 
@@ -201,6 +214,12 @@ func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 				return Profile{}, fmt.Errorf("invalid transform %d", *edit.Transform)
 			}
 			output.Transform = *edit.Transform
+		}
+		if edit.RotationAuto != nil {
+			if *edit.RotationAuto && !CanRotateAutomatically(*output) {
+				return Profile{}, errRotationAutoExternal
+			}
+			output.RotationAuto = *edit.RotationAuto
 		}
 		if edit.MirrorOf != nil {
 			target := strings.TrimSpace(*edit.MirrorOf)

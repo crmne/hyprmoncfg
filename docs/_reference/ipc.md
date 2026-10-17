@@ -47,6 +47,7 @@ Errors replace `result` with an object containing a stable `code`, a human-reada
 | `save` | full `profile` | none |
 | `delete` | `name` | none |
 | `set_profile_auto` | `enabled` boolean | none |
+| `set_rotation_lock` | `locked` boolean | none |
 
 A transaction contains an opaque `id`, the effective profile, and an RFC 3339 `deadline`.
 
@@ -95,6 +96,27 @@ coming back without a mode) and `running`, a plain description such as
 `without VRR` or `at 120 Hz without VRR`. The saved profile is unchanged, and
 confirming or committing any preview clears every fallback. Absent means the
 display runs at its saved settings, or the daemon predates the field.
+
+A daemon with orientation support adds `rotation` to the status document:
+`available` (an accelerometer reports the orientation), `orientation`
+(iio-sensor-proxy's `normal`, `left-up`, `bottom-up`, `right-up` or
+`undefined`), `quarters` (the counterclockwise quarter turns applied now to
+built-in panels that rotate automatically), `locked`, and on a convertible
+`tablet_mode` and `paused` (folded as a laptop, so panels stay upright).
+Absent `rotation` means the daemon predates it; clients then offer neither
+automatic rotation nor the lock. `set_rotation_lock` holds or releases the
+current turn and fails when no sensor is available.
+
+A profile output with `rotation_auto: true` turns with the device; its
+`transform` is the rotation it has when the device is upright. Profiles,
+drafts, `editor_state` and `edit_profile` always describe that upright
+layout, and the daemon turns it on apply, including previews, moving attached
+displays as a resize would. Monitor summaries keep reporting the live
+transform. Editor `displays` add `rotation_auto_supported`, true only for a
+built-in panel when a sensor is available; only then may an editor offer the
+`rotation_auto` edit, which the daemon refuses for any other display. Older
+clients that don't know the field drop it when they save, so upgrade both
+clients together.
 
 Editor documents add `workspace_persistence_supported`. Only when true may an
 editor offer `workspaces.persist_all`. Missing capability means unavailable, not

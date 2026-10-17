@@ -11,23 +11,27 @@ import (
 )
 
 type OutputConfig struct {
-	Key               string  `json:"key"`
-	MatchKey          string  `json:"match_key,omitempty"`
-	Name              string  `json:"name"`
-	Description       string  `json:"description,omitempty"`
-	Make              string  `json:"make,omitempty"`
-	Model             string  `json:"model,omitempty"`
-	Serial            string  `json:"serial,omitempty"`
-	Enabled           bool    `json:"enabled"`
-	Mode              string  `json:"mode,omitempty"`
-	Width             int     `json:"width"`
-	Height            int     `json:"height"`
-	Refresh           float64 `json:"refresh"`
-	X                 int     `json:"x"`
-	Y                 int     `json:"y"`
-	Scale             float64 `json:"scale"`
-	VRR               int     `json:"vrr,omitempty"`
-	Transform         int     `json:"transform"`
+	Key         string  `json:"key"`
+	MatchKey    string  `json:"match_key,omitempty"`
+	Name        string  `json:"name"`
+	Description string  `json:"description,omitempty"`
+	Make        string  `json:"make,omitempty"`
+	Model       string  `json:"model,omitempty"`
+	Serial      string  `json:"serial,omitempty"`
+	Enabled     bool    `json:"enabled"`
+	Mode        string  `json:"mode,omitempty"`
+	Width       int     `json:"width"`
+	Height      int     `json:"height"`
+	Refresh     float64 `json:"refresh"`
+	X           int     `json:"x"`
+	Y           int     `json:"y"`
+	Scale       float64 `json:"scale"`
+	VRR         int     `json:"vrr,omitempty"`
+	Transform   int     `json:"transform"`
+	// RotationAuto makes a built-in panel follow the device's orientation
+	// sensor. Transform is then how the panel is turned when the device is
+	// upright.
+	RotationAuto      bool    `json:"rotation_auto,omitempty"`
 	MirrorOf          string  `json:"mirror_of,omitempty"`
 	Bitdepth          int     `json:"bitdepth,omitempty"`
 	CM                string  `json:"cm,omitempty"`
@@ -175,6 +179,9 @@ func (p Profile) Validate() error {
 		}
 		if out.Bitdepth != 0 && out.Bitdepth != 8 && out.Bitdepth != 10 {
 			return fmt.Errorf("output %d has invalid bitdepth %d", i, out.Bitdepth)
+		}
+		if out.RotationAuto && !CanRotateAutomatically(out) {
+			return fmt.Errorf("output %d: %w", i, errRotationAutoExternal)
 		}
 	}
 	if err := p.Workspaces.Validate(); err != nil {

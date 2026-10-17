@@ -22,6 +22,8 @@ func fieldOptionLabel(field int, value string) string {
 		}
 	case 6:
 		switch value {
+		case rotationAutoValue:
+			return "Auto"
 		case "normal":
 			return "Normal"
 		case "90", "180", "270":

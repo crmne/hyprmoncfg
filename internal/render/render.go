@@ -232,6 +232,9 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepa
 	if len(workspaceLines) > 0 {
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
 	}
+	if transform, ok := rotatingTouchTransform(matched); ok {
+		sections = append(sections, fmt.Sprintf("input {\n  touchdevice {\n    transform = %d\n  }\n  tablet {\n    transform = %d\n  }\n}", transform, transform))
+	}
 	return strings.Join(sections, "\n\n") + "\n", nil
 }
 
@@ -298,6 +301,9 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 	sections := []string{config.GeneratedHeader(config.HyprConfigLua), strings.Join(monitorBlocks, "\n\n")}
 	if len(workspaceLines) > 0 {
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
+	}
+	if transform, ok := rotatingTouchTransform(matched); ok {
+		sections = append(sections, fmt.Sprintf("hl.config({ input = { touchdevice = { transform = %d }, tablet = { transform = %d } } })", transform, transform))
 	}
 	return strings.Join(sections, "\n\n") + "\n", nil
 }
@@ -593,4 +599,17 @@ func selectorForMonitor(resolver profile.MonitorResolver, monitor hypr.Monitor) 
 		MatchKey: monitor.HardwareKey(),
 		Name:     monitor.Name,
 	}, monitor)
+}
+
+// rotatingTouchTransform is the transform of a connected panel that rotates
+// with the device, which its touchscreen and pen must follow: Hyprland does
+// not turn touch input with the monitor. These settings are global, so an
+// external drawing tablet turns with the panel too.
+func rotatingTouchTransform(matched []matchedOutput) (int, bool) {
+	for _, item := range matched {
+		if item.config.RotationAuto && item.config.Enabled && item.config.MirrorOf == "" {
+			return item.config.Transform, true
+		}
+	}
+	return 0, false
 }

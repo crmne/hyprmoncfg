@@ -144,6 +144,12 @@ func (c *Client) SetProfileAuto(ctx context.Context, enabled bool) error {
 	return c.call(ctx, MethodProfileAuto, ProfileAutoParams{Enabled: enabled}, nil)
 }
 
+// SetRotationLock holds or releases automatic rotation. A daemon older than
+// rotation support answers with an unknown-method error.
+func (c *Client) SetRotationLock(ctx context.Context, locked bool) error {
+	return c.call(ctx, MethodRotationLock, RotationLockParams{Locked: locked}, nil)
+}
+
 func (c *Client) call(ctx context.Context, method string, params any, result any) error {
 	if c == nil || c.conn == nil {
 		return errors.New("IPC client is not connected")

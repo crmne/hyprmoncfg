@@ -3,6 +3,7 @@ package lid
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/godbus/dbus/v5"
@@ -103,5 +104,31 @@ func TestInputLidEventDevicesDiscoversLidSwitch(t *testing.T) {
 	}
 	if len(events) != 1 || events[0] != "event0" {
 		t.Fatalf("expected event0 lid device, got %v", events)
+	}
+}
+
+func TestTabletModeSwitchIsFoundByItsOwnCapabilityBit(t *testing.T) {
+	tmp := t.TempDir()
+	for event, caps := range map[string]string{"event0": "1", "event1": "2", "event2": "3"} {
+		dir := filepath.Join(tmp, event, "device", "capabilities")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "sw"), []byte(caps+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tablet, err := inputSwitchEventDevices(tmp, switchTabletMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(tablet)
+	if len(tablet) != 2 || tablet[0] != "event1" || tablet[1] != "event2" {
+		t.Fatalf("tablet-mode switches = %v, want event1 and event2", tablet)
+	}
+	lids, _ := inputLidEventDevices(tmp)
+	sort.Strings(lids)
+	if len(lids) != 2 || lids[0] != "event0" || lids[1] != "event2" {
+		t.Fatalf("lid switches = %v, want event0 and event2", lids)
 	}
 }

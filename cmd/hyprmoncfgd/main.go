@@ -20,6 +20,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/ipc"
 	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/omarchywatch"
+	"github.com/crmne/hyprmoncfg/internal/orientation"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 	"github.com/crmne/hyprmoncfg/internal/writerlock"
 )
@@ -92,6 +93,8 @@ func newRootCmd() *cobra.Command {
 				WakeConfig:        omarchywatch.NewWakeConfig(),
 				StaleConnectors:   hypr.StaleDRMConnectors,
 				SwitchConsole:     console.SwitchAwayAndBack,
+				WatchOrientation:  orientation.Watch,
+				ReadTabletMode:    lid.ReadTabletMode,
 				Logf:              logf,
 			})
 			socketPath, err := ipc.SocketPath()

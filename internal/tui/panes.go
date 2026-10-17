@@ -131,7 +131,7 @@ func (m Model) profileMatchSummaries() []profileMatchSummary {
 	summaries := make([]profileMatchSummary, len(m.profiles))
 
 	activeName := ""
-	if active, ok := profile.ExactStateMatch(m.profiles, m.monitors, m.workspaceRules); ok {
+	if active, ok := profile.OrientedExactStateMatch(m.profiles, m.monitors, m.workspaceRules, m.rotationQuarters()); ok {
 		activeName = active.Name
 	}
 	recommendedName := ""

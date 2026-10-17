@@ -314,7 +314,11 @@ func (m *Model) activateInspectorField() tea.Cmd {
 		m.openFieldPicker(layoutFields[4], m.inspectorField, []string{"srgb", "auto", "wide", "hdr", "hdredid", "dcip3", "dp3", "adobe", "edid"})
 		return nil
 	case 6:
-		m.openFieldPicker("Rotation", m.inspectorField, []string{"normal", "90", "180", "270", "flipped", "flipped+90", "flipped+180", "flipped+270"})
+		choices := []string{"normal", "90", "180", "270", "flipped", "flipped+90", "flipped+180", "flipped+270"}
+		if m.rotationAutoSupported(m.editOutputs[m.selectedOutput]) {
+			choices = append([]string{rotationAutoValue}, choices...)
+		}
+		m.openFieldPicker("Rotation", m.inspectorField, choices)
 		return nil
 	case 9:
 		targets := []string{"None"}
@@ -1078,9 +1082,15 @@ func (m *Model) applyFieldPickerValue(output *editableOutput, field int, value s
 			output.VRR = 0
 		}
 	case 6:
+		// Auto keeps the rotation as the panel's upright one.
+		if value == rotationAutoValue {
+			output.RotationAuto = true
+			break
+		}
 		for i, label := range []string{"normal", "90", "180", "270", "flipped", "flipped+90", "flipped+180", "flipped+270"} {
 			if label == value {
 				output.Transform = i
+				output.RotationAuto = false
 				break
 			}
 		}

@@ -21,6 +21,8 @@ Running `hyprmoncfg` with no arguments opens the TUI.
 | `hyprmoncfg save <name>` | Save current monitor state as a named profile |
 | `hyprmoncfg apply <name>` | Apply a saved profile |
 | `hyprmoncfg delete <name>` | Delete a saved profile |
+| `hyprmoncfg rotation` | Show automatic rotation of built-in panels: following the sensor, paused while folded as a laptop, or locked |
+| `hyprmoncfg rotation lock\|unlock\|toggle` | Hold the current rotation, follow the device again, or switch between the two. Needs hyprmoncfgd |
 | `hyprmoncfg doctor` | Check that Hyprland loads hyprmoncfg's monitor config last |
 | `hyprmoncfg doctor --fix` | Add or move that include to the end of the Hyprland config |
 | `hyprmoncfg version` | Print build metadata |

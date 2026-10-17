@@ -235,6 +235,28 @@ console and back through logind, then reloads. Each further switch waits twice
 as long, from 30 seconds up to 10 minutes, because it blanks every display. It
 acts only on the user's own graphical session.
 
+### Automatic rotation
+
+A built-in panel can turn with a 2-in-1 or tablet (#90). Its **Auto** rotation
+is profile state, and its saved transform is its upright rotation, so a panel
+mounted in portrait needs no extra setting. The sensor's turn is live state, like
+display fallbacks: the daemon reads iio-sensor-proxy and applies the upright
+profile turned by it, moving attached displays as a resize edit would, and
+writes touch and pen transforms with it. Generated config always holds the
+current turn, so a reload never undoes it, and the daemon is the only writer:
+an external rotation script is unsupported. Profiles, drafts and editors
+always show and save the upright layout; matching an upright profile against
+turned live state applies the turn first.
+
+A convertible with a readable tablet-mode switch turns only in tablet mode,
+as GNOME does; elsewhere the sensor always applies, and lying flat keeps the
+last turn. The rotation lock is live state, persisted across restarts, that
+holds the current turn; releasing it follows the device again. Both clients
+offer **Auto** only for a built-in panel when the daemon reports a sensor, and
+both expose the lock (`L` in the TUI, a toggle beside **Auto** in the panel),
+as does `hyprmoncfg rotation`. Only built-in panels rotate; touch and pen
+transforms are global in Hyprland, which the docs state.
+
 ## Feedback and notification routing
 
 After a new setup has actually been applied, send one normal desktop notification:

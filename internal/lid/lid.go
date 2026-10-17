@@ -333,6 +333,15 @@ func readInputState() (State, error) {
 }
 
 func inputLidEventDevices(sysRoot string) ([]string, error) {
+	return inputSwitchEventDevices(sysRoot, switchLid)
+}
+
+const (
+	switchLid        = 0
+	switchTabletMode = 1
+)
+
+func inputSwitchEventDevices(sysRoot string, bit int) ([]string, error) {
 	paths, err := filepath.Glob(filepath.Join(sysRoot, "event*", "device"))
 	if err != nil {
 		return nil, err
@@ -341,12 +350,38 @@ func inputLidEventDevices(sysRoot string) ([]string, error) {
 	events := make([]string, 0, len(paths))
 	for _, path := range paths {
 		caps, err := os.ReadFile(filepath.Join(path, "capabilities", "sw"))
-		if err != nil || !inputSwitchCapabilitySet(string(caps), 0) {
+		if err != nil || !inputSwitchCapabilitySet(string(caps), bit) {
 			continue
 		}
 		events = append(events, filepath.Base(filepath.Dir(path)))
 	}
 	return events, nil
+}
+
+// ErrNoTabletModeSwitch means the device has no tablet-mode switch, as on a
+// tablet or a laptop that doesn't fold.
+var ErrNoTabletModeSwitch = errors.New("no tablet-mode switch")
+
+// ReadTabletMode reports whether a convertible is folded into tablet mode.
+// Reading the switch needs access to its input device, which members of the
+// input group have.
+func ReadTabletMode() (bool, error) {
+	events, err := inputSwitchEventDevices(inputSysRoot, switchTabletMode)
+	if err != nil {
+		return false, err
+	}
+	if len(events) == 0 {
+		return false, ErrNoTabletModeSwitch
+	}
+	var lastErr error
+	for _, event := range events {
+		switches, err := readInputSwitches(filepath.Join(inputDevRoot, event))
+		if err == nil {
+			return switches&(1<<switchTabletMode) != 0, nil
+		}
+		lastErr = err
+	}
+	return false, lastErr
 }
 
 func inputSwitchCapabilitySet(mask string, bit int) bool {
@@ -371,20 +406,28 @@ func inputSwitchCapabilitySet(mask string, bit int) bool {
 }
 
 func readInputEventLidState(path string) (State, error) {
-	file, err := os.Open(path)
+	switches, err := readInputSwitches(path)
 	if err != nil {
 		return Unknown, err
+	}
+	if switches&(1<<switchLid) != 0 {
+		return Closed, nil
+	}
+	return Open, nil
+}
+
+func readInputSwitches(path string) (byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
 	}
 	defer file.Close()
 
 	var switches [1]byte
 	if err := inputIoctl(file.Fd(), inputIoctlGetSW, unsafe.Pointer(&switches[0])); err != nil {
-		return Unknown, err
+		return 0, err
 	}
-	if switches[0]&1 != 0 {
-		return Closed, nil
-	}
-	return Open, nil
+	return switches[0], nil
 }
 
 func inputIoctlRequest(dir uintptr, typ uintptr, nr uintptr, size uintptr) uintptr {

@@ -38,6 +38,9 @@ const (
 	MethodManage      = "manage"
 	MethodUnmanage    = "unmanage"
 	MethodProfileAuto = "set_profile_auto"
+	// MethodRotationLock holds or releases the turn the orientation sensor
+	// gives built-in panels that rotate automatically.
+	MethodRotationLock = "set_rotation_lock"
 )
 
 const EventStatus = "status"
@@ -112,6 +115,10 @@ type ProfileAutoParams struct {
 	Enabled bool `json:"enabled"`
 }
 
+type RotationLockParams struct {
+	Locked bool `json:"locked"`
+}
+
 type Transaction struct {
 	ID       string          `json:"id"`
 	Profile  profile.Profile `json:"profile"`
@@ -134,5 +141,6 @@ type Handler interface {
 	Manage() error
 	Unmanage() error
 	SetProfileAuto(params ProfileAutoParams) error
+	SetRotationLock(params RotationLockParams) error
 	Disconnect(owner string)
 }

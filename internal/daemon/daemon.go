@@ -17,6 +17,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/ipc"
 	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/omarchywatch"
+	"github.com/crmne/hyprmoncfg/internal/orientation"
 	"github.com/crmne/hyprmoncfg/internal/profile"
 	"github.com/crmne/hyprmoncfg/internal/profileio"
 	"github.com/crmne/hyprmoncfg/internal/suspend"
@@ -51,7 +52,12 @@ type Config struct {
 	// SwitchConsole switches to another console and back, staying away for
 	// the given time. Nil leaves stale-CRTC recovery to the user.
 	SwitchConsole func(context.Context, time.Duration) error
-	Logf          func(format string, args ...any)
+	// WatchOrientation reports the device orientation from its sensor, and
+	// ReadTabletMode whether a convertible is folded into tablet mode. Nil
+	// WatchOrientation turns automatic rotation off.
+	WatchOrientation func(context.Context) <-chan orientation.Reading
+	ReadTabletMode   func() (bool, error)
+	Logf             func(format string, args ...any)
 }
 
 type Service struct {
@@ -71,6 +77,7 @@ type Service struct {
 	rejected      *rejectedAutomaticApply
 	fallbacks     *displayFallbacks
 	staleCRTC     *staleCRTCRecovery
+	rotation      *autoRotation
 	workspaces    *workspaceMemory
 	// luaDialect remembers whether the running Hyprland reads a Lua config,
 	// for when it is too busy to say. Waking displays right after resume is
@@ -207,6 +214,7 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 		cfg:          cfg,
 		fallbacks:    newDisplayFallbacks(cfg.ConfigDir, cfg.Logf),
 		workspaces:   newWorkspaceMemory(),
+		rotation:     newAutoRotation(cfg.ConfigDir, cfg.Logf),
 		staleCRTC:    &staleCRTCRecovery{now: time.Now, away: staleCRTCConsoleAway, returnWait: staleCRTCConsoleReturn},
 		lidState:     lid.Unknown,
 		readLid:      lid.ReadState,
@@ -328,6 +336,20 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 		}
 	}()
+
+	// The orientation sensor turns built-in panels that rotate
+	// automatically. Readings settle briefly, as the device is still moving.
+	var orientationReadings <-chan orientation.Reading
+	var tabletModeTicks <-chan time.Time
+	if s.cfg.WatchOrientation != nil {
+		orientationReadings = s.cfg.WatchOrientation(ctx)
+		if s.cfg.ReadTabletMode != nil {
+			s.rotation.observeTabletMode(s.cfg.ReadTabletMode())
+			tabletModeTicker := time.NewTicker(rotationTabletModePoll)
+			defer tabletModeTicker.Stop()
+			tabletModeTicks = tabletModeTicker.C
+		}
+	}
 
 	pollTicker := time.NewTicker(s.cfg.PollInterval)
 	defer pollTicker.Stop()
@@ -453,6 +475,23 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 			if err != nil {
 				s.cfg.Logf("socket2 unavailable: %v; retrying in %s", err, s.cfg.EventRetry)
+			}
+		case reading, ok := <-orientationReadings:
+			if !ok {
+				orientationReadings = nil
+				continue
+			}
+			statusChanged, turnChanged := s.rotation.observe(reading)
+			if turnChanged {
+				pushTrigger("rotation", rotationSettle)
+			}
+			if statusChanged {
+				s.signalChange()
+			}
+		case <-tabletModeTicks:
+			if s.rotation.observeTabletMode(s.cfg.ReadTabletMode()) {
+				pushTrigger("rotation", rotationSettle)
+				s.signalChange()
 			}
 		case ev, ok := <-events:
 			if !ok {
@@ -830,7 +869,7 @@ func (s *Service) setLidState(state lid.State) {
 }
 
 func (s *Service) matchOptions() profile.MatchOptions {
-	return profile.MatchOptions{LidClosed: s.lidClosed.Load()}
+	return profile.MatchOptions{LidClosed: s.lidClosed.Load(), OrientationQuarters: s.rotation.turn()}
 }
 
 // restoresPanelAfterWake lets an apply through the sleep guard in one case:
@@ -960,7 +999,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 			rulesReady = true
 			// On startup, prefer a complete saved layout already on screen
 			// to a guess based only on hardware scores.
-			if active, matched := profile.ExactStateMatch(profiles, monitors, rules); matched &&
+			if active, matched := profile.OrientedExactStateMatch(profiles, monitors, rules, s.rotation.turn()); matched &&
 				profile.EvaluateMatch(active, monitors).ExactDisplayMatch() {
 				best, score, ok = active, profile.EvaluateMatchWith(active, monitors, s.matchOptions()).Score, true
 			}
@@ -1047,6 +1086,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	}
 
 	effective = s.fallbacks.apply(effective, monitors)
+	effective = profile.Oriented(effective, s.rotation.turn())
 	effective, litPanels := profile.KeepBuiltInPanelOn(effective, monitors)
 	if len(litPanels) > 0 {
 		s.cfg.Logf("no external display shows a picture; keeping %s on until one does", strings.Join(litPanels, ", "))

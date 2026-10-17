@@ -79,6 +79,7 @@ type refreshMsg struct {
 	// fallbacks maps connector names to displays the daemon runs below
 	// their saved settings.
 	fallbacks    map[string]appstatus.MonitorFallback
+	rotation     *appstatus.Rotation
 	daemonClient *ipc.Client
 	background   bool
 	err          error
@@ -190,6 +191,7 @@ type editableOutput struct {
 	Scale             float64
 	VRR               int
 	Transform         int
+	RotationAuto      bool
 	Focused           bool
 	DPMSStatus        bool
 	IsInternal        bool
@@ -332,6 +334,9 @@ type Model struct {
 	daemonVersion         string
 	profileOverride       string
 	fallbacks             map[string]appstatus.MonitorFallback
+	// rotation is the daemon's automatic rotation, nil without a daemon
+	// that supports it.
+	rotation *appstatus.Rotation
 	profileModePending    bool
 	refreshInFlight       bool
 	applying              bool
@@ -430,6 +435,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.daemonVersion = msg.daemonVersion
 			m.profileOverride = msg.profileOverride
 			m.fallbacks = msg.fallbacks
+			m.rotation = msg.rotation
 		}
 		if msg.err != nil {
 			m.setStatusErr(msg.err.Error())
@@ -503,6 +509,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setStatusOK(fmt.Sprintf("Saved profile %q", msg.name))
 		return m, m.refreshCmd(false)
+
+	case rotationLockMsg:
+		if msg.err != nil {
+			m.setStatusErr(msg.err.Error())
+			return m, nil
+		}
+		if m.rotation != nil {
+			m.rotation.Locked = msg.locked
+		}
+		if msg.locked {
+			m.setStatusOK("Rotation locked")
+		} else {
+			m.setStatusOK("Rotation follows the device again")
+		}
+		return m, nil
 
 	case daemonRestartMsg:
 		if msg.err != nil {
@@ -736,6 +757,8 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "R":
 		return m, m.restartDaemonCmd()
+	case "L":
+		return m, m.toggleRotationLockCmd()
 	case "U":
 		m.disableUnknownOutputs = !m.disableUnknownOutputs
 		m.markDirty()
@@ -2229,7 +2252,7 @@ func (m *Model) loadLiveState() {
 	if m.selectedOutput >= 0 && m.selectedOutput < len(prevOutputs) {
 		selectedKey = prevOutputs[m.selectedOutput].Key
 	}
-	draft, sourceName, suggestedName := profile.EditorProfileFromState(m.profiles, m.monitors, m.workspaceRules)
+	draft, sourceName, suggestedName := profile.EditorProfileFromOrientedState(m.profiles, m.monitors, m.workspaceRules, m.rotationQuarters())
 	if len(prevOutputs) > 0 && !m.resetRequested {
 		previous := profile.Profile{Outputs: make([]profile.OutputConfig, 0, len(prevOutputs))}
 		for _, output := range prevOutputs {
@@ -3120,6 +3143,7 @@ func (m Model) refreshCmd(background bool) tea.Cmd {
 			daemonVersion:   daemonVersion,
 			profileOverride: profileOverride,
 			fallbacks:       daemon.fallbacks,
+			rotation:        daemon.rotation,
 			daemonClient:    replacement,
 			background:      background,
 		}
@@ -3135,6 +3159,7 @@ type daemonProbe struct {
 	version         string
 	profileOverride string
 	fallbacks       map[string]appstatus.MonitorFallback
+	rotation        *appstatus.Rotation
 }
 
 func daemonReachable(ctx context.Context, client *ipc.Client) daemonProbe {
@@ -3152,6 +3177,7 @@ func daemonReachable(ctx context.Context, client *ipc.Client) daemonProbe {
 		ok:              true,
 		version:         strings.TrimSpace(document.Version),
 		profileOverride: strings.TrimSpace(document.Daemon.ProfileOverride),
+		rotation:        document.Rotation,
 	}
 	for _, monitor := range document.Monitors {
 		if monitor.Fallback != nil {
@@ -3590,7 +3616,7 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 	case 5:
 		return vrrLabel(output.VRR)
 	case 6:
-		return transformLabel(output.Transform)
+		return rotationLabel(output, m.rotation)
 	case 7:
 		return fmt.Sprintf("%d", output.X)
 	case 8:
@@ -3850,6 +3876,7 @@ func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, ha
 		Scale:             scaling.Round(scaling.Clamp(saved.Scale)),
 		VRR:               saved.VRR,
 		Transform:         saved.Transform,
+		RotationAuto:      saved.RotationAuto,
 		IsInternal:        isInternalOutputName(saved.Name),
 		MirrorOf:          saved.MirrorOf,
 		Bitdepth:          saved.Bitdepth,
@@ -4059,6 +4086,7 @@ func (o editableOutput) profileOutput() profile.OutputConfig {
 		Scale:             scaling.Round(scaling.Clamp(o.Scale)),
 		VRR:               o.VRR,
 		Transform:         o.Transform,
+		RotationAuto:      o.RotationAuto,
 		MirrorOf:          o.MirrorOf,
 		Bitdepth:          o.Bitdepth,
 		CM:                o.CM,
