@@ -38,6 +38,11 @@ type EditorEdit struct {
 	ICC                   *string            `json:"icc,omitempty"`
 	SnapDistance          int                `json:"snap_distance,omitempty"`
 	Workspaces            *WorkspaceSettings `json:"workspaces,omitempty"`
+
+	// SnapScale stores the closest sharp scale instead of Scale when Scale
+	// is blurry on the output's mode (after any Mode in the same edit), as
+	// typed entry in both editors does.
+	SnapScale bool `json:"snap_scale,omitempty"`
 }
 
 type SnapEdge int
@@ -202,6 +207,11 @@ func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 		}
 		if edit.Scale != nil {
 			output.Scale = scaling.Round(scaling.Clamp(*edit.Scale))
+			if edit.SnapScale && !scaling.Sharp(output.Width, output.Height, output.Scale) {
+				if closest, ok := scaling.ClosestSharp(output.Width, output.Height, output.Scale); ok {
+					output.Scale = closest
+				}
+			}
 		}
 		if edit.VRR != nil {
 			if *edit.VRR < 0 || *edit.VRR > 2 {

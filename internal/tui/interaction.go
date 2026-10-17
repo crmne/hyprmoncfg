@@ -532,57 +532,34 @@ func (m Model) scaleInputFeedback() []string {
 		return []string{"", m.styles.statusError.Render(err.Error())}
 	}
 
-	logicalW, logicalH := scaling.LogicalSize(output.Width, output.Height, value)
-	if scaling.Sharp(output.Width, output.Height, value) {
-		return []string{
-			"",
-			m.styles.statusOK.Render(fmt.Sprintf(
-				"Sharp: %d / %s = %d, %d / %s = %d logical px.",
-				output.Width,
-				scaling.Format(value),
-				int(math.Round(logicalW)),
-				output.Height,
-				scaling.Format(value),
-				int(math.Round(logicalH)),
-			)),
-		}
+	assessment, err := scaling.Assess(output.Width, output.Height, value)
+	if err != nil {
+		return []string{"", m.styles.statusError.Render(err.Error())}
 	}
+	return scaleFeedbackLines(m.styles, output.Width, output.Height, assessment)
+}
 
-	suggestion, ok := scaling.ClosestSharp(output.Width, output.Height, value)
-	if !ok {
-		return []string{
-			"",
-			m.styles.warning.Render(fmt.Sprintf(
-				"⚠ Not sharp: final size has fractional px (%d / %s = %.2f, %d / %s = %.2f).",
-				output.Width,
-				scaling.Format(value),
-				logicalW,
-				output.Height,
-				scaling.Format(value),
-				logicalH,
-			)),
-		}
+// scaleFeedbackLines words a scale assessment for typed entry. The panel's
+// Custom… entry says the same from the daemon's scale_info.
+func scaleFeedbackLines(st styles, width, height int, a scaling.Assessment) []string {
+	shown := scaling.Format(a.Scale)
+	if a.Sharp {
+		return []string{"", st.statusOK.Render(fmt.Sprintf(
+			"Sharp: %d / %s = %d, %d / %s = %d logical px.",
+			width, shown, int(math.Round(a.Logical[0])), height, shown, int(math.Round(a.Logical[1])),
+		))}
 	}
-
-	suggestedW, suggestedH := scaling.LogicalSize(output.Width, output.Height, suggestion)
-	return []string{
-		"",
-		m.styles.warning.Render(fmt.Sprintf(
-			"⚠ Not sharp: final size has fractional px (%d / %s = %.2f, %d / %s = %.2f).",
-			output.Width,
-			scaling.Format(value),
-			logicalW,
-			output.Height,
-			scaling.Format(value),
-			logicalH,
-		)),
-		m.styles.statusOK.Render(fmt.Sprintf(
+	lines := []string{"", st.warning.Render(fmt.Sprintf(
+		"⚠ Not sharp: final size has fractional px (%d / %s = %.2f, %d / %s = %.2f).",
+		width, shown, a.Logical[0], height, shown, a.Logical[1],
+	))}
+	if a.ClosestLogical != nil {
+		lines = append(lines, st.statusOK.Render(fmt.Sprintf(
 			"Closest sharp: %s -> %d x %d logical px. Enter applies it.",
-			scaling.Format(suggestion),
-			int(math.Round(suggestedW)),
-			int(math.Round(suggestedH)),
-		)),
+			scaling.Format(a.Closest), int(math.Round(a.ClosestLogical[0])), int(math.Round(a.ClosestLogical[1])),
+		)))
 	}
+	return lines
 }
 
 func (m *Model) openProfileExecInput() tea.Cmd {
@@ -1190,17 +1167,17 @@ func (m *Model) commitNumericInput() tea.Cmd {
 			m.input.Input.Err = err
 			return nil
 		}
-		value := typedValue
-		if !scaling.Sharp(output.Width, output.Height, typedValue) {
-			if suggestion, ok := scaling.ClosestSharp(output.Width, output.Height, typedValue); ok {
-				value = suggestion
-			}
+		assessment, err := scaling.Assess(output.Width, output.Height, typedValue)
+		if err != nil {
+			m.input.Input.Err = err
+			return nil
 		}
+		value := assessment.Apply
 		output.Scale = value
 		status = fmt.Sprintf("Scale set to %s for %s", scaling.Format(value), output.Name)
 		if value != typedValue {
 			status += fmt.Sprintf(" (closest sharp scale for %s)", scaling.Format(typedValue))
-		} else if !scaling.Sharp(output.Width, output.Height, value) {
+		} else if !assessment.Sharp {
 			status += " (fractional logical size may look blurry)"
 		}
 	case numericInputPositionX, numericInputPositionY:

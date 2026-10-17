@@ -419,9 +419,13 @@ is shown on the More trigger instead (selected, labelled with that scale, such
 as `1.33x`, and marked ⚠ with "Not sharp" or "fractional px" when it is not
 sharp, never by colour alone), and is never rewritten. Arrows step the full list,
 `scaling.SharpChoices` (every sharp scale from 1 to 4, served to the panel as
-`scale_options`), and stop at the ends; Enter or More opens that list, which
+`scale_info` `options`), and stop at the ends; Enter or More opens that list, which
 ends with Custom… for typing an exact scale with the same sharpness
-explanation in both clients. The other choice rows (Enabled, Refresh, VRR, Color
+explanation in both clients. Sharpness is computed only in Go
+(`internal/scaling`): the TUI calls it directly, and the panel asks the
+daemon's stateless `scale_info` for the pills, the sharp list, the verdict and
+the closest sharp scale, and applies typed scales with `snap_scale`, so the
+two clients cannot disagree. The other choice rows (Enabled, Refresh, VRR, Color
 depth, SDR EOTF, WCG and HDR capability, and the panel's Rotation) stop at the
 ends on arrows, and Enter advances and wraps; Scale is the exception, since
 Enter opens its list.

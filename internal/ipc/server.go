@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+
+	"github.com/crmne/hyprmoncfg/internal/scaling"
 )
 
 type Server struct {
@@ -201,6 +203,11 @@ func (s *Server) dispatch(owner string, client *serverClient, request Request) R
 		if err = decodeParams(request.Params, &params); err == nil {
 			result, err = s.Handler.EditProfile(params)
 		}
+	case MethodScaleInfo:
+		var params ScaleInfoParams
+		if err = decodeParams(request.Params, &params); err == nil {
+			result, err = scaleInfo(params)
+		}
 	case MethodPreview:
 		var params PreviewParams
 		if err = decodeParams(request.Params, &params); err == nil {
@@ -259,6 +266,15 @@ func (s *Server) dispatch(owner string, client *serverClient, request Request) R
 		}
 	}
 	return response
+}
+
+// scaleInfo answers scale_info from internal/scaling alone; it needs no
+// daemon state.
+func scaleInfo(params ScaleInfoParams) (scaling.Info, error) {
+	if params.Width <= 0 || params.Height <= 0 {
+		return scaling.Info{}, errors.New("scale_info needs a mode width and height")
+	}
+	return scaling.Describe(params.Width, params.Height, params.Scale)
 }
 
 func decodeParams(raw json.RawMessage, target any) error {

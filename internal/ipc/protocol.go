@@ -43,6 +43,12 @@ const (
 	MethodRotation = "set_rotation"
 )
 
+// MethodScaleInfo describes a scale on a mode: the preset pills, the sharp
+// list, whether the scale is sharp, and the closest sharp scale. It is
+// stateless, so editors never compute sharpness themselves. A daemon that
+// does not know it answers with an unknown-method error.
+const MethodScaleInfo = "scale_info"
+
 const EventStatus = "status"
 
 var ErrCompositorBusy = errors.New("Displays are still connecting; try again shortly.")
@@ -92,6 +98,13 @@ type PreviewParams struct {
 type EditParams struct {
 	Profile profile.Profile    `json:"profile"`
 	Edit    profile.EditorEdit `json:"edit"`
+}
+
+// ScaleInfoParams is a mode and a scale to describe.
+type ScaleInfoParams struct {
+	Width  int     `json:"width"`
+	Height int     `json:"height"`
+	Scale  float64 `json:"scale"`
 }
 
 type TransactionParams struct {

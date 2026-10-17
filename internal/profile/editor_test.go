@@ -504,3 +504,25 @@ func TestReflowAfterResizeMovesADisplayAMoverWouldLandOn(t *testing.T) {
 		t.Fatalf("positions = %v, want %v", got, want)
 	}
 }
+
+func TestApplyEditorEditSnapsATypedBlurryScale(t *testing.T) {
+	draft := Profile{Outputs: []OutputConfig{
+		{Key: "desk", Name: "DP-1", Enabled: true, Mode: "3840x2160@60.00Hz", Width: 3840, Height: 2160, Refresh: 60, Scale: 1},
+	}}
+	scale := 1.33
+	got, err := ApplyEditorEdit(draft, EditorEdit{OutputKey: "desk", Scale: &scale, SnapScale: true})
+	if err != nil || got.Outputs[0].Scale != 1.33333 {
+		t.Fatalf("snapped scale %v, %v", got.Outputs[0].Scale, err)
+	}
+	got, err = ApplyEditorEdit(draft, EditorEdit{OutputKey: "desk", Scale: &scale})
+	if err != nil || got.Outputs[0].Scale != 1.33 {
+		t.Fatalf("without snap_scale the scale is kept as typed, got %v, %v", got.Outputs[0].Scale, err)
+	}
+	// The mode in the same edit decides what is sharp.
+	mode := "2560x1600@60.00Hz"
+	scale = 1.5
+	got, err = ApplyEditorEdit(draft, EditorEdit{OutputKey: "desk", Mode: &mode, Scale: &scale, SnapScale: true})
+	if err != nil || got.Outputs[0].Scale != 1.6 {
+		t.Fatalf("1.5 on 2560x1600 snaps to 1.6, got %v, %v", got.Outputs[0].Scale, err)
+	}
+}

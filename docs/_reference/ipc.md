@@ -40,6 +40,7 @@ Errors replace `result` with an object containing a stable `code`, a human-reada
 | `subscribe` | none | Current status document, followed by `status` events |
 | `editor_state` | none | Editable live profile, supported modes, and source-profile metadata |
 | `edit_profile` | full `profile` and one `edit` operation | Updated profile draft |
+| `scale_info` | `width`, `height` (a mode) and `scale` | Scale row and sharpness for that mode and scale |
 | `preview` | `profile_name` or a full `profile`; optional `timeout_seconds` and `save_on_commit` | Transaction |
 | `confirm` | `transaction_id` | none |
 | `commit` | `transaction_id`; `save` boolean | none |
@@ -141,6 +142,36 @@ Monitor summaries include the connector, make, model, serial, output `key`, hard
 `editor_state` is intentionally fetched on demand rather than included in every status event. Its `profile` is the live display and workspace state in the same shape accepted by `preview` and `save`; `profiles` contains the complete saved profiles for profile browsers. `workspace_plan` contains the resolved workspace assignments for the editable live profile, while `profile_workspace_plans` maps every saved profile name to its resolved assignments so read-only browsers can preview the same plan without reimplementing workspace strategies. `displays` adds supported modes, focus, DPMS, active workspace, internal/external type, and physical panel size for each connected output. `source_profile` is present only when the live state exactly matches one saved profile. Settings that Hyprland cannot report back reliably, such as ICC and HDR luminance overrides, are preserved from that profile or from the best hardware match so an editor does not erase advanced configuration it never displayed.
 
 `edit_profile` applies one typed edit to a client-owned draft. Display mode, scale, VRR, transform, mirroring, position, enablement, color/HDR/ICC settings, and workspace settings are normalized and validated by the same profile geometry used by the bundled TUI. Resize edits move only displays attached to the resized display: its row beyond the old right edge, its column beyond the old bottom edge, displays on its corners, displays continuing those rows and columns, and any display a moving one would land on. Being stacked above or below a moving display in another row does not by itself move a display, and mirrors and modeless outputs never move; dragged position edits can request edge snapping with `snap_distance`, and an overlapping drop is placed on the nearest clear outside edge. The method is stateless and does not touch the live displays until the returned profile is sent to `preview`.
+
+`scale_info` describes one scale on one mode, so an editor never computes
+sharpness itself. It is stateless and needs no displays. The result carries
+`presets` (the Scale row's pills for that mode), `options` (every sharp scale
+from 1 to 4, plus the sharp scale closest to `scale` when that is outside the
+list), `scale` as a profile stores it, `sharp`, `logical` (the logical width
+and height; whole pixels when sharp), and `apply`, the scale typed entry
+applies. A blurry scale also carries `closest` and `closest_logical` when a
+sharp scale exists for the mode. A `scale` outside 0.25 to 4 is an error
+(`scale must be between 0.25 and 4`), and so is a missing mode. For example:
+
+```json
+{"scale": 1.33, "sharp": false, "logical": [2887.22, 1624.06],
+ "closest": 1.33333, "closest_logical": [2880, 1620], "apply": 1.33333,
+ "presets": [1, 1.25, 1.5, 1.6, 2, 3], "options": [1, 1.06667, 1.2, "..."]}
+```
+
+An `edit_profile` scale edit may add `snap_scale: true`: the daemon then
+stores the closest sharp scale instead of a blurry typed one, judged on the
+output's mode after any `mode` in the same edit. This is how typed entry
+applies a scale in both editors.
+
+Daemons older than `scale_info` answer it with an `unknown IPC method` error
+and ignore `snap_scale`. The typed Go client refuses to send `snap_scale` to
+such a daemon instead of letting it store a blurry scale. The Omarchy panel
+treats the unknown-method reply as missing support: it shows no preset pills,
+no ⚠ marker and no Custom… entry, and its More list falls back to the
+editor display's `scale_options` (the sharp list for the live mode), so it
+never shows a sharpness verdict it did not get from Go. Editor `displays`
+keep `scale_options` for those clients.
 
 ## Connecting displays and query timeouts
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/crmne/hyprmoncfg/internal/appstatus"
 	"github.com/crmne/hyprmoncfg/internal/profile"
+	"github.com/crmne/hyprmoncfg/internal/scaling"
 )
 
 type Client struct {
@@ -74,6 +75,9 @@ func (c *Client) EditProfile(ctx context.Context, params EditParams) (appstatus.
 			return result, err
 		}
 	}
+	if err := c.checkScaleSnapping(ctx, params.Edit); err != nil {
+		return result, err
+	}
 	err := c.call(ctx, MethodEdit, params, &result)
 	return result, err
 }
@@ -110,6 +114,26 @@ func (c *Client) Save(ctx context.Context, params SaveParams) error {
 
 // An older daemon ignores unknown JSON fields. Refuse to send a policy it
 // cannot preserve instead of appearing to save it successfully.
+// ScaleInfo describes a scale on a mode (scale_info). Daemons older than
+// the method answer with an unknown-method error, returned as is.
+func (c *Client) ScaleInfo(ctx context.Context, params ScaleInfoParams) (scaling.Info, error) {
+	var result scaling.Info
+	err := c.call(ctx, MethodScaleInfo, params, &result)
+	return result, err
+}
+
+// checkScaleSnapping refuses snap_scale on a daemon that would ignore it and
+// store the typed scale instead.
+func (c *Client) checkScaleSnapping(ctx context.Context, edit profile.EditorEdit) error {
+	if !edit.SnapScale {
+		return nil
+	}
+	if _, err := c.ScaleInfo(ctx, ScaleInfoParams{Width: 1920, Height: 1080, Scale: 1}); err != nil {
+		return fmt.Errorf("snapping a typed scale requires a newer daemon; restart the updated hyprmoncfgd: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) checkWorkspacePersistence(ctx context.Context, p profile.Profile) error {
 	if !p.Workspaces.PersistAll {
 		return nil
