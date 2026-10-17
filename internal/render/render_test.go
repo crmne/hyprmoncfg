@@ -9,6 +9,26 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
+func TestDisconnectedWakePreparationRequiresExplicitOptIn(t *testing.T) {
+	p := profile.Profile{Name: "Desk", DisableUnknownOutputs: true, Outputs: []profile.OutputConfig{
+		{Description: "Test Display", Enabled: true, Mode: "1920x1080@60", Scale: 1},
+	}}
+	for _, format := range []config.HyprConfigFormat{config.HyprConfigLegacy, config.HyprConfigLua} {
+		opts := Options{Format: format, UseMonitorV2: true}
+		if _, err := RenderConfig(p, nil, opts); err == nil {
+			t.Fatal("ordinary apply must reject an absent display")
+		}
+		opts.PrepareDisconnected = true
+		got, err := RenderConfig(p, nil, opts)
+		if err != nil || !strings.Contains(got, "desc:Test Display") {
+			t.Fatalf("prepare wake rule: %v\n%s", err, got)
+		}
+		if _, err := RenderConfig(p, []hypr.Monitor{{Name: "DP-9", Description: "Other"}}, opts); err == nil {
+			t.Fatal("preparation must not bypass matching with connected hardware")
+		}
+	}
+}
+
 func TestHyprlangEscapePreservesLiteralSyntax(t *testing.T) {
 	got := hyprlangEscape(`desc:Dell #HASH {{raw}} {{{overlap}} path\{panel}`)
 	want := `desc:Dell ##HASH \{\{raw}} \{\{\{overlap}} path\\{panel}`

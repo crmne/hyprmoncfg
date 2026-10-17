@@ -174,6 +174,13 @@ flipping modes. Edit the profile, run `hyprmoncfg manage`, or turn automatic
 profile selection on to retry; modeless
 outputs retain automatic recovery. See [daemon behavior](docs/_guide/daemon.md).
 
+When recovery has lowered a display's refresh or VRR, it tries the saved settings
+again after the display reports a usable mode for ten seconds. Failed attempts return to the fallback and wait twice as long
+before the next try, up to five minutes, with only one apply in flight. Saved
+profiles remain unchanged.
+Known wake-sensitive displays get their 60 Hz wake rule even when all monitors
+are unplugged, ready for the next connection's first modeset.
+
 When a dock is still connecting, monitor and workspace reads have short deadlines and desktop clients can show a connecting state while retrying. Unique hardware identities skip DRM connector probing; ambiguous identities use one shared probe with bounded waiting. See [daemon behavior](https://hyprmoncfg.dev/daemon/) and the [editor IPC reference](https://hyprmoncfg.dev/ipc/) for the matching and snapshot contracts.
 
 Newly connected displays extend the matching layout to the right, touching its rightmost display. Automatically extended layouts appear as unsaved drafts in the editor and panel; save one to name and reuse it. Workspace planning follows the profile's settings, or defaults to sequential groups of three across nine workspaces when planning was disabled. In the TUI, press `U` to toggle disabling displays outside the profile, then save. The corresponding profile JSON setting is `disable_unknown_outputs` (default `false`). Displays explicitly saved as disabled stay disabled.

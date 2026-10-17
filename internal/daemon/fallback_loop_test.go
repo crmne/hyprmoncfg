@@ -10,7 +10,48 @@ import (
 
 	"github.com/crmne/hyprmoncfg/internal/config"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
+	"github.com/crmne/hyprmoncfg/internal/profile"
 )
+
+func TestRunRetriesRejectedRestorationAfterUsableRollback(t *testing.T) {
+	monitor := hypr.Monitor{Name: "DP-2", Description: "Test Display", Make: "Test", Model: "Display",
+		Width: 3840, Height: 2160, RefreshRate: 60, Scale: 1, DPMSStatus: true,
+		AvailableModes: []string{"3840x2160@60Hz", "3840x2160@144Hz"}}
+	env := newRunTestEnv(t, []hypr.Monitor{monitor}, func(s *Service) {
+		s.fallbacks.settle = 50 * time.Millisecond
+		s.cfg.RecoveryInterval = 20 * time.Millisecond
+		s.cfg.RecoveryMaxInterval = 40 * time.Millisecond
+		p := profile.FromMonitors("Home", []hypr.Monitor{monitor})
+		p.Outputs[0].Mode, p.Outputs[0].Refresh = "3840x2160@144Hz", 144
+		if err := s.store.Save(p); err != nil {
+			t.Fatal(err)
+		}
+		s.fallbacks.active[fallbackKey(monitor.Description)] = displayFallback{
+			Step: profile.FallbackSafeRefresh, Reason: fallbackReasonDropping, Saved: "3840x2160@144Hz vrr 0"}
+	})
+	defer env.stop()
+	waitFor(t, 10*time.Second, func() bool {
+		return strings.Count(env.logs.all(), "retrying its saved settings") >= 2
+	}, "second saved-settings attempt without another monitor event")
+	if env.logs.contains("automatic retry paused") {
+		t.Fatalf("restoration entered the permanent rejection pause:\n%s", env.logs.all())
+	}
+	// Let a later attempt succeed. Once restored, the retry timer stops.
+	monitor.RefreshRate = 144
+	if err := writeMonitorState(env.monitorStatePath+".next", []hypr.Monitor{monitor}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, func() bool {
+		data, err := os.ReadFile(env.monitorStatePath)
+		return err == nil && strings.Contains(string(data), `"refreshRate":144`) && env.logs.contains("applied profile: Home")
+	}, "saved mode eventually applies")
+	time.Sleep(300 * time.Millisecond)
+	count := reloadCount(env.logPath)
+	time.Sleep(300 * time.Millisecond)
+	if reloadCount(env.logPath) != count {
+		t.Fatalf("restored displays kept reloading:\n%s", env.logs.all())
+	}
+}
 
 func msiBlock(t *testing.T, path string) string {
 	t.Helper()
@@ -98,6 +139,10 @@ func TestRunWakesABouncingDisplayGentlyThenRestoresItsSavedMode(t *testing.T) {
 	if err := writeMonitorState(env.monitorStatePath, []hypr.Monitor{lg, woken}); err != nil {
 		t.Fatal(err)
 	}
+	// Let the disconnected-rule apply finish logging before counting.
+	waitFor(t, time.Second, func() bool {
+		return strings.HasSuffix(strings.TrimSpace(env.logs.all()), "error=<nil>")
+	}, "disconnected-rule apply finished")
 	settled := strings.Count(env.logs.all(), "automatic reconciliation completed")
 	send("monitoraddedv2>>2,DP-2,Microstep MPG321UR-QD")
 	// Only the switch after settling reloads it into 144 Hz.

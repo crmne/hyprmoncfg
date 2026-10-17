@@ -193,12 +193,22 @@ live VRR activity and buffer formats must not restart a rejected modeset.
 A display that drops right after connecting at its saved settings is
 remembered as needing a gentle wake. Its rule wakes it at about 60 Hz, with VRR
 off and at the same resolution, and the daemon switches it to the saved settings
-once it has stayed connected for a few seconds. Displays that come up cleanly
+once it has reported a usable mode for ten seconds. The wake rule is prepared
+without the hotplug debounce even when the last display disconnects, before
+the next connection's first modeset. Displays that come up cleanly
 keep coming up in one modeset.
 
 If that switch drops the display again, or it wakes without a mode twice in a
 row, its settings step down one at a time: VRR off, then the next lower refresh,
-then about 60 Hz. The daemon keeps the first step that sticks.
+then about 60 Hz. Working lower settings are temporary recovery states.
+
+Every fallback gets another attempt at the saved settings after ten seconds of
+usable, awake readback. A failed attempt, rejected or followed by a drop,
+restores the fallback and doubles the wait before the next attempt, up to five
+minutes, because each attempt blanks a display that is otherwise working. Only
+one apply is in flight. A usable rollback from a recovery attempt must not permanently pause restoration.
+Sleep, suspend, removal, unmanaged mode and previews defer recovery. Stop
+retrying when the requested settings are working.
 
 Resolution, scale and position never change. This is live state, remembered
 per display across restarts. It never edits the profile, and steps are shown in

@@ -82,6 +82,8 @@ it. The pause is held for the running daemon session and logged as
 `automatic retry paused`; it does not rewrite saved profiles. A rejection whose
 rollback failed keeps retrying. A compositor that stops answering after it has
 already reported a mismatch still counts as a rejection, not a busy compositor.
+Attempts to restore saved settings from a recovery fallback are exempt from
+this pause: they return to the fallback and schedule another attempt.
 
 Other failed automatic applies retry independently of monitor-change events, starting
 after 2 seconds with capped exponential backoff up to 30 seconds. Transient busy
@@ -114,13 +116,15 @@ the daemon remembers that it needs a gentle wake:
 
 1. While the display is disconnected, its rule in the generated config wakes it
    at the refresh rate closest to 60 Hz, at the same resolution, with VRR off.
-2. Once it has stayed connected for 10 seconds, the daemon switches it to its
-   saved settings.
+   This also happens immediately after the last display disconnects, so the
+   first display can reconnect using its wake rule without waiting for recovery.
+2. Once it has stayed connected with a usable mode for 10 seconds, the daemon
+   switches it to its saved settings.
 
 Displays that come up cleanly never drop, so they keep coming up in one step.
 
 If that switch makes the display drop again within 8 seconds, the daemon steps
-its settings down one at a time, and keeps the first that sticks:
+its settings down one at a time to obtain a working fallback:
 
 1. VRR off.
 2. The next lower refresh rate at the same resolution, for example 144 Hz to 120 Hz.
@@ -128,6 +132,16 @@ its settings down one at a time, and keeps the first that sticks:
 
 The same steps apply to a display that comes back from sleep enabled but
 without a mode twice in a row.
+
+After a display at reduced settings reports a usable, awake mode for 10 seconds,
+the daemon tries its saved refresh rate and VRR again. If that attempt is
+rejected or the display drops right after it, recovery returns to the fallback
+and waits twice as long before the next attempt (20 seconds, then 40, up to 5
+minutes), because each attempt blanks a working display. The wait resets once
+the saved settings hold, or when the daemon restarts. This also applies
+to fallbacks caused by a display dropping after a switch. Each attempt finishes
+before another begins, and recovery stops once the requested settings work.
+Sleep, suspend, removal, unmanaged mode and previews defer recovery.
 
 Resolution, scale and position never change, so other displays and windows stay
 where they are. The saved profile never changes either. `hyprmoncfg status`

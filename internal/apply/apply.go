@@ -66,6 +66,9 @@ type Engine struct {
 	// succeeds by lighting the panel, and the external may take a moment
 	// longer to come back.
 	TolerateModeless bool
+	// PrepareDisconnected allows the daemon to stage known wake rules while
+	// all displays are absent. Normal profile applies still require a match.
+	PrepareDisconnected bool
 }
 
 type RevertState struct {
@@ -259,7 +262,7 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		Commands:     snapshotState(monitors, currentRules, currentWorkspaces, luaDispatch),
 	}
 
-	rendered, err := render.RenderConfig(p, monitors, render.Options{Format: resolvedConfig.Format, UseMonitorV2: supportsV2})
+	rendered, err := render.RenderConfig(p, monitors, render.Options{Format: resolvedConfig.Format, UseMonitorV2: supportsV2, PrepareDisconnected: e.PrepareDisconnected})
 	if err != nil {
 		return RevertState{}, err
 	}

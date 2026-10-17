@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -476,6 +477,7 @@ func (s *Service) Run(ctx context.Context) error {
 			systemSuspended = sleeping
 			topologyProbePending = false
 			if sleeping {
+				s.fallbacks.pauseRestoration()
 				stopRecovery()
 				s.cfg.LaptopToggle.Reset()
 				// A lid close that suspends the machine must not be applied on
@@ -587,6 +589,7 @@ func (s *Service) Run(ctx context.Context) error {
 					continue
 				}
 				s.cfg.Logf("display sleep detected; pausing automatic switching")
+				s.fallbacks.pauseRestoration()
 				deferForDisplaySleep("")
 				continue
 			case displaySleepExited:
@@ -602,7 +605,11 @@ func (s *Service) Run(ctx context.Context) error {
 			}
 
 			if topologyChanged || probe.reason != "poll" {
-				scheduleMonitorTrigger(probe.reason)
+				if len(monitors) == 0 {
+					scheduleMonitorTrigger(fallbackTriggerPrefix + "disconnected")
+				} else {
+					scheduleMonitorTrigger(probe.reason)
+				}
 				continue
 			}
 
@@ -860,7 +867,22 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		return err
 	}
 	if len(monitors) == 0 {
-		return nil
+		// Prepare known wake-sensitive displays before the next connection.
+		// Leaving the last high-refresh rule here makes the first modeset
+		// happen before hotplug recovery can lower it.
+		if s.lastProfile.Name == "" {
+			return nil
+		}
+		effective := s.fallbacks.apply(s.lastProfile, nil)
+		if reflect.DeepEqual(effective.Outputs, s.lastProfile.Outputs) {
+			return nil
+		}
+		engine := s.engine
+		engine.PrepareDisconnected = true
+		_, err := engine.Apply(ctx, effective, nil)
+		// This only prepares rules. Do not run post-apply commands or record
+		// a disconnected profile as successfully restored.
+		return applyQueryError(err)
 	}
 	if displayPowerState(monitors) == displayPowerAsleep && !s.restoresPanelAfterWake(monitors) {
 		return errDisplaysSleeping
@@ -1016,6 +1038,10 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	engine.TolerateModeless = len(litPanels) > 0
 	snapshot, err := engine.Apply(ctx, effective, monitors)
 	if err != nil {
+		if s.fallbacks.restoreFailed() {
+			s.cfg.Logf("saved settings rejected; restoring the fallback before a later retry")
+			return applyQueryError(err)
+		}
 		// Displays the apply left enabled but without a mode count toward
 		// stepping them down on a later attempt.
 		if after, queryErr := s.queryMonitors(ctx); queryErr == nil {

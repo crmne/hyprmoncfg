@@ -26,8 +26,10 @@ import (
 //
 // If that switch makes it drop again, or it keeps coming back from a wake
 // without a mode, the daemon steps its settings down one at a time (VRR off,
-// then a lower refresh rate, then about 60 Hz) and keeps the first that
-// sticks. The saved profile never changes. Both are live state, remembered per
+// then a lower refresh rate, then about 60 Hz). Working fallback modes get
+// retries of the saved settings, waiting longer after each failed retry so a
+// display that cannot hold them is not blanked over and over. The saved
+// profile never changes. Both are live state, remembered per
 // display so a restart does not start the struggle over. Applying a layout by
 // hand drops the steps; the gentle wake stays, because it still ends at the
 // saved settings.
@@ -42,10 +44,17 @@ const (
 	// after connecting. Unplugging and replugging by hand takes longer, and
 	// must not slow down every future wake of a display that works.
 	fallbackBounce = 4 * time.Second
-	// How long a gently woken display stays connected before it gets its
-	// saved settings. Switching a second after connecting knocked the
-	// display that needed this off again; ten seconds held.
+	// How long a gently woken display stays connected, with a usable mode,
+	// before it gets its saved settings. Switching a second after connecting
+	// lands on the display's own reconnect bounce and knocked it off again;
+	// ten seconds held. A display at a fallback also waits this long at a
+	// usable mode before its first retry of the saved settings.
 	fallbackSettle = 10 * time.Second
+	// Each failed retry of the saved settings doubles the wait before the
+	// next, up to this. A retry blanks the display (and anything on its USB
+	// hub), so a display that cannot hold its saved settings must not be
+	// blanked every few seconds.
+	fallbackRestoreMaxWait = 5 * time.Minute
 	// Applies that left the display enabled but without a mode.
 	fallbackNoModeThreshold = 2
 	fallbackStateFile       = "display-fallbacks.json"
@@ -85,25 +94,37 @@ type displayFallbacks struct {
 	// settled is the connection each settle tick was delivered for. One
 	// tick per connection: a reconciliation that does not switch the display
 	// (monitor management off, or a profile without it) must not re-arm it.
-	settled  map[string]time.Time
-	noMode   map[string]int
-	due      map[string]string
-	lastSeen map[string]hypr.Monitor
-	active   map[string]displayFallback
+	settled      map[string]time.Time
+	noMode       map[string]int
+	due          map[string]string
+	lastSeen     map[string]hypr.Monitor
+	active       map[string]displayFallback
+	healthyAt    map[string]time.Time
+	restoreFired map[string]bool
+	restoring    map[string]displayFallback
+	// restoreFailures counts failed retries of the saved settings, rejected
+	// or dropped, since the settings last worked. It lives for the daemon
+	// session and survives reconnects, which a failed retry often causes.
+	restoreFailures map[string]int
 }
 
 func newDisplayFallbacks(configDir string, logf func(string, ...any)) *displayFallbacks {
 	f := &displayFallbacks{
-		logf:        logf,
-		now:         time.Now,
-		settle:      fallbackSettle,
-		connectedAt: map[string]time.Time{},
-		switchedAt:  map[string]time.Time{},
-		settled:     map[string]time.Time{},
-		noMode:      map[string]int{},
-		due:         map[string]string{},
-		lastSeen:    map[string]hypr.Monitor{},
-		active:      map[string]displayFallback{},
+		logf:         logf,
+		now:          time.Now,
+		settle:       fallbackSettle,
+		connectedAt:  map[string]time.Time{},
+		switchedAt:   map[string]time.Time{},
+		settled:      map[string]time.Time{},
+		noMode:       map[string]int{},
+		due:          map[string]string{},
+		lastSeen:     map[string]hypr.Monitor{},
+		active:       map[string]displayFallback{},
+		healthyAt:    map[string]time.Time{},
+		restoreFired: map[string]bool{},
+		restoring:    map[string]displayFallback{},
+
+		restoreFailures: map[string]int{},
 	}
 	if configDir != "" {
 		f.path = filepath.Join(configDir, fallbackStateFile)
@@ -145,12 +166,19 @@ func (f *displayFallbacks) observeEvent(ev hypr.Event, now time.Time) bool {
 		f.connectedAt[key] = now
 		delete(f.switchedAt, key)
 	case hypr.EventMonitorRemoved:
+		delete(f.healthyAt, key)
+		delete(f.restoreFired, key)
 		connected, wasConnected := f.connectedAt[key]
 		switched, wasSwitched := f.switchedAt[key]
 		delete(f.connectedAt, key)
 		delete(f.switchedAt, key)
 		delete(f.settled, key)
 		entry := f.active[key]
+		if wasSwitched && now.Sub(switched) <= fallbackShortConnection &&
+			entry.Step == profile.FallbackNone && entry.Saved != "" {
+			// A retry of the saved settings knocked it off.
+			f.restoreFailures[key]++
+		}
 		switch {
 		case !entry.GentleWake:
 			if !wasConnected || now.Sub(connected) > fallbackBounce {
@@ -182,6 +210,15 @@ func (f *displayFallbacks) settleDelay() (time.Duration, bool) {
 	now := f.now()
 	var wait time.Duration
 	waiting := false
+	for key, healthy := range f.healthyAt {
+		if f.restoreFired[key] {
+			continue
+		}
+		remaining := max(0, healthy.Add(f.restoreWait(key)).Sub(now))
+		if !waiting || remaining < wait {
+			wait, waiting = remaining, true
+		}
+	}
 	for key, connected := range f.connectedAt {
 		if !f.active[key].GentleWake {
 			continue
@@ -206,6 +243,11 @@ func (f *displayFallbacks) settleFired() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	now := f.now()
+	for key, healthy := range f.healthyAt {
+		if !healthy.Add(f.restoreWait(key)).After(now) {
+			f.restoreFired[key] = true
+		}
+	}
 	for key, connected := range f.connectedAt {
 		if f.active[key].GentleWake && !connected.Add(f.settle).After(now) {
 			f.settled[key] = connected
@@ -254,6 +296,49 @@ func (f *displayFallbacks) observeFailedApply(effective profile.Profile, monitor
 func (f *displayFallbacks) observeApplied() {
 	f.mu.Lock()
 	clear(f.noMode)
+	clear(f.restoring)
+	f.mu.Unlock()
+}
+
+// restoreWait is how long a display at a fallback must show a usable mode
+// before the next retry of its saved settings. The caller holds f.mu.
+func (f *displayFallbacks) restoreWait(key string) time.Duration {
+	wait := f.settle
+	for range f.restoreFailures[key] {
+		if wait >= fallbackRestoreMaxWait {
+			break
+		}
+		wait *= 2
+	}
+	return min(wait, max(fallbackRestoreMaxWait, f.settle))
+}
+
+// restoreFailed keeps the last fallback when a saved-settings attempt is
+// rejected, including when rollback already recovered a usable lower mode.
+// Such a rejection must not enter the ordinary permanent rejection pause.
+func (f *displayFallbacks) restoreFailed() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.restoring) == 0 {
+		return false
+	}
+	for key, previous := range f.restoring {
+		f.active[key] = previous
+		f.restoreFailures[key]++
+		delete(f.healthyAt, key)
+		delete(f.restoreFired, key)
+		delete(f.noMode, key)
+		delete(f.due, key)
+	}
+	clear(f.restoring)
+	f.save()
+	return true
+}
+
+func (f *displayFallbacks) pauseRestoration() {
+	f.mu.Lock()
+	clear(f.healthyAt)
+	clear(f.restoreFired)
 	f.mu.Unlock()
 }
 
@@ -265,9 +350,13 @@ func (f *displayFallbacks) reset() {
 	defer f.mu.Unlock()
 	clear(f.noMode)
 	clear(f.due)
+	clear(f.healthyAt)
+	clear(f.restoreFired)
+	clear(f.restoring)
+	clear(f.restoreFailures)
 	changed := false
 	for key, entry := range f.active {
-		if entry.Step == profile.FallbackNone {
+		if entry.Step == profile.FallbackNone && entry.Saved == "" {
 			continue
 		}
 		changed = true
@@ -306,6 +395,21 @@ func (f *displayFallbacks) apply(p profile.Profile, monitors []hypr.Monitor) pro
 	}
 
 	resolver := profile.NewMonitorResolver(monitors)
+	// Only a usable readback starts the restoration clock. Missing,
+	// sleeping and ambiguous outputs cannot count as a stable recovery.
+	for key := range f.healthyAt {
+		usable := false
+		for _, monitor := range monitors {
+			if fallbackKey(monitor.Description) == key && descriptions[key] == 1 &&
+				!monitor.Disabled && monitor.DPMSStatus && monitor.Width > 0 && monitor.Height > 0 {
+				usable = true
+				break
+			}
+		}
+		if !usable {
+			delete(f.healthyAt, key)
+		}
+	}
 	changed := false
 	p.Outputs = append([]profile.OutputConfig(nil), p.Outputs...)
 	for i, output := range p.Outputs {
@@ -321,7 +425,8 @@ func (f *displayFallbacks) apply(p profile.Profile, monitors []hypr.Monitor) pro
 		settings := output.NormalizedMode() + " vrr " + strconv.Itoa(output.VRR)
 		current := f.active[key]
 		stepped := current.Step != profile.FallbackNone
-		if stepped && current.Saved != settings {
+		if current.Saved != "" && current.Saved != settings {
+			delete(f.healthyAt, key)
 			current = displayFallback{GentleWake: current.GentleWake, Since: current.Since}
 			if current.GentleWake {
 				f.active[key] = current
@@ -329,6 +434,13 @@ func (f *displayFallbacks) apply(p profile.Profile, monitors []hypr.Monitor) pro
 				delete(f.active, key)
 			}
 			stepped, changed = false, true
+		}
+		if switched, ok := f.switchedAt[key]; ok && !stepped && current.Saved != "" &&
+			f.now().Sub(switched) > fallbackShortConnection {
+			if _, retrying := f.restoring[key]; !retrying {
+				// The saved settings held after a retry.
+				delete(f.restoreFailures, key)
+			}
 		}
 		if reason, due := f.due[key]; due && known {
 			delete(f.due, key)
@@ -350,16 +462,43 @@ func (f *displayFallbacks) apply(p profile.Profile, monitors []hypr.Monitor) pro
 		if !known {
 			continue
 		}
+		live, connected := resolver.ResolveOutput(output)
+		canRestore := stepped &&
+			output.Enabled && output.MirrorOf == "" && connected &&
+			!live.Disabled && live.DPMSStatus && live.Width > 0 && live.Height > 0
+		if connectedAt, recent := f.connectedAt[key]; current.GentleWake && recent && f.now().Sub(connectedAt) < f.settle {
+			canRestore = false
+		}
+		if canRestore {
+			healthy, waiting := f.healthyAt[key]
+			if !waiting {
+				f.healthyAt[key] = f.now()
+				delete(f.restoreFired, key)
+			} else if f.now().Sub(healthy) >= f.restoreWait(key) {
+				f.restoring[key] = current
+				current = displayFallback{Saved: settings, GentleWake: current.GentleWake, Since: f.now()}
+				f.active[key] = current
+				delete(f.healthyAt, key)
+				delete(f.noMode, key)
+				delete(f.due, key)
+				f.switchedAt[key] = f.now()
+				stepped, changed = false, true
+				f.logf("%s has a usable mode again; retrying its saved settings", displayLabel(live))
+			}
+		} else {
+			delete(f.healthyAt, key)
+		}
 		applied := output
 		if stepped {
 			applied = profile.OutputWithFallback(output, monitor, current.Step)
 		}
 		if current.GentleWake {
-			_, connected := resolver.ResolveOutput(output)
+			live, connected := resolver.ResolveOutput(output)
 			connectedAt, recent := f.connectedAt[key]
 			// Connected with no connect seen means it was already on when
 			// the daemon started, so it is awake.
-			settled := connected && (!recent || f.now().Sub(connectedAt) >= f.settle)
+			settled := connected && !live.Disabled && live.DPMSStatus && live.Width > 0 && live.Height > 0 &&
+				(!recent || f.now().Sub(connectedAt) >= f.settle)
 			if !settled {
 				applied = profile.OutputWithFallback(output, monitor, profile.FallbackSafeRefresh)
 			} else if _, done := f.switchedAt[key]; !done && recent {

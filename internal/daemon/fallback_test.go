@@ -94,6 +94,149 @@ func TestFallbackLeavesDisplaysThatStayOnAlone(t *testing.T) {
 	}
 }
 
+func TestModelessRecoveryKeepsRetryingSavedSettingsWithGrowingWaits(t *testing.T) {
+	dir := t.TempDir()
+	f, c := trackerAt(dir, t)
+	p, lg, msi := fallbackDesk()
+	key := fallbackKey(msi.Description)
+	f.active[key] = displayFallback{Step: profile.FallbackSafeRefresh, Reason: fallbackReasonNoMode,
+		Saved: "3840x2160@143.99Hz vrr 1", GentleWake: true}
+	modeless := msi
+	modeless.Width, modeless.Height = 0, 0
+	f.apply(p, []hypr.Monitor{lg, modeless})
+	c.advance(2 * fallbackSettle)
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, modeless})); got.Refresh != 60 {
+		t.Fatal("time spent modeless must not restore the saved mode")
+	}
+	msi.RefreshRate = 60
+	f.apply(p, []hypr.Monitor{lg, msi})
+	if wait, ok := f.settleDelay(); !ok || wait != fallbackSettle {
+		t.Fatalf("usable recovery must arm a settle timer: %v %v", wait, ok)
+	}
+	c.advance(fallbackSettle)
+	f.settleFired()
+	if _, pending := f.settleDelay(); pending {
+		t.Fatal("a delivered restoration timer must not re-arm while management is deferred")
+	}
+	got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi}))
+	if got.Refresh != 143.99 || got.VRR != 1 {
+		t.Fatalf("stable recovery should retry the saved settings: %+v", got)
+	}
+	// Each retry blanks the display, so a display that cannot hold its
+	// saved settings is retried less and less often, but never abandoned.
+	for _, delay := range []time.Duration{20 * time.Second, 40 * time.Second, 80 * time.Second,
+		160 * time.Second, fallbackRestoreMaxWait, fallbackRestoreMaxWait} {
+		if !f.restoreFailed() {
+			t.Fatal("rejected saved settings must restore the previous fallback")
+		}
+		if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.Refresh != 60 {
+			t.Fatal("failed restoration must return to the working fallback")
+		}
+		if wait, pending := f.settleDelay(); !pending || wait != delay {
+			t.Fatalf("next restoration should wait %s, got %s pending=%v", delay, wait, pending)
+		}
+		c.advance(delay - time.Millisecond)
+		if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.Refresh != 60 {
+			t.Fatalf("retried before %s elapsed", delay)
+		}
+		c.advance(time.Millisecond)
+		f.settleFired()
+		if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.Refresh != 143.99 || got.VRR != 1 {
+			t.Fatalf("recovery abandoned the saved settings: %+v", got)
+		}
+	}
+	f.observeApplied()
+	if f.restoreFailed() {
+		t.Fatal("a successful restoration must finish its transaction")
+	}
+	if _, pending := f.settleDelay(); pending {
+		t.Fatal("successful restoration must stop retrying")
+	}
+	// Once the saved settings have held, the next fallback starts over.
+	c.advance(fallbackShortConnection + time.Second)
+	f.apply(p, []hypr.Monitor{lg, msi})
+	if n := f.restoreFailures[key]; n != 0 {
+		t.Fatalf("held saved settings must clear failed retries, got %d", n)
+	}
+}
+
+func TestRestorationThatDropsTheDisplayCountsAsAFailedRetry(t *testing.T) {
+	f, c := trackerAt("", t)
+	p, lg, msi := fallbackDesk()
+	key := fallbackKey(msi.Description)
+	f.active[key] = displayFallback{Step: profile.FallbackSafeRefresh, Reason: fallbackReasonDropping,
+		Saved: "3840x2160@143.99Hz vrr 1", GentleWake: true}
+	msi.RefreshRate = 60
+	f.apply(p, []hypr.Monitor{lg, msi})
+	c.advance(fallbackSettle)
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.Refresh != 143.99 {
+		t.Fatalf("expected a retry of the saved settings: %+v", got)
+	}
+	f.observeApplied()
+	c.advance(2 * time.Second)
+	drop(f, c)
+	if f.restoreFailures[key] != 1 {
+		t.Fatal("a drop right after a retry must count against the saved settings")
+	}
+	if wait := f.restoreWait(key); wait != 2*fallbackSettle {
+		t.Fatalf("the next retry must wait longer, got %s", wait)
+	}
+}
+
+func TestModelessRecoverySettleRestartsAfterSleep(t *testing.T) {
+	f, c := trackerAt("", t)
+	p, lg, msi := fallbackDesk()
+	f.active[fallbackKey(msi.Description)] = displayFallback{Step: profile.FallbackSafeRefresh,
+		Reason: fallbackReasonNoMode, Saved: "3840x2160@143.99Hz vrr 1"}
+	f.apply(p, []hypr.Monitor{lg, msi})
+	c.advance(fallbackSettle / 2)
+	msi.DPMSStatus = false
+	f.apply(p, []hypr.Monitor{lg, msi})
+	c.advance(fallbackSettle)
+	msi.DPMSStatus = true
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.Refresh != 60 {
+		t.Fatal("sleep must interrupt the stable recovery interval")
+	}
+	if wait, ok := f.settleDelay(); !ok || wait != fallbackSettle {
+		t.Fatalf("wake must start a fresh interval: %v %v", wait, ok)
+	}
+}
+
+func TestRestorationPauseRestartsTheUsableInterval(t *testing.T) {
+	f, c := trackerAt("", t)
+	p, lg, msi := fallbackDesk()
+	f.active[fallbackKey(msi.Description)] = displayFallback{Step: profile.FallbackSafeRefresh,
+		Reason: fallbackReasonDropping, Saved: "3840x2160@143.99Hz vrr 1"}
+	f.apply(p, []hypr.Monitor{lg, msi})
+	f.pauseRestoration()
+	c.advance(time.Hour)
+	if _, pending := f.settleDelay(); pending {
+		t.Fatal("suspended restoration left a timer armed")
+	}
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.Refresh != 60 {
+		t.Fatal("suspended time counted as stable display time")
+	}
+	if wait, pending := f.settleDelay(); !pending || wait != fallbackSettle {
+		t.Fatalf("resume must start a fresh stable interval, got %s pending=%v", wait, pending)
+	}
+}
+
+func TestGentleWakeDoesNotPromoteAnAwakeButModelessDisplay(t *testing.T) {
+	f, c := trackerAt("", t)
+	p, lg, msi := fallbackDesk()
+	f.active[fallbackKey(msi.Description)] = displayFallback{GentleWake: true}
+	connect(f, c)
+	msi.Width, msi.Height = 0, 0
+	c.advance(10 * time.Second)
+	f.settleFired()
+	if got := msiOutput(t, f.apply(p, []hypr.Monitor{lg, msi})); got.Refresh != 60 || got.VRR != 0 {
+		t.Fatal("connected duration cannot promote a modeless display")
+	}
+	if _, pending := f.settleDelay(); pending {
+		t.Fatal("a modeless display must use the recovery timer, not spin the settle timer")
+	}
+}
+
 func TestFallbackWakesABouncingDisplayAt60HzThenSwitchesToItsSavedSettings(t *testing.T) {
 	dir := t.TempDir()
 	f, c := trackerAt(dir, t)
@@ -290,6 +433,38 @@ func TestApplyBestWritesTheGentleWakeRuleWhileTheDisplayIsDisconnected(t *testin
 	for _, want := range []string{"mode = 3840x2160@60.00", "vrr = 0"} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("the disconnected MSI should reconnect at 60 Hz; missing %q in:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestApplyBestPreparesGentleWakeWithNoDisplaysConnected(t *testing.T) {
+	env := newApplyBestTestEnvWithMonitors(t, "[]", "[]")
+	p, lg, msi := fallbackDesk()
+	svc := New(env.client, env.store, Config{MonitorsConf: env.monitorsConfPath, HyprConfig: env.hyprlandConfigPath})
+	svc.lastProfile = p
+	svc.fallbacks.apply(p, []hypr.Monitor{lg, msi})
+	bounce(svc.fallbacks, &clock{t: time.Now()})
+	for range 2 {
+		if err := svc.applyBest(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		rendered := readMonitorsConf(t, env)
+		start := strings.Index(rendered, "output = desc:Microstep MPG321UR-QD")
+		if start < 0 {
+			t.Fatalf("missing MSI wake rule:\n%s", rendered)
+		}
+		block := rendered[start:]
+		block = block[:strings.Index(block, "}")]
+		for _, want := range []string{"mode = 3840x2160@60.00", "vrr = 0"} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("missing %q in prepared wake rule:\n%s", want, block)
+			}
+		}
+		if svc.applied != nil {
+			t.Fatal("preparing disconnected rules must not claim successful recovery")
+		}
+		if svc.lastProfile.Outputs[1].NormalizedMode() != p.Outputs[1].NormalizedMode() {
+			t.Fatal("preparing wake rules changed the saved target")
 		}
 	}
 }

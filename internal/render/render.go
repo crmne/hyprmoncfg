@@ -15,6 +15,8 @@ import (
 type Options struct {
 	Format       config.HyprConfigFormat
 	UseMonitorV2 bool
+	// PrepareDisconnected permits wake rules when every output is absent.
+	PrepareDisconnected bool
 }
 
 func RenderHyprlandConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) (string, error) {
@@ -23,9 +25,9 @@ func RenderHyprlandConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool
 
 func RenderConfig(p profile.Profile, monitors []hypr.Monitor, opts Options) (string, error) {
 	if opts.Format == config.HyprConfigLua {
-		return renderLuaConfig(p, monitors, opts.UseMonitorV2)
+		return renderLuaConfig(p, monitors, opts.UseMonitorV2, opts.PrepareDisconnected)
 	}
-	return renderLegacyConfig(p, monitors, opts.UseMonitorV2)
+	return renderLegacyConfig(p, monitors, opts.UseMonitorV2, opts.PrepareDisconnected)
 }
 
 // LiveOutputRule renders the rule for one connected output as a live command:
@@ -159,12 +161,12 @@ func WorkspaceRuleCommand(workspace string, monitorSelector string, isDefault bo
 	return strings.Join(parts, ", ")
 }
 
-func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) (string, error) {
+func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareDisconnected bool) (string, error) {
 	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
 	resolver := profile.NewMonitorResolver(monitors)
 	matched, matchedByKey := resolveProfileOutputs(p, resolver)
-	if len(matched) == 0 {
+	if len(matched) == 0 && !(prepareDisconnected && len(monitors) == 0 && len(disconnectedOutputs(p, monitors, resolver)) > 0) {
 		return "", fmt.Errorf("profile %q does not match any connected monitor", p.Name)
 	}
 
@@ -233,12 +235,12 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) 
 	return strings.Join(sections, "\n\n") + "\n", nil
 }
 
-func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) (string, error) {
+func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareDisconnected bool) (string, error) {
 	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
 	resolver := profile.NewMonitorResolver(monitors)
 	matched, matchedByKey := resolveProfileOutputs(p, resolver)
-	if len(matched) == 0 {
+	if len(matched) == 0 && !(prepareDisconnected && len(monitors) == 0 && len(disconnectedOutputs(p, monitors, resolver)) > 0) {
 		return "", fmt.Errorf("profile %q does not match any connected monitor", p.Name)
 	}
 
