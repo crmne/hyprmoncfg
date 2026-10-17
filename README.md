@@ -185,6 +185,9 @@ because the kernel still drives the display pipe of one that disconnected. The
 daemon recognises that and switches to another console and back, which clears
 it. See [displays stuck without a mode](docs/_guide/daemon.md#displays-stuck-without-a-mode).
 
+A display that comes back shows the workspace it showed before it turned off,
+when the profile plans workspaces. See [workspaces when a display comes back](docs/_guide/daemon.md#workspaces-when-a-display-comes-back).
+
 When a dock is still connecting, monitor and workspace reads have short deadlines and desktop clients can show a connecting state while retrying. Unique hardware identities skip DRM connector probing; ambiguous identities use one shared probe with bounded waiting. See [daemon behavior](https://hyprmoncfg.dev/daemon/) and the [editor IPC reference](https://hyprmoncfg.dev/ipc/) for the matching and snapshot contracts.
 
 Newly connected displays extend the matching layout to the right, touching its rightmost display. Automatically extended layouts appear as unsaved drafts in the editor and panel; save one to name and reuse it. Workspace planning follows the profile's settings, or defaults to sequential groups of three across nine workspaces when planning was disabled. In the TUI, press `U` to toggle disabling displays outside the profile, then save. The corresponding profile JSON setting is `disable_unknown_outputs` (default `false`). Displays explicitly saved as disabled stay disabled.

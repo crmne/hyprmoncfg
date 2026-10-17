@@ -20,6 +20,10 @@ type EventType string
 const (
 	EventMonitorAdded   EventType = "monitoradded"
 	EventMonitorRemoved EventType = "monitorremoved"
+	// EventWorkspace reports that a monitor may now show another workspace:
+	// a workspace switch, a focus change between monitors, or a workspace
+	// moved to another monitor.
+	EventWorkspace EventType = "workspace"
 )
 
 type Event struct {
@@ -126,6 +130,26 @@ func normalizeMirrorTargets(monitors []Monitor) {
 		}
 		monitors[i].MirrorOf = target
 	}
+}
+
+// CursorPosition reports the pointer position in global layout coordinates.
+func (c *Client) CursorPosition(ctx context.Context) (x, y int, err error) {
+	cmd, err := c.commandContext(ctx, "-j", "cursorpos")
+	if err != nil {
+		return 0, 0, err
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to query the cursor position: %w", err)
+	}
+	var pos struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+	}
+	if err := json.Unmarshal(out, &pos); err != nil {
+		return 0, 0, fmt.Errorf("failed to decode hyprctl cursorpos JSON: %w", err)
+	}
+	return int(pos.X), int(pos.Y), nil
 }
 
 func (c *Client) Workspaces(ctx context.Context) ([]WorkspaceState, error) {
@@ -503,6 +527,8 @@ func parseEvent(line string) (Event, bool) {
 		return Event{Type: EventMonitorAdded, Value: value, Raw: line}, true
 	case strings.HasPrefix(typeName, string(EventMonitorRemoved)):
 		return Event{Type: EventMonitorRemoved, Value: value, Raw: line}, true
+	case typeName == "workspacev2" || typeName == "focusedmonv2" || typeName == "moveworkspacev2":
+		return Event{Type: EventWorkspace, Value: value, Raw: line}, true
 	}
 	return Event{}, false
 }

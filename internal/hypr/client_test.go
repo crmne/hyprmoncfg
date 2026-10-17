@@ -36,6 +36,19 @@ func TestParseEventAcceptsMonitorV2Events(t *testing.T) {
 	}
 }
 
+func TestParseEventReportsWorkspaceChangesOnly(t *testing.T) {
+	for _, line := range []string{"workspacev2>>2,2", "focusedmonv2>>DP-1,4", "moveworkspacev2>>3,3,DP-2"} {
+		if event, ok := parseEvent(line); !ok || event.Type != EventWorkspace {
+			t.Fatalf("parseEvent(%q) = %+v, %v; want a workspace event", line, event, ok)
+		}
+	}
+	for _, line := range []string{"workspace>>2", "createworkspacev2>>5,5", "activewindowv2>>abc"} {
+		if event, ok := parseEvent(line); ok {
+			t.Fatalf("parseEvent(%q) = %+v; want it ignored", line, event)
+		}
+	}
+}
+
 func TestSelectInstancePrefersWaylandDisplay(t *testing.T) {
 	instances := []instanceInfo{
 		{Instance: "sig-a", WLSocket: "wayland-0"},

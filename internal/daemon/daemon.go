@@ -71,6 +71,7 @@ type Service struct {
 	rejected      *rejectedAutomaticApply
 	fallbacks     *displayFallbacks
 	staleCRTC     *staleCRTCRecovery
+	workspaces    *workspaceMemory
 	// luaDialect remembers whether the running Hyprland reads a Lua config,
 	// for when it is too busy to say. Waking displays right after resume is
 	// exactly when it tends to be.
@@ -205,6 +206,7 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 		},
 		cfg:          cfg,
 		fallbacks:    newDisplayFallbacks(cfg.ConfigDir, cfg.Logf),
+		workspaces:   newWorkspaceMemory(),
 		staleCRTC:    &staleCRTCRecovery{now: time.Now, away: staleCRTCConsoleAway, returnWait: staleCRTCConsoleReturn},
 		lidState:     lid.Unknown,
 		readLid:      lid.ReadState,
@@ -309,6 +311,20 @@ func (s *Service) Run(ctx context.Context) error {
 				case <-workerCtx.Done():
 					return
 				}
+			}
+		}
+	}()
+
+	// A workspace switch rereads the monitors so each display's workspace
+	// is known when it disconnects.
+	workspaceProbe := make(chan struct{}, 1)
+	go func() {
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-workspaceProbe:
+				_, _ = s.queryMonitors(workerCtx)
 			}
 		}
 	}()
@@ -447,6 +463,13 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			if systemSuspended {
+				continue
+			}
+			if ev.Type == hypr.EventWorkspace {
+				select {
+				case workspaceProbe <- struct{}{}:
+				default:
+				}
 				continue
 			}
 			reason := string(ev.Type) + ":" + ev.Value
@@ -1093,6 +1116,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	} else {
 		appliedHash = profile.MonitorStateHash(appliedMonitors)
 		s.applied = rememberApplied(effective, appliedMonitors)
+		s.restoreWorkspaces(ctx, effective, appliedMonitors)
 	}
 
 	s.lastSeenHash = appliedHash

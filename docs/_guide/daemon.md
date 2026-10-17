@@ -104,6 +104,20 @@ so the panel comes back without waiting for the external. The wake command uses
 the Lua or legacy syntax Hyprland last reported, even when Hyprland is too busy
 to answer right after resume.
 
+### Workspaces when a display comes back
+
+When a display turns off, Hyprland moves its workspaces to the others. When it
+comes back, Hyprland would show its default workspace. If the profile plans
+workspaces, the daemon shows the workspace that display last showed instead,
+for example workspace 2 rather than 1, after applying the layout. Focus and the
+cursor go back to the display and position they were on.
+
+It remembers the last workspace of each display by hardware identity, while the
+daemon runs. A workspace that another display is showing, or that the profile
+assigns to another display, stays where it is. Displays with identical
+descriptions can't be told apart, so they keep Hyprland's choice. With the
+workspace planner set to Off, the daemon doesn't touch workspaces at all.
+
 ### Displays that won't stay on
 
 Some displays can't wake straight into a demanding mode such as 4K at 144 Hz. They

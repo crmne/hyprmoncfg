@@ -139,6 +139,14 @@ compositor workspaces until the person assigns more. On removal, temporarily
 retarget orphaned workspaces to a usable output without rewriting the saved plan.
 Mirrors do not gain an independent workspace allocation.
 
+A display that comes back shows the workspace it last showed, whatever the layout
+was meanwhile. The daemon remembers it per hardware identity, live only, and
+restores it after the apply that brings the display back, returning focus and the
+cursor to where they were. It leaves a workspace alone when another display is
+showing it or the profile assigns it to another display, skips identities it
+cannot tell apart, and does nothing when planning is off, where workspaces belong
+to the user or a plugin.
+
 If the user explicitly turned planning off, preserve that decision. An unset
 planner for a new setup can use the existing Sequential / 3 per group / 9 total
 defaults. The current bool cannot distinguish unset from explicitly disabled, so

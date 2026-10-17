@@ -27,6 +27,9 @@ func (s *Service) queryMonitors(ctx context.Context) ([]hypr.Monitor, error) {
 		err = fmt.Errorf("%w (monitors)", ipc.ErrCompositorBusy)
 	}
 	s.logQuery("monitors", started, err)
+	if err == nil {
+		s.workspaces.observe(monitors)
+	}
 	return monitors, err
 }
 
