@@ -151,7 +151,8 @@ list), `scale` as a profile stores it, `sharp`, `logical` (the logical width
 and height; whole pixels when sharp), and `apply`, the scale typed entry
 applies. A blurry scale also carries `closest` and `closest_logical` when a
 sharp scale exists for the mode. A `scale` outside 0.25 to 4 is an error
-(`scale must be between 0.25 and 4`), and so is a missing mode. For example:
+(`scale must be between 0.25 and 4`), and so is a missing mode. Clients label
+a scale that is not sharp **Blurry**. For example:
 
 ```json
 {"scale": 1.33, "sharp": false, "logical": [2887.22, 1624.06],
@@ -168,7 +169,7 @@ Daemons older than `scale_info` answer it with an `unknown IPC method` error
 and ignore `snap_scale`. The typed Go client refuses to send `snap_scale` to
 such a daemon instead of letting it store a blurry scale. The Omarchy panel
 treats the unknown-method reply as missing support: it shows no preset pills,
-no ⚠ marker and no Custom… entry, and its More list falls back to the
+no ⚠ Blurry marker and no Custom… entry, and its More list falls back to the
 editor display's `scale_options` (the sharp list for the live mode), so it
 never shows a sharpness verdict it did not get from Go. Editor `displays`
 keep `scale_options` for those clients.

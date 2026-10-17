@@ -334,7 +334,7 @@ func (m Model) renderScaleRow(output editableOutput, width int, focused, wrap bo
 	lines, spans := m.layoutPillRow(pills, selected, width, wrap)
 	if wrap && !sharp {
 		// Say why the saved scale is marked; it stays selectable as is.
-		lines = append(lines, m.styles.warning.Render("⚠ fractional px"))
+		lines = append(lines, m.styles.warning.Render("⚠ Blurry"))
 	}
 	return lines, spans
 }

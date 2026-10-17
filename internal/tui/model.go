@@ -3675,7 +3675,7 @@ func (m Model) layoutFieldIssue(output editableOutput, field int) (string, bool)
 		}
 	case 2:
 		if output.Enabled && !scaling.Sharp(output.Width, output.Height, output.Scale) {
-			return "fractional px", true
+			return "Blurry", true
 		}
 	case 3:
 		if output.Bitdepth != 0 && output.Bitdepth != 8 && output.Bitdepth != 10 {

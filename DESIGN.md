@@ -416,8 +416,9 @@ exact value when two would read alike. Revised 2026-10-17 (stable scale row):
 the pills depend only on the mode, so
 stepping never changes how many there are: a current scale that is not a pill
 is shown on the More trigger instead (selected, labelled with that scale, such
-as `1.33x`, and marked ⚠ with "Not sharp" or "fractional px" when it is not
-sharp, never by colour alone), and is never rewritten. Arrows step the full list,
+as `1.33x`, and marked ⚠ Blurry when it is not sharp, never by colour
+alone), and is never rewritten. "Blurry" is the one user-facing label for a
+scale that is not sharp, in both clients and every dialog. Arrows step the full list,
 `scaling.SharpChoices` (every sharp scale from 1 to 4, served to the panel as
 `scale_info` `options`), and stop at the ends; Enter or More opens that list, which
 ends with Custom… for typing an exact scale with the same sharpness

@@ -54,7 +54,7 @@ func TestCurrentScaleOutsideThePresetsShowsOnMore(t *testing.T) {
 
 	m = scalePillModel(t, 158, 37, 1.33)
 	view := ansi.Strip(m.View())
-	requireContains(t, view, " 1.33x ⚠… ", "⚠ fractional px")
+	requireContains(t, view, " 1.33x ⚠… ", "⚠ Blurry")
 	if m.editOutputs[0].Scale != 1.33 {
 		t.Fatal("rendering rewrote the scale")
 	}

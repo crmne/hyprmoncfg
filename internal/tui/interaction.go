@@ -550,7 +550,7 @@ func scaleFeedbackLines(st styles, width, height int, a scaling.Assessment) []st
 		))}
 	}
 	lines := []string{"", st.warning.Render(fmt.Sprintf(
-		"⚠ Not sharp: final size has fractional px (%d / %s = %.2f, %d / %s = %.2f).",
+		"⚠ Blurry: final size has fractional px (%d / %s = %.2f, %d / %s = %.2f).",
 		width, shown, a.Logical[0], height, shown, a.Logical[1],
 	))}
 	if a.ClosestLogical != nil {
@@ -1178,7 +1178,7 @@ func (m *Model) commitNumericInput() tea.Cmd {
 		if value != typedValue {
 			status += fmt.Sprintf(" (closest sharp scale for %s)", scaling.Format(typedValue))
 		} else if !assessment.Sharp {
-			status += " (fractional logical size may look blurry)"
+			status += " (Blurry: fractional logical size)"
 		}
 	case numericInputPositionX, numericInputPositionY:
 		value, err := strconv.Atoi(strings.TrimSpace(m.input.Input.Value()))

@@ -752,8 +752,8 @@ func TestCanvasShowsWarningsOnMonitorCards(t *testing.T) {
 			t.Fatalf("expected canvas warning marker %q, got:\n%s", want, view)
 		}
 	}
-	if got := strings.Count(view, "⚠ fractional px"); got < 2 {
-		t.Fatalf("expected both canvas cards to show fractional warnings, got %d:\n%s", got, view)
+	if got := strings.Count(view, "⚠ Blurry"); got < 2 {
+		t.Fatalf("expected both canvas cards to show blurry warnings, got %d:\n%s", got, view)
 	}
 }
 
@@ -830,7 +830,7 @@ func TestScaleInputShowsClosestSharpSuggestion(t *testing.T) {
 
 	view := ansi.Strip(m.renderNumericInput())
 	for _, want := range []string{
-		"⚠ Not sharp:",
+		"⚠ Blurry:",
 		"3840 / 1.33 = 2887.22",
 		"2160 / 1.33 = 1624.06",
 		"fractional px",
@@ -862,7 +862,7 @@ func TestInspectorHighlightsNonSharpScale(t *testing.T) {
 	}
 
 	view := ansi.Strip(m.renderInspectorPane(64, 30, false))
-	for _, want := range []string{"Scale", "1.33", "⚠ fractional px"} {
+	for _, want := range []string{"Scale", "1.33", "⚠ Blurry"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected inspector warning to include %q, got:\n%s", want, view)
 		}
@@ -1168,14 +1168,14 @@ func TestCardLinesPrioritizeWarningWhenPresent(t *testing.T) {
 		Scale:  1.33,
 	}
 
-	lines := output.cardLinesWithIssue(3, "", "", "fractional px", "3")
+	lines := output.cardLinesWithIssue(3, "", "", "Blurry", "3")
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 card lines, got %d", len(lines))
 	}
 	if lines[0].text != "DP-1 ⚠" {
 		t.Fatalf("expected connector warning marker, got %q", lines[0].text)
 	}
-	if lines[1].text != "⚠ fractional px" {
+	if lines[1].text != "⚠ Blurry" {
 		t.Fatalf("expected warning line, got %q", lines[1].text)
 	}
 }
