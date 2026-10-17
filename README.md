@@ -180,6 +180,10 @@ before the next try, up to five minutes, with only one apply in flight. Saved
 profiles remain unchanged.
 Known wake-sensitive displays get their 60 Hz wake rule even when all monitors
 are unplugged, ready for the next connection's first modeset.
+With aquamarine 0.15.0, a monitor that comes back can get stuck at `0x0`
+because the kernel still drives the display pipe of one that disconnected. The
+daemon recognises that and switches to another console and back, which clears
+it. See [displays stuck without a mode](docs/_guide/daemon.md#displays-stuck-without-a-mode).
 
 When a dock is still connecting, monitor and workspace reads have short deadlines and desktop clients can show a connecting state while retrying. Unique hardware identities skip DRM connector probing; ambiguous identities use one shared probe with bounded waiting. See [daemon behavior](https://hyprmoncfg.dev/daemon/) and the [editor IPC reference](https://hyprmoncfg.dev/ipc/) for the matching and snapshot contracts.
 

@@ -45,7 +45,13 @@ type Config struct {
 	ReleaseWatcher func(context.Context) error
 	LaptopToggle   *omarchywatch.LaptopToggle
 	WakeConfig     *omarchywatch.WakeConfig
-	Logf           func(format string, args ...any)
+	// StaleConnectors lists the DRM connectors the kernel still drives
+	// although they are disconnected. Nil turns stale-CRTC recovery off.
+	StaleConnectors func() []string
+	// SwitchConsole switches to another console and back, staying away for
+	// the given time. Nil leaves stale-CRTC recovery to the user.
+	SwitchConsole func(context.Context, time.Duration) error
+	Logf          func(format string, args ...any)
 }
 
 type Service struct {
@@ -64,6 +70,7 @@ type Service struct {
 	applied       *appliedState
 	rejected      *rejectedAutomaticApply
 	fallbacks     *displayFallbacks
+	staleCRTC     *staleCRTCRecovery
 	// luaDialect remembers whether the running Hyprland reads a Lua config,
 	// for when it is too busy to say. Waking displays right after resume is
 	// exactly when it tends to be.
@@ -198,6 +205,7 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 		},
 		cfg:          cfg,
 		fallbacks:    newDisplayFallbacks(cfg.ConfigDir, cfg.Logf),
+		staleCRTC:    &staleCRTCRecovery{now: time.Now, away: staleCRTCConsoleAway, returnWait: staleCRTCConsoleReturn},
 		lidState:     lid.Unknown,
 		readLid:      lid.ReadState,
 		watchLid:     lid.Watch,
@@ -1045,6 +1053,9 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		// Displays the apply left enabled but without a mode count toward
 		// stepping them down on a later attempt.
 		if after, queryErr := s.queryMonitors(ctx); queryErr == nil {
+			if s.recoverStaleCRTC(ctx, after) {
+				return applyQueryError(err)
+			}
 			s.fallbacks.observeFailedApply(effective, after)
 			// Pause only once the rollback is known to have restored the
 			// previous config. A failed restore can leave the rejected file

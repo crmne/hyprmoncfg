@@ -14,6 +14,7 @@ import (
 
 	"github.com/crmne/hyprmoncfg/internal/buildinfo"
 	"github.com/crmne/hyprmoncfg/internal/config"
+	"github.com/crmne/hyprmoncfg/internal/console"
 	"github.com/crmne/hyprmoncfg/internal/daemon"
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/ipc"
@@ -89,6 +90,8 @@ func newRootCmd() *cobra.Command {
 				ReleaseWatcher:    watcherOwner.Release,
 				LaptopToggle:      omarchywatch.NewLaptopToggle(),
 				WakeConfig:        omarchywatch.NewWakeConfig(),
+				StaleConnectors:   hypr.StaleDRMConnectors,
+				SwitchConsole:     console.SwitchAwayAndBack,
 				Logf:              logf,
 			})
 			socketPath, err := ipc.SocketPath()

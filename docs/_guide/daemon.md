@@ -160,6 +160,29 @@ changed. The daemon also can't see a display that stays connected but shows
 nothing, because Hyprland and the kernel report that the same as a working one.
 The gentle wake exists because the drop before that silence is visible.
 
+### Displays stuck without a mode
+
+aquamarine 0.15.0, the display library under Hyprland 0.56, never releases the
+kernel's display pipe (CRTC) of a monitor that disconnects. When a monitor
+comes back and is handed that pipe, the kernel rejects every mode: Hyprland
+lists it at `0x0` and it stays black or frozen. It typically happens when every
+monitor was turned off and one comes back alone. aquamarine 0.15.1 fixes it
+([hyprwm/aquamarine#386](https://github.com/hyprwm/aquamarine/issues/386)).
+
+The daemon recognises it: an awake monitor stays at `0x0` although it lists
+modes, while `/sys/class/drm/card*-*` shows a disconnected connector as still
+`enabled`. It logs the cause, does not step the monitor's settings down, and
+switches to a free console and back through
+systemd-logind, then reloads Hyprland. The console switch makes Hyprland reset
+the kernel's display state. You see a text console for about two seconds.
+If the monitor is still stuck, the next switch waits 30 seconds, then twice as
+long each time, up to 10 minutes.
+
+logind allows this without root for the active local session. If it refuses,
+the log says so; switch by hand with `sudo chvt 2`, then `sudo chvt 1` (use the
+console your session runs on, `loginctl show-session $XDG_SESSION_ID -p VTNr`),
+or update aquamarine.
+
 ## Profile matching
 
 Profiles are matched by hardware identity (make, model, serial) -- not connector name. This means your layout survives when monitors swap between `DP-1` and `DP-2` across reboots. Each profile is scored against the currently connected monitors:
