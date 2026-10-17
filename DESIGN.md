@@ -417,10 +417,23 @@ sharp, never by colour alone), and is never rewritten. Arrows step the full list
 `scaling.SharpChoices` (every sharp scale from 1 to 4, served to the panel as
 `scale_options`), and stop at the ends; Enter or More opens that list, which
 ends with Custom… for typing an exact scale with the same sharpness
-explanation in both clients. The other choice rows (Enabled, VRR, Color
+explanation in both clients. The other choice rows (Enabled, Refresh, VRR, Color
 depth, SDR EOTF, WCG and HDR capability, and the panel's Rotation) stop at the
 ends on arrows, and Enter advances and wraps; Scale is the exception, since
 Enter opens its list.
+
+Decision, 2026-10-17 (resolution and refresh): both clients edit the mode as
+two controls, as Omarchy's Display panel does. Resolution is a list of the
+display's resolutions, each once, largest first (most pixels, then widest).
+Refresh is a choice row of the rates that resolution offers, slowest first,
+labelled like the cards (`144Hz`, with more precision only when two rates
+would read alike). Changing the resolution keeps the refresh rate when the new
+resolution offers it, and otherwise takes its highest rate. The stored profile
+is unchanged: one advertised mode string, width, height and refresh, and the
+IPC needs nothing new (`edit_profile` still takes `mode`). Display summaries
+keep the shared `3840x2160@144Hz` formatter. Field order is Enabled,
+Resolution, Refresh, Scale, then the rest; the TUI keeps its internal field
+numbers and lists Refresh after Resolution.
 
 Canvas placement is shared Go (`internal/profile/placement.go`): the panel
 reaches it through the daemon's editor (a drag release sends a snap distance),

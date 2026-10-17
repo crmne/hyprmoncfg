@@ -983,7 +983,7 @@ func TestModePickerMouseSelectsVisibleMode(t *testing.T) {
 	}
 	m := base
 
-	x, y := findVisiblePosition(t, m.View(), "2560x1440@144Hz")
+	x, y := findVisiblePosition(t, m.View(), "2560x1440")
 	updated, cmd := m.updateMouse(mousePressAt(x, y))
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
@@ -1024,10 +1024,10 @@ func TestModePickerRendersOptionsWithoutBlankRows(t *testing.T) {
 	lines := strings.Split(ansi.Strip(m.picker.List.View()), "\n")
 	first, second := -1, -1
 	for i, line := range lines {
-		if strings.Contains(line, "3840x2160@144Hz") {
+		if strings.Contains(line, "3840x2160") {
 			first = i
 		}
-		if strings.Contains(line, "2560x1440@144Hz") {
+		if strings.Contains(line, "2560x1440") {
 			second = i
 		}
 	}
@@ -2206,7 +2206,7 @@ func TestRenderInspectorPaneCompactsFieldsOnShortHeight(t *testing.T) {
 	}
 
 	view := m.renderInspectorPane(48, 30, false)
-	for _, want := range []string{"Mode", "3840x2160@144Hz", "Scale", "VRR", "Rotation", "Position X", "Position Y"} {
+	for _, want := range []string{"Resolution", "3840x2160", "Refresh", "144Hz", "Scale", "VRR", "Rotation", "Position X", "Position Y"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected inspector to include %q, got:\n%s", want, view)
 		}
@@ -2222,9 +2222,11 @@ func TestInspectorModeOmitsPickerPosition(t *testing.T) {
 		Height:    2160,
 		Refresh:   143.99,
 	}
-	got := m.layoutFieldValue(output, 1)
-	if got != "3840x2160@144Hz" {
-		t.Fatalf("expected clean mode value, got %q", got)
+	if got := m.layoutFieldValue(output, 1); got != "3840x2160" {
+		t.Fatalf("expected the bare resolution, got %q", got)
+	}
+	if got := m.layoutFieldValue(output, fieldRefresh); got != "144Hz" {
+		t.Fatalf("expected the rounded rate, got %q", got)
 	}
 }
 

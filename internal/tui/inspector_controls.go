@@ -88,6 +88,20 @@ func (m *Model) setInspectorChoice(field int, value string) {
 		return
 	}
 	output := &m.editOutputs[m.selectedOutput]
+	if field == fieldRefresh {
+		index, err := strconv.Atoi(value)
+		if err != nil || index == output.ModeIndex || index < 0 || index >= len(output.Modes) {
+			return
+		}
+		m.guardLayoutEdit(func() {
+			output := &m.editOutputs[m.selectedOutput]
+			oldWidth, oldHeight := output.logicalSize()
+			output.selectMode(index)
+			m.reflowAfterResize(m.selectedOutput, oldWidth, oldHeight)
+			m.layoutChanged()
+		})
+		return
+	}
 	if field == 2 {
 		scale, err := strconv.ParseFloat(value, 64)
 		if err != nil || scaling.Round(scale) == scaling.Round(output.Scale) {

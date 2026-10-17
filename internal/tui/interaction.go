@@ -256,42 +256,17 @@ func (m *Model) activateInspectorField() tea.Cmd {
 
 	switch m.inspectorField {
 	case 1:
-		output := m.editOutputs[m.selectedOutput]
-		if len(output.Modes) == 0 {
-			return nil
-		}
-		items := make([]list.Item, 0, len(output.Modes))
-		for _, mode := range output.Modes {
-			items = append(items, fieldPickerItem{pickerItem: pickerItem(mode), label: displayModeLabel(mode)})
-		}
-		inner := list.NewDefaultDelegate()
-		inner.ShowDescription = false
-		inner.SetHeight(1)
-		inner.SetSpacing(0)
-		inner.Styles.NormalTitle = m.styles.value
-		inner.Styles.SelectedTitle = m.styles.focused.Copy().UnsetPadding()
-		inner.Styles.DimmedTitle = m.styles.subtle
-		inner.Styles.FilterMatch = m.styles.badgeAccent
-		delegate := arrowDelegate{inner}
-		picker := list.New(items, delegate, m.modePickerWidth()-2, m.modePickerHeight())
-		picker.Title = fmt.Sprintf("Mode for %s", output.Name)
-		picker.SetShowHelp(false)
-		picker.SetShowPagination(false)
-		picker.SetShowStatusBar(false)
-		picker.SetFilteringEnabled(false)
-		picker.DisableQuitKeybindings()
-		picker.Styles.Title = m.styles.modalTitle
-		picker.Styles.TitleBar = lipgloss.NewStyle().PaddingBottom(1)
-		picker.Styles.PaginationStyle = m.styles.subtle
-		picker.Styles.HelpStyle = m.styles.help
-		picker.Styles.NoItems = m.styles.subtle
-		picker.Select(clampIndex(output.ModeIndex, len(output.Modes)))
-		m.picker = &modePickerState{
-			OutputIndex: m.selectedOutput,
-			FieldIndex:  -1,
-			List:        picker,
-		}
-		m.mode = modeModePicker
+		m.openResolutionPicker()
+		return nil
+	case fieldRefresh:
+		// Enter advances the Refresh row and wraps, like the other choice rows.
+		m.guardLayoutEdit(func() {
+			output := &m.editOutputs[m.selectedOutput]
+			oldWidth, oldHeight := output.logicalSize()
+			output.stepRefresh(1, true)
+			m.reflowAfterResize(m.selectedOutput, oldWidth, oldHeight)
+			m.layoutChanged()
+		})
 		return nil
 	case 2:
 		// Enter on Scale opens the full sharp list, the row's More… choice.
@@ -451,7 +426,7 @@ func (m *Model) openLabeledPicker(title string, fieldIndex int, options, labels 
 func (m Model) pickerPrompt(name string) string {
 	switch {
 	case m.picker.FieldIndex < 0:
-		return fmt.Sprintf("Pick a display mode for %s.", name)
+		return fmt.Sprintf("Pick a resolution for %s. Refresh keeps its rate if offered, or takes the highest.", name)
 	case m.picker.FieldIndex == 2:
 		return fmt.Sprintf("Pick a sharp scale for %s, or Custom… to type one.", name)
 	default:
@@ -511,7 +486,11 @@ func (m Model) renderModePicker() string {
 		"",
 		m.styles.help.Render("Enter applies. Esc closes."),
 	}
-	return m.renderModalFrame("Select Mode", body)
+	title := "Select Mode"
+	if m.picker.FieldIndex < 0 {
+		title = "Select Resolution"
+	}
+	return m.renderModalFrame(title, body)
 }
 
 func (m Model) renderNumericInput() string {
@@ -1049,15 +1028,10 @@ func (m *Model) commitModePicker() tea.Cmd {
 			m.applyFieldPickerValue(output, picker.FieldIndex, value)
 			status = fmt.Sprintf("Set %s to %s for %s", layoutFields[picker.FieldIndex], fieldOptionLabel(picker.FieldIndex, value), output.Name)
 		} else {
-			output.ModeIndex = indexOf(output.Modes, value)
-			if output.ModeIndex < 0 {
-				output.ModeIndex = 0
-			}
-			if output.ModeUnsupported && output.ModeIndex > 0 {
-				output.ModeUnsupported = false
-			}
-			output.applyMode(output.Modes[output.ModeIndex])
-			status = fmt.Sprintf("Selected %s for %s", output.DisplayMode(), output.Name)
+			// The resolution list: keep the rate when the new resolution
+			// offers it, otherwise take its highest.
+			output.selectResolution(value)
+			status = fmt.Sprintf("Selected %s for %s", displayModeLabel(output.DisplayMode()), output.Name)
 		}
 		m.reflowAfterResize(picker.OutputIndex, oldWidth, oldHeight)
 		m.layoutChanged()
@@ -1489,7 +1463,7 @@ func (m *Model) updateLayoutMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					m.setInspectorChoice(field, value)
 					return m, nil
 				}
-				if len(inspectorChoiceValues(field)) > 0 {
+				if len(inspectorChoiceValues(field)) > 0 || field == fieldRefresh {
 					return m, nil
 				}
 				return m, m.activateInspectorField()

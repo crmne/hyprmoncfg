@@ -1425,8 +1425,14 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 		fieldRows[idx] = len(lines)
 		fieldLines[idx] = 1
 
-		if idx == 2 {
-			rows, spans := m.renderScaleRow(output, innerWidth-labelWidth-1, focused, !compact)
+		if idx == 2 || idx == fieldRefresh {
+			var rows []string
+			var spans []choiceSpan
+			if idx == 2 {
+				rows, spans = m.renderScaleRow(output, innerWidth-labelWidth-1, focused, !compact)
+			} else {
+				rows, spans = m.renderRefreshRow(output, innerWidth-labelWidth-1, focused, !compact)
+			}
 			if len(rows) > 0 {
 				for i := range spans {
 					spans[i].start += labelWidth + 1
@@ -1491,7 +1497,7 @@ func inspectorFieldsForTab(tab inspectorTab) []int {
 	if tab == inspectorTabColor {
 		return []int{3, 4, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
 	}
-	return []int{0, 1, 2, 5, 6, 7, 8, 9}
+	return []int{0, 1, fieldRefresh, 2, 5, 6, 7, 8, 9}
 }
 
 func (m *Model) normalizeInspectorField() {
@@ -2626,14 +2632,9 @@ func (m *Model) adjustInspectorFieldUnguarded(delta int) {
 	case 0:
 		output.Enabled = !output.Enabled
 	case 1:
-		if len(output.Modes) == 0 {
-			return
-		}
-		output.ModeIndex = wrapIndex(output.ModeIndex+delta, len(output.Modes))
-		if output.ModeUnsupported && output.ModeIndex > 0 {
-			output.ModeUnsupported = false
-		}
-		output.applyMode(output.Modes[output.ModeIndex])
+		output.stepResolution(delta)
+	case fieldRefresh:
+		output.stepRefresh(delta, false)
 	case 2:
 		output.Scale = nextSharpScale(output.Width, output.Height, output.Scale, delta)
 	case 3:
@@ -3600,7 +3601,9 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 	case 0:
 		return boolText(output.Enabled)
 	case 1:
-		return displayModeLabel(output.DisplayMode())
+		return resolutionKey(output.DisplayMode())
+	case fieldRefresh:
+		return refreshLabel(output.Refresh, 1)
 	case 2:
 		return scaling.Format(output.Scale)
 	case 3:
@@ -4965,7 +4968,7 @@ func outputIndexByKey(outputs []editableOutput, key string) int {
 
 var layoutFields = []string{
 	"Enabled",
-	"Mode",
+	"Resolution",
 	"Scale",
 	"Color depth (bpc)",
 	"Color space / EOTF",
@@ -4985,6 +4988,9 @@ var layoutFields = []string{
 	"WCG capability",
 	"HDR capability",
 	"ICC device profile",
+	// Refresh is field 21 so the other field numbers stay put; the Display
+	// tab lists it right after Resolution.
+	"Refresh",
 }
 
 const advancedFieldStart = 10
