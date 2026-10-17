@@ -38,9 +38,9 @@ const (
 	MethodManage      = "manage"
 	MethodUnmanage    = "unmanage"
 	MethodProfileAuto = "set_profile_auto"
-	// MethodRotationLock holds or releases the turn the orientation sensor
-	// gives built-in panels that rotate automatically.
-	MethodRotationLock = "set_rotation_lock"
+	// MethodRotation holds or releases the turn the orientation sensor gives
+	// built-in panels that rotate automatically, or reverses its direction.
+	MethodRotation = "set_rotation"
 )
 
 const EventStatus = "status"
@@ -115,8 +115,12 @@ type ProfileAutoParams struct {
 	Enabled bool `json:"enabled"`
 }
 
-type RotationLockParams struct {
-	Locked bool `json:"locked"`
+// RotationParams changes automatic rotation. Each field is optional and
+// left as it is when absent. Reversed turns panels the other way for a
+// device whose accelerometer reports the opposite direction.
+type RotationParams struct {
+	Locked   *bool `json:"locked,omitempty"`
+	Reversed *bool `json:"reversed,omitempty"`
 }
 
 type Transaction struct {
@@ -141,6 +145,6 @@ type Handler interface {
 	Manage() error
 	Unmanage() error
 	SetProfileAuto(params ProfileAutoParams) error
-	SetRotationLock(params RotationLockParams) error
+	SetRotation(params RotationParams) error
 	Disconnect(owner string)
 }

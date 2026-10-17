@@ -59,6 +59,7 @@ func TestRotationSummarySaysHowPanelsTurn(t *testing.T) {
 		{appstatus.Rotation{Available: true, Quarters: 1}, "Automatic rotation: following the sensor, turned 90°"},
 		{appstatus.Rotation{Available: true, Locked: true, Quarters: 2}, "Automatic rotation: locked, upside down"},
 		{appstatus.Rotation{Available: true, Paused: true}, "Automatic rotation: paused while folded as a laptop, upright"},
+		{appstatus.Rotation{Available: true, Quarters: 3, Reversed: true}, "Automatic rotation: following the sensor, turned 270°, direction reversed"},
 	} {
 		if got := rotationSummary(tc.rotation); got != tc.want {
 			t.Errorf("rotationSummary(%+v) = %q, want %q", tc.rotation, got, tc.want)
@@ -67,11 +68,18 @@ func TestRotationSummarySaysHowPanelsTurn(t *testing.T) {
 }
 
 func TestRotationRejectsUnknownActions(t *testing.T) {
-	cmd := newRotationCmd()
-	cmd.SetArgs([]string{"spin"})
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown rotation action") {
-		t.Fatalf("err = %v", err)
+	for args, want := range map[string]string{
+		"spin":             "unknown rotation action",
+		"direction":        "direction is normal or reversed",
+		"direction upside": "direction is normal or reversed",
+		"lock now":         "lock takes no value",
+	} {
+		cmd := newRotationCmd()
+		cmd.SetArgs(strings.Fields(args))
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s: err = %v, want %q", args, err, want)
+		}
 	}
 }

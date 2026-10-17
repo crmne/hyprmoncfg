@@ -336,12 +336,12 @@ type Model struct {
 	fallbacks             map[string]appstatus.MonitorFallback
 	// rotation is the daemon's automatic rotation, nil without a daemon
 	// that supports it.
-	rotation *appstatus.Rotation
-	profileModePending    bool
-	refreshInFlight       bool
-	applying              bool
-	quitAfterApply        bool
-	quitAfterRevert       bool
+	rotation           *appstatus.Rotation
+	profileModePending bool
+	refreshInFlight    bool
+	applying           bool
+	quitAfterApply     bool
+	quitAfterRevert    bool
 
 	width  int
 	height int

@@ -584,29 +584,46 @@ func resolveHyprConfigForCLI(cmd *cobra.Command, monitorsConf string, hyprConfig
 
 func newRotationCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "rotation [status|lock|unlock|toggle]",
+		Use:   "rotation [status|lock|unlock|toggle|direction normal|direction reversed]",
 		Short: "Show or lock automatic rotation of built-in panels",
 		Long: "Built-in panels set to rotate automatically follow the device's orientation sensor.\n" +
 			"lock holds the current rotation, unlock follows the sensor again, and toggle switches between them.\n" +
-			"Bind `hyprmoncfg rotation toggle` to a key for a rotation lock. Needs hyprmoncfgd.",
-		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: []string{"status", "lock", "unlock", "toggle"},
+			"Bind `hyprmoncfg rotation toggle` to a key for a rotation lock.\n" +
+			"direction reversed turns panels the other way, for a device whose sensor reports the opposite direction.\n" +
+			"Needs hyprmoncfgd.",
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			action := "status"
-			if len(args) == 1 {
+			if len(args) > 0 {
 				action = args[0]
 			}
-			return runRotation(cmd, action)
+			value := ""
+			if len(args) > 1 {
+				value = args[1]
+			}
+			return runRotation(cmd, action, value)
 		},
 	}
 	return cmd
 }
 
-func runRotation(cmd *cobra.Command, action string) error {
+func runRotation(cmd *cobra.Command, action, value string) error {
+	var params ipc.RotationParams
 	switch action {
 	case "status", "lock", "unlock", "toggle":
+		if value != "" {
+			return fmt.Errorf("%s takes no value", action)
+		}
+	case "direction":
+		switch value {
+		case "normal", "reversed":
+		default:
+			return errors.New("direction is normal or reversed")
+		}
+		reversed := value == "reversed"
+		params.Reversed = &reversed
 	default:
-		return fmt.Errorf("unknown rotation action %q: use status, lock, unlock or toggle", action)
+		return fmt.Errorf("unknown rotation action %q: use status, lock, unlock, toggle or direction", action)
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), 20*time.Second)
 	defer cancel()
@@ -636,11 +653,14 @@ func runRotation(cmd *cobra.Command, action string) error {
 	case "toggle":
 		locked = !locked
 	}
+	if action == "lock" || action == "unlock" || action == "toggle" {
+		params.Locked = &locked
+	}
 	if action != "status" {
 		if !status.Rotation.Available {
 			return errors.New("no orientation sensor: install iio-sensor-proxy on a device with an accelerometer")
 		}
-		if err := client.SetRotationLock(ctx, locked); err != nil {
+		if err := client.SetRotation(ctx, params); err != nil {
 			return err
 		}
 		if status, err = client.Status(ctx); err != nil {
@@ -656,6 +676,9 @@ func rotationSummary(rotation appstatus.Rotation) string {
 		return "Automatic rotation: no orientation sensor"
 	}
 	turn := [...]string{"upright", "turned 90°", "upside down", "turned 270°"}[((rotation.Quarters%4)+4)%4]
+	if rotation.Reversed {
+		turn += ", direction reversed"
+	}
 	switch {
 	case rotation.Locked:
 		return "Automatic rotation: locked, " + turn

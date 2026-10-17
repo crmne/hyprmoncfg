@@ -251,7 +251,11 @@ turned live state applies the turn first.
 A convertible with a readable tablet-mode switch turns only in tablet mode,
 as GNOME does; elsewhere the sensor always applies, and lying flat keeps the
 last turn. The rotation lock is live state, persisted across restarts, that
-holds the current turn; releasing it follows the device again. Both clients
+holds the current turn; releasing it follows the device again. A reversed
+direction, also persisted and belonging to the device rather than a profile,
+applies the sensor's turns the other way for a sensor mounted backwards; with
+the upright rotation it covers every mounting. It is calibration set once,
+so only the CLI (`hyprmoncfg rotation direction`) and IPC offer it. Both clients
 offer **Auto** only for a built-in panel when the daemon reports a sensor, and
 both expose the lock (`L` in the TUI, a toggle beside **Auto** in the panel),
 as does `hyprmoncfg rotation`. Only built-in panels rotate; touch and pen

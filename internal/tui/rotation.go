@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/crmne/hyprmoncfg/internal/appstatus"
+	"github.com/crmne/hyprmoncfg/internal/ipc"
 )
 
 // rotationAutoValue is the Rotation choice that makes a built-in panel turn
@@ -67,7 +68,7 @@ func (m *Model) toggleRotationLockCmd() tea.Cmd {
 			if client == nil {
 				return rotationLockMsg{err: errors.New("hyprmoncfgd is not connected")}
 			}
-			return rotationLockMsg{locked: locked, err: client.SetRotationLock(ctx, locked)}
+			return rotationLockMsg{locked: locked, err: client.SetRotation(ctx, ipc.RotationParams{Locked: &locked})}
 		},
 		m.refreshCmd(true),
 	)

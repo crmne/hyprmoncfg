@@ -64,6 +64,7 @@ type Rotation struct {
 	Orientation string `json:"orientation,omitempty"`
 	Quarters    int    `json:"quarters"`
 	Locked      bool   `json:"locked"`
+	Reversed    bool   `json:"reversed,omitempty"`
 	TabletMode  bool   `json:"tablet_mode,omitempty"`
 	Paused      bool   `json:"paused,omitempty"`
 }

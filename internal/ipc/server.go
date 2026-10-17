@@ -240,10 +240,10 @@ func (s *Server) dispatch(owner string, client *serverClient, request Request) R
 		if err = decodeParams(request.Params, &params); err == nil {
 			err = s.Handler.SetProfileAuto(params)
 		}
-	case MethodRotationLock:
-		var params RotationLockParams
+	case MethodRotation:
+		var params RotationParams
 		if err = decodeParams(request.Params, &params); err == nil {
-			err = s.Handler.SetRotationLock(params)
+			err = s.Handler.SetRotation(params)
 		}
 	default:
 		err = fmt.Errorf("unknown IPC method %q", request.Method)

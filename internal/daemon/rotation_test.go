@@ -49,7 +49,7 @@ func TestRotationLockHoldsTheTurnAcrossRestarts(t *testing.T) {
 	dir := t.TempDir()
 	r := newAutoRotation(dir, t.Logf)
 	r.observe(orientation.Reading{Available: true, Orientation: "right-up"})
-	if _, err := r.setLocked(true); err != nil {
+	if _, err := r.set(boolPtr(true), nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, changed := r.observe(orientation.Reading{Available: true, Orientation: "normal"}); changed || r.turn() != 3 {
@@ -60,7 +60,7 @@ func TestRotationLockHoldsTheTurnAcrossRestarts(t *testing.T) {
 	if status := restarted.status(); !status.Locked || status.Quarters != 3 {
 		t.Fatalf("after a restart = %+v, want locked at 3", status)
 	}
-	if changed, err := restarted.setLocked(false); err != nil || !changed || restarted.turn() != 0 {
+	if changed, err := restarted.set(boolPtr(false), nil); err != nil || !changed || restarted.turn() != 0 {
 		t.Fatalf("unlock = %v, %v, turn %d; want the current orientation", changed, err, restarted.turn())
 	}
 }
@@ -184,5 +184,25 @@ func TestKeptPreviewOnATurnedTabletIsTurnedOnce(t *testing.T) {
 	data, _ := os.ReadFile(env.monitorsConfPath)
 	if !strings.Contains(string(data), "transform = 1") || strings.Contains(string(data), "transform = 2") {
 		t.Fatalf("the pinned layout was turned again:\n%s", data)
+	}
+}
+
+func boolPtr(value bool) *bool { return &value }
+
+func TestReversedRotationTurnsTheOtherWayAndPersists(t *testing.T) {
+	dir := t.TempDir()
+	r := newAutoRotation(dir, t.Logf)
+	r.observe(orientation.Reading{Available: true, Orientation: "left-up"})
+	if changed, err := r.set(nil, boolPtr(true)); err != nil || !changed || r.turn() != 3 {
+		t.Fatalf("reversed left-up = %d (changed %v, %v), want 3", r.turn(), changed, err)
+	}
+	r.observe(orientation.Reading{Available: true, Orientation: "bottom-up"})
+	if r.turn() != 2 {
+		t.Fatalf("reversed bottom-up = %d, want 2", r.turn())
+	}
+	restarted := newAutoRotation(dir, t.Logf)
+	restarted.observe(orientation.Reading{Available: true, Orientation: "right-up"})
+	if status := restarted.status(); !status.Reversed || status.Quarters != 1 {
+		t.Fatalf("after a restart = %+v, want reversed right-up turned once", status)
 	}
 }

@@ -36,6 +36,9 @@ type autoRotation struct {
 
 	locked         bool
 	lockedQuarters int
+	// reversed turns panels the other way, for a device whose accelerometer
+	// reports the opposite direction.
+	reversed bool
 }
 
 const (
@@ -50,6 +53,7 @@ const (
 type rotationState struct {
 	Locked   bool `json:"locked"`
 	Quarters int  `json:"quarters"`
+	Reversed bool `json:"reversed,omitempty"`
 }
 
 func newAutoRotation(configDir string, logf func(string, ...any)) *autoRotation {
@@ -62,6 +66,7 @@ func newAutoRotation(configDir string, logf func(string, ...any)) *autoRotation 
 		var state rotationState
 		if json.Unmarshal(data, &state) == nil {
 			r.locked, r.lockedQuarters = state.Locked, ((state.Quarters%4)+4)%4
+			r.reversed = state.Reversed
 		}
 	}
 	return r
@@ -76,6 +81,8 @@ func (r *autoRotation) turnLocked() int {
 		return r.lockedQuarters
 	case r.tabletSwitch && !r.tabletMode:
 		return 0
+	case r.reversed:
+		return (4 - r.quarters) % 4
 	}
 	return r.quarters
 }
@@ -131,18 +138,24 @@ func (r *autoRotation) observeTabletMode(on bool, err error) (turnChanged bool) 
 	return r.turnLocked() != before
 }
 
-// setLocked holds or releases the current turn. It reports whether the
-// applied turn changed, which it does when releasing a stale lock.
-func (r *autoRotation) setLocked(locked bool) (turnChanged bool, err error) {
+// set holds or releases the current turn and sets the direction; nil
+// leaves either as it is. It reports whether the applied turn changed, as it
+// does when releasing a lock taken in another orientation or reversing.
+func (r *autoRotation) set(locked, reversed *bool) (turnChanged bool, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	before := r.turnLocked()
-	if locked && !r.locked {
-		r.lockedQuarters = before
+	if reversed != nil {
+		r.reversed = *reversed
 	}
-	r.locked = locked
+	if locked != nil {
+		if *locked && !r.locked {
+			r.lockedQuarters = before
+		}
+		r.locked = *locked
+	}
 	if r.path != "" {
-		data, _ := json.Marshal(rotationState{Locked: r.locked, Quarters: r.lockedQuarters})
+		data, _ := json.Marshal(rotationState{Locked: r.locked, Quarters: r.lockedQuarters, Reversed: r.reversed})
 		if err := os.MkdirAll(filepath.Dir(r.path), 0o755); err != nil {
 			return false, err
 		}
@@ -164,6 +177,7 @@ func (r *autoRotation) status() *appstatus.Rotation {
 		Orientation: r.orientation,
 		Quarters:    r.turnLocked(),
 		Locked:      r.locked,
+		Reversed:    r.reversed,
 		TabletMode:  r.tabletSwitch && r.tabletMode,
 		Paused:      r.available && !r.locked && r.tabletSwitch && !r.tabletMode,
 	}
@@ -177,27 +191,36 @@ func (s *Service) editorRotation() appstatus.EditorRotation {
 	return appstatus.EditorRotation{Available: status.Available, Quarters: status.Quarters}
 }
 
-// SetRotationLock holds or releases the turn the orientation sensor gives
-// panels that rotate automatically. Releasing a lock taken in another
-// orientation turns them to the current one.
-func (s *Service) SetRotationLock(params ipc.RotationLockParams) error {
+// SetRotation holds or releases the turn the orientation sensor gives
+// panels that rotate automatically, or reverses its direction. A change that
+// turns the panels applies right away.
+func (s *Service) SetRotation(params ipc.RotationParams) error {
 	if s.cfg.WatchOrientation == nil {
 		return errors.New("automatic rotation is not available")
 	}
-	turnChanged, err := s.rotation.setLocked(params.Locked)
+	turnChanged, err := s.rotation.set(params.Locked, params.Reversed)
 	if err != nil {
 		return err
 	}
-	if params.Locked {
-		s.cfg.Logf("rotation locked")
-	} else {
-		s.cfg.Logf("rotation unlocked")
+	if params.Locked != nil {
+		if *params.Locked {
+			s.cfg.Logf("rotation locked")
+		} else {
+			s.cfg.Logf("rotation unlocked")
+		}
+	}
+	if params.Reversed != nil {
+		if *params.Reversed {
+			s.cfg.Logf("rotation direction reversed")
+		} else {
+			s.cfg.Logf("rotation direction normal")
+		}
 	}
 	if turnChanged {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := s.applyAutomatic(ctx); err != nil {
-			s.cfg.Logf("rotate after unlocking: %v", err)
+			s.cfg.Logf("rotate after a rotation change: %v", err)
 		}
 	}
 	s.signalChange()

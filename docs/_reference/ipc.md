@@ -47,7 +47,7 @@ Errors replace `result` with an object containing a stable `code`, a human-reada
 | `save` | full `profile` | none |
 | `delete` | `name` | none |
 | `set_profile_auto` | `enabled` boolean | none |
-| `set_rotation_lock` | `locked` boolean | none |
+| `set_rotation` | optional `locked` and `reversed` booleans | none |
 
 A transaction contains an opaque `id`, the effective profile, and an RFC 3339 `deadline`.
 
@@ -101,11 +101,14 @@ A daemon with orientation support adds `rotation` to the status document:
 `available` (an accelerometer reports the orientation), `orientation`
 (iio-sensor-proxy's `normal`, `left-up`, `bottom-up`, `right-up` or
 `undefined`), `quarters` (the counterclockwise quarter turns applied now to
-built-in panels that rotate automatically), `locked`, and on a convertible
-`tablet_mode` and `paused` (folded as a laptop, so panels stay upright).
-Absent `rotation` means the daemon predates it; clients then offer neither
-automatic rotation nor the lock. `set_rotation_lock` holds or releases the
-current turn and fails when no sensor is available.
+built-in panels that rotate automatically), `locked`, `reversed` (the sensor's
+turns are applied the other way, for a device whose accelerometer reports the
+opposite direction), and on a convertible `tablet_mode` and `paused` (folded
+as a laptop, so panels stay upright). Absent `rotation` means the daemon
+predates it; clients then offer neither automatic rotation nor the lock.
+`set_rotation` changes only the fields it is given: `locked` holds or releases
+the current turn, `reversed` sets the direction. Both persist across daemon
+restarts, and the method fails when no sensor is available.
 
 A profile output with `rotation_auto: true` turns with the device; its
 `transform` is the rotation it has when the device is upright. Profiles,

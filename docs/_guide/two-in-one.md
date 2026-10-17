@@ -83,14 +83,26 @@ device is held now.
 
 ## If it turns the wrong way
 
-The sensor's idea of "upright" comes from the device's accelerometer mount
-matrix in the system hardware database. If the panel turns the wrong way or
-by the wrong amount, that matrix is missing or wrong for your model, and
-GNOME and KDE turn it wrong too. Fix it once for the whole system by adding
-an `ACCEL_MOUNT_MATRIX` entry for your device to
+If the panel turns the opposite way to the device, reverse the direction:
+
+```bash
+hyprmoncfg rotation direction reversed
+```
+
+Undo it with `hyprmoncfg rotation direction normal`. The setting belongs to
+the device, not to a profile, and survives restarts. If the panel is the
+right way round only when the device is turned, set its upright rotation
+instead (see [Upright](#upright)). Together the two cover every way a sensor
+can be mounted.
+
+Both come from the device's accelerometer mount matrix in the system hardware
+database, which is missing or wrong for some models, and GNOME and KDE turn
+those wrong too. To fix it for every program at once, add an
+`ACCEL_MOUNT_MATRIX` entry for your device to
 `/etc/udev/hwdb.d/61-sensor-local.hwdb`, as the
 [iio-sensor-proxy documentation](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy/)
-explains, and consider sending it upstream to systemd.
+explains, and consider sending it upstream to systemd. Then set the direction
+back to normal.
 
 ## Limits
 

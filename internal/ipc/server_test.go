@@ -23,7 +23,7 @@ type testHandler struct {
 	revertErr    error
 	managed      bool
 	profileAuto  bool
-	rotationLock bool
+	rotation     RotationParams
 	disconnected []string
 	editor       appstatus.EditorDocument
 	edited       appstatus.EditorDraft
@@ -66,10 +66,10 @@ func (h *testHandler) SetProfileAuto(params ProfileAutoParams) error {
 	return nil
 }
 
-func (h *testHandler) SetRotationLock(params RotationLockParams) error {
+func (h *testHandler) SetRotation(params RotationParams) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.rotationLock = params.Locked
+	h.rotation = params
 	return nil
 }
 
@@ -388,26 +388,27 @@ func TestDispatchRoutesProfileAutomaticMode(t *testing.T) {
 	}
 }
 
-func TestDispatchRoutesRotationLock(t *testing.T) {
+func TestDispatchRoutesRotation(t *testing.T) {
 	handler := &testHandler{}
 	serverConn, clientConn := net.Pipe()
 	t.Cleanup(func() { _ = serverConn.Close(); _ = clientConn.Close() })
 	server := &Server{Handler: handler}
 	client := &serverClient{conn: serverConn, encoder: json.NewEncoder(serverConn)}
-	params, err := json.Marshal(RotationLockParams{Locked: true})
+	locked := true
+	params, err := json.Marshal(RotationParams{Locked: &locked})
 	if err != nil {
 		t.Fatal(err)
 	}
 	response := server.dispatch("test", client, Request{
-		Type: "request", ProtocolVersion: ProtocolVersion, ID: "1", Method: MethodRotationLock, Params: params,
+		Type: "request", ProtocolVersion: ProtocolVersion, ID: "1", Method: MethodRotation, Params: params,
 	})
 	if response.Error != nil {
-		t.Fatalf("%s: %+v", MethodRotationLock, response.Error)
+		t.Fatalf("%s: %+v", MethodRotation, response.Error)
 	}
 	handler.mu.Lock()
-	got := handler.rotationLock
+	got := handler.rotation
 	handler.mu.Unlock()
-	if !got {
-		t.Fatal("the rotation lock was not routed to the handler")
+	if got.Locked == nil || !*got.Locked || got.Reversed != nil {
+		t.Fatalf("routed %+v, want only the lock", got)
 	}
 }
