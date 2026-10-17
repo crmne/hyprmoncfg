@@ -229,8 +229,10 @@ A display stack bug is not a reason to step settings down. aquamarine 0.15.0
 leaves the kernel driving the CRTC of a display that disconnected, so a display
 later handed that CRTC fails every modeset (hyprwm/aquamarine#386, fixed in
 0.15.1). When an awake output stays without a mode although it advertises
-modes, while sysfs reports a disconnected connector as still enabled, the
-daemon logs the cause and, on the first failed apply, switches to a free
+modes, while sysfs shows the kernel still routing a CRTC the compositor cannot
+use (a disconnected connector still enabled, or the stuck output's own
+connector still enabled, as when two reconnecting displays swap CRTCs, #428),
+the daemon logs the cause and, on the first failed apply, switches to a free
 console and back through logind, then reloads. Each further switch waits twice
 as long, from 30 seconds up to 10 minutes, because it blanks every display. It
 acts only on the user's own graphical session.

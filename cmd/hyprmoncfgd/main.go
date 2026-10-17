@@ -91,7 +91,7 @@ func newRootCmd() *cobra.Command {
 				ReleaseWatcher:    watcherOwner.Release,
 				LaptopToggle:      omarchywatch.NewLaptopToggle(),
 				WakeConfig:        omarchywatch.NewWakeConfig(),
-				StaleConnectors:   hypr.StaleDRMConnectors,
+				ConnectorStates:   hypr.DRMConnectorStates,
 				SwitchConsole:     console.SwitchAwayAndBack,
 				WatchOrientation:  orientation.Watch,
 				ReadTabletMode:    lid.ReadTabletMode,

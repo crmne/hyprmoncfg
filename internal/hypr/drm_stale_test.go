@@ -7,13 +7,12 @@ import (
 	"testing"
 )
 
-func TestStaleDRMConnectorsAreDisconnectedButStillEnabled(t *testing.T) {
+func TestDRMConnectorStatesReadStatusAndEnabled(t *testing.T) {
 	root := t.TempDir()
 	for name, state := range map[string][2]string{
 		"card1-DP-1":     {"disconnected", "enabled"},
 		"card1-DP-2":     {"connected", "enabled"},
-		"card1-DP-3":     {"disconnected", "disabled"},
-		"card1-HDMI-A-1": {"disconnected", "enabled"},
+		"card1-HDMI-A-1": {"disconnected", "disabled"},
 		"card1":          {"disconnected", "enabled"},
 	} {
 		dir := filepath.Join(root, name)
@@ -27,7 +26,12 @@ func TestStaleDRMConnectorsAreDisconnectedButStillEnabled(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got, want := staleDRMConnectors(root), []string{"DP-1", "HDMI-A-1"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("stale connectors = %v, want %v", got, want)
+	want := []DRMConnectorState{
+		{Name: "DP-1", Enabled: true},
+		{Name: "DP-2", Connected: true, Enabled: true},
+		{Name: "HDMI-A-1"},
+	}
+	if got := drmConnectorStates(root); !reflect.DeepEqual(got, want) {
+		t.Fatalf("states = %+v, want %+v", got, want)
 	}
 }

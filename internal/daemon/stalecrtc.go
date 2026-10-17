@@ -54,6 +54,25 @@ func staleCRTCStuck(monitors []hypr.Monitor) []string {
 	return stuck
 }
 
+// staleCRTCEvidence lists the connectors whose kernel CRTC the compositor
+// cannot use: a disconnected connector still enabled, or a stuck output's
+// own connector still enabled, which happens when two reconnecting displays
+// are handed each other's CRTC. A stuck output whose connector the kernel
+// has released is not this bug.
+func staleCRTCEvidence(stuck []string, states []hypr.DRMConnectorState) []string {
+	isStuck := map[string]bool{}
+	for _, name := range stuck {
+		isStuck[name] = true
+	}
+	var evidence []string
+	for _, state := range states {
+		if state.Enabled && (!state.Connected || isStuck[state.Name]) {
+			evidence = append(evidence, state.Name)
+		}
+	}
+	return evidence
+}
+
 // observe records one failed apply. It reports whether the failure carries
 // the stale-CRTC signature, and whether a console switch is due now.
 func (r *staleCRTCRecovery) observe(stuck, stale []string) (matched, due bool) {
@@ -87,7 +106,7 @@ func (r *staleCRTCRecovery) firstReport() bool {
 // stale-CRTC signature. It reports whether it did, so the failure is not
 // taken as evidence against the display's settings.
 func (s *Service) recoverStaleCRTC(ctx context.Context, after []hypr.Monitor) bool {
-	if s.cfg.StaleConnectors == nil {
+	if s.cfg.ConnectorStates == nil {
 		return false
 	}
 	stuck := staleCRTCStuck(after)
@@ -95,13 +114,13 @@ func (s *Service) recoverStaleCRTC(ctx context.Context, after []hypr.Monitor) bo
 		s.staleCRTC.observe(nil, nil)
 		return false
 	}
-	stale := s.cfg.StaleConnectors()
+	stale := staleCRTCEvidence(stuck, s.cfg.ConnectorStates())
 	matched, due := s.staleCRTC.observe(stuck, stale)
 	if !matched {
 		return false
 	}
 	if s.staleCRTC.firstReport() {
-		s.cfg.Logf("%s kept failing without a mode while the kernel still drives disconnected %s: a display stack bug (aquamarine 0.15.0, fixed in 0.15.1) that switching to another console and back clears",
+		s.cfg.Logf("%s kept failing without a mode while the kernel still drives %s: a display stack bug (aquamarine 0.15.0, fixed in 0.15.1) that switching to another console and back clears",
 			strings.Join(stuck, ", "), strings.Join(stale, ", "))
 	}
 	if !due {

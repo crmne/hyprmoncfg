@@ -46,9 +46,9 @@ type Config struct {
 	ReleaseWatcher func(context.Context) error
 	LaptopToggle   *omarchywatch.LaptopToggle
 	WakeConfig     *omarchywatch.WakeConfig
-	// StaleConnectors lists the DRM connectors the kernel still drives
-	// although they are disconnected. Nil turns stale-CRTC recovery off.
-	StaleConnectors func() []string
+	// ConnectorStates reads which DRM connectors are connected and which
+	// the kernel still routes a CRTC to. Nil turns stale-CRTC recovery off.
+	ConnectorStates func() []hypr.DRMConnectorState
 	// SwitchConsole switches to another console and back, staying away for
 	// the given time. Nil leaves stale-CRTC recovery to the user.
 	SwitchConsole func(context.Context, time.Duration) error

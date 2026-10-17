@@ -180,12 +180,15 @@ aquamarine 0.15.0, the display library under Hyprland 0.56, never releases the
 kernel's display pipe (CRTC) of a monitor that disconnects. When a monitor
 comes back and is handed that pipe, the kernel rejects every mode: Hyprland
 lists it at `0x0` and it stays black or frozen. It typically happens when every
-monitor was turned off and one comes back alone. aquamarine 0.15.1 fixes it
-([hyprwm/aquamarine#386](https://github.com/hyprwm/aquamarine/issues/386)).
+monitor was turned off and one comes back alone, or when two monitors come back
+close together and each is handed the other's pipe. aquamarine 0.15.1 fixes it
+([hyprwm/aquamarine#386](https://github.com/hyprwm/aquamarine/issues/386),
+[#428](https://github.com/hyprwm/aquamarine/issues/428)).
 
 The daemon recognises it: an awake monitor stays at `0x0` although it lists
-modes, while `/sys/class/drm/card*-*` shows a disconnected connector as still
-`enabled`. It logs the cause, does not step the monitor's settings down, and
+modes, while `/sys/class/drm/card*-*` shows the kernel still driving a pipe the
+compositor can't use: a disconnected connector still `enabled`, or the stuck
+monitor's own connector still `enabled`. It logs the cause, does not step the monitor's settings down, and
 switches to a free console and back through
 systemd-logind, then reloads Hyprland. The console switch makes Hyprland reset
 the kernel's display state. You see a text console for about two seconds.

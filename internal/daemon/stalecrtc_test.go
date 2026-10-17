@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -89,7 +90,9 @@ func TestRunSwitchesConsolesToClearAStaleCRTC(t *testing.T) {
 	working, stuck := staleCRTCDesk()
 	fake := &fakeConsole{}
 	env := newRunTestEnvConfigured(t, []hypr.Monitor{working}, func(cfg *Config) {
-		cfg.StaleConnectors = func() []string { return []string{"DP-2"} }
+		cfg.ConnectorStates = func() []hypr.DRMConnectorState {
+			return []hypr.DRMConnectorState{{Name: "DP-1", Connected: true}, {Name: "DP-2", Enabled: true}}
+		}
 		cfg.SwitchConsole = fake.switchAwayAndBack
 	}, func(s *Service) {
 		s.cfg.RecoveryInterval = 20 * time.Millisecond
@@ -124,7 +127,10 @@ func TestRunLeavesTheConsoleAloneWithoutAStaleConnector(t *testing.T) {
 	working, stuck := staleCRTCDesk()
 	fake := &fakeConsole{}
 	env := newRunTestEnvConfigured(t, []hypr.Monitor{working}, func(cfg *Config) {
-		cfg.StaleConnectors = func() []string { return nil }
+		// The kernel has released the stuck display's pipe: not this bug.
+		cfg.ConnectorStates = func() []hypr.DRMConnectorState {
+			return []hypr.DRMConnectorState{{Name: "DP-1", Connected: true}}
+		}
 		cfg.SwitchConsole = fake.switchAwayAndBack
 	}, func(s *Service) {
 		s.cfg.RecoveryInterval = 20 * time.Millisecond
@@ -143,5 +149,67 @@ func TestRunLeavesTheConsoleAloneWithoutAStaleConnector(t *testing.T) {
 	waitFor(t, 15*time.Second, func() bool { return strings.Count(env.logs.all(), "apply failed") >= 3 }, "several failed applies")
 	if got := fake.count(); got != 0 {
 		t.Fatalf("switched consoles %d times without a stale connector", got)
+	}
+}
+
+func TestStaleCRTCEvidenceCoversDisconnectedAndSwappedPipes(t *testing.T) {
+	states := []hypr.DRMConnectorState{
+		{Name: "DP-1", Connected: true, Enabled: true},
+		{Name: "DP-2", Connected: true, Enabled: true},
+		{Name: "DP-3", Enabled: true},
+		{Name: "HDMI-A-1", Connected: true},
+	}
+	// Both displays came back on each other's CRTC.
+	if got := staleCRTCEvidence([]string{"DP-1", "DP-2"}, states); !reflect.DeepEqual(got, []string{"DP-1", "DP-2", "DP-3"}) {
+		t.Fatalf("evidence = %v", got)
+	}
+	// A working display's enabled connector is no evidence; a disconnected
+	// one still enabled is.
+	if got := staleCRTCEvidence([]string{"HDMI-A-1"}, states); !reflect.DeepEqual(got, []string{"DP-3"}) {
+		t.Fatalf("evidence = %v, want only the disconnected DP-3", got)
+	}
+	if got := staleCRTCEvidence([]string{"HDMI-A-1"}, states[:2]); len(got) != 0 {
+		t.Fatalf("evidence = %v for a stuck display the kernel released", got)
+	}
+}
+
+// The MSI bounced while the LG connected, and each was handed the other's
+// CRTC: both stay at 0x0 with both connectors connected. One console switch
+// brings both back.
+func TestRunSwitchesConsolesWhenTwoDisplaysSwappedCRTCs(t *testing.T) {
+	working, stuck := staleCRTCDesk()
+	other := hypr.Monitor{Name: "DP-2", Description: "Microstep MPG321UR-QD", Make: "Microstep", Model: "MPG321UR-QD",
+		Width: 3840, Height: 2160, RefreshRate: 60, X: 2560, Scale: 1, DPMSStatus: true, AvailableModes: []string{"3840x2160@60.00Hz"}}
+	otherStuck := other
+	otherStuck.Width, otherStuck.Height = 0, 0
+	fake := &fakeConsole{}
+	env := newRunTestEnvConfigured(t, []hypr.Monitor{working, other}, func(cfg *Config) {
+		cfg.ConnectorStates = func() []hypr.DRMConnectorState {
+			return []hypr.DRMConnectorState{{Name: "DP-1", Connected: true, Enabled: true}, {Name: "DP-2", Connected: true, Enabled: true}}
+		}
+		cfg.SwitchConsole = fake.switchAwayAndBack
+	}, func(s *Service) {
+		s.cfg.RecoveryInterval = 20 * time.Millisecond
+		s.cfg.RecoveryMaxInterval = 40 * time.Millisecond
+		s.staleCRTC.returnWait = 0
+		state := os.Getenv("HYPRCTL_MONITORS")
+		if err := writeMonitorState(state, []hypr.Monitor{stuck, otherStuck}); err != nil {
+			t.Fatal(err)
+		}
+		fake.onSwitch = func() {
+			if err := writeMonitorState(state+".next", []hypr.Monitor{working, other}); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	defer env.stop()
+	defer func() {
+		if t.Failed() {
+			t.Logf("logs:\n%s", env.logs.all())
+		}
+	}()
+	waitFor(t, 15*time.Second, func() bool { return env.logs.contains("applied profile: Home") }, "layout applied after the console switch")
+	if got := fake.count(); got != 1 {
+		t.Fatalf("switched consoles %d times, want 1", got)
 	}
 }
