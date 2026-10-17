@@ -40,23 +40,42 @@ func TestScaleRowShowsThePresetPills(t *testing.T) {
 	}
 }
 
-// A current scale outside the presets is its own selected pill, exactly as
-// saved; an unsharp one is marked and never rewritten.
-func TestCurrentScaleOutsideThePresetsIsItsOwnPill(t *testing.T) {
+// A current scale outside the presets is shown on More…, exactly as saved,
+// so the row keeps its pills; an unsharp one is marked and never rewritten.
+func TestCurrentScaleOutsideThePresetsShowsOnMore(t *testing.T) {
 	m := scalePillModel(t, 158, 37, 1.33333)
-	lines, _ := m.renderScaleRow(m.editOutputs[0], 200, false, true)
-	requireContains(t, ansi.Strip(lines[0]), " 1.25x   1.33x   1.5x ")
+	lines, spans := m.renderScaleRow(m.editOutputs[0], 200, false, true)
+	if got := ansi.Strip(lines[0]); got != " 1x   1.25x   1.5x   1.6x   2x   3x   1.33x… " {
+		t.Fatalf("row = %q", got)
+	}
+	if last := spans[len(spans)-1]; last.value != scaleMoreValue {
+		t.Fatalf("the current scale should be the More… trigger, got %+v", last)
+	}
 
 	m = scalePillModel(t, 158, 37, 1.33)
 	view := ansi.Strip(m.View())
-	requireContains(t, view, " 1.33x ⚠ ", "⚠ fractional px")
+	requireContains(t, view, " 1.33x ⚠… ", "⚠ fractional px")
 	if m.editOutputs[0].Scale != 1.33 {
 		t.Fatal("rendering rewrote the scale")
 	}
 }
 
+// Stepping through scales never changes how many pills the row has.
+func TestScaleRowKeepsItsPillCountWhileStepping(t *testing.T) {
+	m := scalePillModel(t, 158, 37, 1)
+	_, spans := m.renderScaleRow(m.editOutputs[0], 200, false, true)
+	want := len(spans)
+	for i := 0; i < 20; i++ {
+		next, _ := m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyRight})
+		m = mustModel(t, next)
+		if _, spans := m.renderScaleRow(m.editOutputs[0], 200, false, true); len(spans) != want {
+			t.Fatalf("at %v the row has %d pills, want %d", m.editOutputs[0].Scale, len(spans), want)
+		}
+	}
+}
+
 // Arrows walk the full shared sharp list and stop at its ends, like
-// Omarchy's pills; the row then shows the stepped value as its own pill.
+// Omarchy's pills; the row then shows a stepped value that is not a preset on More….
 func TestScaleArrowsWalkTheFullSharpList(t *testing.T) {
 	m := scalePillModel(t, 158, 37, 1)
 	walked := []float64{m.editOutputs[0].Scale}

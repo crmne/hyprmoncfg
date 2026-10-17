@@ -408,11 +408,19 @@ following Omarchy's own Display panel. The pills are `scaling.PresetChoices`:
 reaches 4), each raised to the next sharp scale (Omarchy's cleanScale),
 duplicates collapsed, anything above the largest sharp scale dropped. Labels
 use two decimals with trailing zeros trimmed (`1.33x`), falling back to the
-exact value when two would read alike. A current scale that is not a pill is
-its own pill and is never rewritten. Arrows step the full list,
+exact value when two would read alike. Revised 2026-10-17 (stable scale row):
+the pills depend only on the mode, so
+stepping never changes how many there are: a current scale that is not a pill
+is shown on the More trigger instead (selected, labelled with that scale, such
+as `1.33x`, and marked ⚠ with "Not sharp" or "fractional px" when it is not
+sharp, never by colour alone), and is never rewritten. Arrows step the full list,
 `scaling.SharpChoices` (every sharp scale from 1 to 4, served to the panel as
-`scale_options`), and stop at the ends; More… opens that list. Pill rows stop
-at the ends on arrows; Enter advances and wraps.
+`scale_options`), and stop at the ends; Enter or More opens that list, which
+ends with Custom… for typing an exact scale with the same sharpness
+explanation in both clients. The other choice rows (Enabled, VRR, Color
+depth, SDR EOTF, WCG and HDR capability, and the panel's Rotation) stop at the
+ends on arrows, and Enter advances and wraps; Scale is the exception, since
+Enter opens its list.
 
 Canvas placement is shared Go (`internal/profile/placement.go`): the panel
 reaches it through the daemon's editor (a drag release sends a snap distance),

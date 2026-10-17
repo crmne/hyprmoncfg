@@ -2,7 +2,6 @@ package tui
 
 import (
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -161,71 +160,48 @@ func scaleChoiceLabels(options []float64) []string {
 
 const scaleMoreValue = "more"
 
-// scaleRowChoices is what the Scale row shows: Omarchy's presets mapped onto
-// this mode (scaling.PresetChoices) and, when the current scale is not one
-// of them, the current scale itself, exactly as saved.
+// scaleRowChoices is the Scale row's pills: Omarchy's presets mapped onto
+// this mode (scaling.PresetChoices). The set depends only on the mode, so
+// stepping the scale never adds or removes a pill; a current scale that is
+// not a preset is shown on More… instead (see renderScaleRow).
 func scaleRowChoices(output editableOutput) []float64 {
-	choices := scaling.PresetChoices(output.Width, output.Height)
-	if output.Scale <= 0 {
-		return choices
-	}
-	current := scaling.Round(output.Scale)
-	for _, choice := range choices {
-		if choice == current {
-			return choices
-		}
-	}
-	choices = append(choices, current)
-	sort.Float64s(choices)
-	return choices
+	return scaling.PresetChoices(output.Width, output.Height)
 }
 
-// renderScaleRow draws Scale like Omarchy's scale pills: the preset row for
-// this display, the current scale as its own pill when it is not a preset
-// (marked ⚠ when it is not sharp), and More… for the full sharp list. Wide
-// inspectors wrap the pills; compact ones keep one line and slide a window
-// around the selected pill, with ‹ and › marking more.
-func (m Model) renderScaleRow(output editableOutput, width int, focused, wrap bool) ([]string, []choiceSpan) {
-	options := scaleRowChoices(output)
-	if len(options) == 0 || width < 8 {
-		return nil, nil
+// scaleIsPreset reports whether the current scale is one of the row's pills.
+func scaleIsPreset(options []float64, scale float64) bool {
+	current := scaling.Round(scale)
+	for _, option := range options {
+		if option == current {
+			return true
+		}
 	}
-	labels := scaleChoiceLabels(options)
-	current := scaling.Round(output.Scale)
-	selected := scaleChoiceIndex(options, output.Scale)
-	sharp := scaling.Sharp(output.Width, output.Height, output.Scale)
-	count := len(options) + 1 // the last pill is More…
-	pill := func(idx int) (string, string, string) {
-		if idx == len(options) {
-			label := " More… "
-			return label, m.styles.value.Render(label), scaleMoreValue
-		}
-		label := " " + labels[idx] + " "
-		style := m.styles.subtle
-		if options[idx] == current && !sharp {
-			label = " " + labels[idx] + " ⚠ "
-			style = m.styles.warning
-		}
-		if idx == selected {
-			fg := m.styles.palette.chipFg
-			if !sharp {
-				fg = m.styles.palette.warning
-			}
-			style = withBG(withFG(lipgloss.NewStyle().Bold(true), fg), m.styles.palette.chipBg)
-			if focused {
-				style = m.styles.focused.UnsetPadding()
-			}
-		}
-		return label, style.Render(label), strconv.FormatFloat(options[idx], 'f', -1, 64)
-	}
+	return false
+}
 
+// scaleCurrentLabel is the current scale's label as the full list shows it,
+// so it never reads like a neighbouring choice.
+func scaleCurrentLabel(output editableOutput) string {
+	choices := scaling.Choices(output.Width, output.Height, output.Scale)
+	return scaleChoiceLabels(choices)[scaleChoiceIndex(choices, output.Scale)]
+}
+
+// rowPill is one option of a pill row: its plain text for measuring, its
+// styled text for drawing, and the value a click selects.
+type rowPill struct {
+	plain, styled, value string
+}
+
+// layoutPillRow places pills in width columns. Wide inspectors wrap them;
+// compact ones keep one line and slide a window around the selected pill,
+// with ‹ and › marking more.
+func (m Model) layoutPillRow(pills []rowPill, selected, width int, wrap bool) ([]string, []choiceSpan) {
 	var lines []string
 	var spans []choiceSpan
 	if wrap {
 		line, cursor := "", 0
-		for idx := 0; idx < count; idx++ {
-			plain, styled, value := pill(idx)
-			w := lipgloss.Width(plain)
+		for _, pill := range pills {
+			w := lipgloss.Width(pill.plain)
 			if cursor > 0 && cursor+1+w > width {
 				lines = append(lines, line)
 				line, cursor = "", 0
@@ -234,20 +210,17 @@ func (m Model) renderScaleRow(output editableOutput, width int, focused, wrap bo
 				line += " "
 				cursor++
 			}
-			spans = append(spans, choiceSpan{start: cursor, end: cursor + w, value: value, line: len(lines)})
-			line += styled
+			spans = append(spans, choiceSpan{start: cursor, end: cursor + w, value: pill.value, line: len(lines)})
+			line += pill.styled
 			cursor += w
 		}
-		lines = append(lines, line)
-		if !sharp {
-			// Say why the saved scale is marked; it stays selectable as is.
-			lines = append(lines, m.styles.warning.Render("⚠ fractional px"))
-		}
-		return lines, spans
+		return append(lines, line), spans
 	}
 
 	// One line: grow a window around the selected pill until it is full.
-	widthOf := func(idx int) int { plain, _, _ := pill(idx); return lipgloss.Width(plain) }
+	count := len(pills)
+	selected = clampInt(selected, 0, count-1)
+	widthOf := func(idx int) int { return lipgloss.Width(pills[idx].plain) }
 	first, last := selected, selected
 	used := widthOf(selected)
 	for {
@@ -282,15 +255,74 @@ func (m Model) renderScaleRow(output editableOutput, width int, focused, wrap bo
 			line += " "
 			cursor++
 		}
-		plain, styled, value := pill(idx)
-		spans = append(spans, choiceSpan{start: cursor, end: cursor + lipgloss.Width(plain), value: value})
-		line += styled
-		cursor += lipgloss.Width(plain)
+		spans = append(spans, choiceSpan{start: cursor, end: cursor + widthOf(idx), value: pills[idx].value})
+		line += pills[idx].styled
+		cursor += widthOf(idx)
 	}
 	if last < count-1 {
 		line += m.styles.subtle.Render(" ›")
 	}
 	return []string{line}, spans
+}
+
+// selectedPillStyle is the selected option of a pill row: the chip colours,
+// or the focus style while the row has the cursor.
+func (m Model) selectedPillStyle(focused, warning bool) lipgloss.Style {
+	if focused {
+		return m.styles.focused.UnsetPadding()
+	}
+	fg := m.styles.palette.chipFg
+	if warning {
+		fg = m.styles.palette.warning
+	}
+	return withBG(withFG(lipgloss.NewStyle().Bold(true), fg), m.styles.palette.chipBg)
+}
+
+// renderScaleRow draws Scale like Omarchy's scale pills: the preset row for
+// this display, then More… for the full sharp list. A current scale that is
+// not a preset is shown on More… itself (`1.33x…`, marked ⚠ when it is not
+// sharp), so the row keeps the same pills whatever the scale.
+func (m Model) renderScaleRow(output editableOutput, width int, focused, wrap bool) ([]string, []choiceSpan) {
+	options := scaleRowChoices(output)
+	if len(options) == 0 || width < 8 {
+		return nil, nil
+	}
+	labels := scaleChoiceLabels(options)
+	current := scaling.Round(output.Scale)
+	sharp := scaling.Sharp(output.Width, output.Height, output.Scale)
+	onMore := !scaleIsPreset(options, output.Scale)
+
+	pills := make([]rowPill, 0, len(options)+1)
+	selected := len(options)
+	for idx, option := range options {
+		label := " " + labels[idx] + " "
+		style := m.styles.subtle
+		if option == current {
+			selected = idx
+			style = m.selectedPillStyle(focused, !sharp)
+			if !sharp {
+				label = " " + labels[idx] + " ⚠ "
+			}
+		}
+		pills = append(pills, rowPill{label, style.Render(label), strconv.FormatFloat(option, 'f', -1, 64)})
+	}
+	more := " More… "
+	moreStyle := m.styles.value
+	if onMore {
+		more = " " + scaleCurrentLabel(output) + "… "
+		if !sharp {
+			more = " " + scaleCurrentLabel(output) + " ⚠… "
+		}
+		moreStyle = m.selectedPillStyle(focused, !sharp)
+	}
+	pills = append(pills, rowPill{more, moreStyle.Render(more), scaleMoreValue})
+
+	lines, spans := m.layoutPillRow(pills, selected, width, wrap)
+	if wrap && !sharp {
+		// Say why the saved scale is marked; it stays selectable as is.
+		lines = append(lines, m.styles.warning.Render("⚠ fractional px"))
+	}
+	return lines, spans
 }
 
 // inlineEntryKind reports the exact-entry editors that edit in place, on the
