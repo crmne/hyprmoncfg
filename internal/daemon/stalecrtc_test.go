@@ -152,31 +152,27 @@ func TestRunLeavesTheConsoleAloneWithoutAStaleConnector(t *testing.T) {
 	}
 }
 
-func TestStaleCRTCEvidenceCoversDisconnectedAndSwappedPipes(t *testing.T) {
+func TestStaleCRTCEvidenceSeparatesReleasedAndSwappedPipes(t *testing.T) {
 	states := []hypr.DRMConnectorState{
 		{Name: "DP-1", Connected: true, Enabled: true},
 		{Name: "DP-2", Connected: true, Enabled: true},
 		{Name: "DP-3", Enabled: true},
 		{Name: "HDMI-A-1", Connected: true},
 	}
-	// Both displays came back on each other's CRTC.
-	if got := staleCRTCEvidence([]string{"DP-1", "DP-2"}, states); !reflect.DeepEqual(got, []string{"DP-1", "DP-2", "DP-3"}) {
-		t.Fatalf("evidence = %v", got)
+	released, swapped := staleCRTCEvidence([]string{"DP-1", "DP-2"}, states)
+	if !reflect.DeepEqual(released, []string{"DP-3"}) || !reflect.DeepEqual(swapped, []string{"DP-1", "DP-2"}) {
+		t.Fatalf("released %v swapped %v", released, swapped)
 	}
-	// A working display's enabled connector is no evidence; a disconnected
-	// one still enabled is.
-	if got := staleCRTCEvidence([]string{"HDMI-A-1"}, states); !reflect.DeepEqual(got, []string{"DP-3"}) {
-		t.Fatalf("evidence = %v, want only the disconnected DP-3", got)
-	}
-	if got := staleCRTCEvidence([]string{"HDMI-A-1"}, states[:2]); len(got) != 0 {
-		t.Fatalf("evidence = %v for a stuck display the kernel released", got)
+	if released, swapped := staleCRTCEvidence([]string{"HDMI-A-1"}, states[:2]); len(released) != 0 || len(swapped) != 0 {
+		t.Fatalf("a stuck display the kernel released counted: %v %v", released, swapped)
 	}
 }
 
 // The MSI bounced while the LG connected, and each was handed the other's
-// CRTC: both stay at 0x0 with both connectors connected. One console switch
-// brings both back.
-func TestRunSwitchesConsolesWhenTwoDisplaysSwappedCRTCs(t *testing.T) {
+// CRTC: both stay at 0x0 with both connectors connected. A console switch
+// would leave the console on screen, so the daemon asks for one monitor to
+// be turned off and on instead, and does not step the settings down.
+func TestRunAsksToPowerCycleWhenTwoDisplaysSwappedCRTCs(t *testing.T) {
 	working, stuck := staleCRTCDesk()
 	other := hypr.Monitor{Name: "DP-2", Description: "Microstep MPG321UR-QD", Make: "Microstep", Model: "MPG321UR-QD",
 		Width: 3840, Height: 2160, RefreshRate: 60, X: 2560, Scale: 1, DPMSStatus: true, AvailableModes: []string{"3840x2160@60.00Hz"}}
@@ -191,25 +187,19 @@ func TestRunSwitchesConsolesWhenTwoDisplaysSwappedCRTCs(t *testing.T) {
 	}, func(s *Service) {
 		s.cfg.RecoveryInterval = 20 * time.Millisecond
 		s.cfg.RecoveryMaxInterval = 40 * time.Millisecond
-		s.staleCRTC.returnWait = 0
-		state := os.Getenv("HYPRCTL_MONITORS")
-		if err := writeMonitorState(state, []hypr.Monitor{stuck, otherStuck}); err != nil {
+		if err := writeMonitorState(os.Getenv("HYPRCTL_MONITORS"), []hypr.Monitor{stuck, otherStuck}); err != nil {
 			t.Fatal(err)
-		}
-		fake.onSwitch = func() {
-			if err := writeMonitorState(state+".next", []hypr.Monitor{working, other}); err != nil {
-				t.Error(err)
-			}
 		}
 	})
 	defer env.stop()
-	defer func() {
-		if t.Failed() {
-			t.Logf("logs:\n%s", env.logs.all())
-		}
-	}()
-	waitFor(t, 15*time.Second, func() bool { return env.logs.contains("applied profile: Home") }, "layout applied after the console switch")
-	if got := fake.count(); got != 1 {
-		t.Fatalf("switched consoles %d times, want 1", got)
+	waitFor(t, 15*time.Second, func() bool { return strings.Count(env.logs.all(), "apply failed") >= 2 }, "two failed applies")
+	if !env.logs.contains("turn one of these monitors off, wait 5 seconds, and turn it on again") {
+		t.Fatalf("no power-cycle advice:\n%s", env.logs.all())
+	}
+	if got := fake.count(); got != 0 {
+		t.Fatalf("switched consoles %d times for swapped pipes", got)
+	}
+	if env.logs.contains("running it at") || env.logs.contains("without VRR") {
+		t.Fatalf("swapped pipes stepped settings down:\n%s", env.logs.all())
 	}
 }

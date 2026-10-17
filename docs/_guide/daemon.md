@@ -186,14 +186,21 @@ close together and each is handed the other's pipe. aquamarine 0.15.1 fixes it
 [#428](https://github.com/hyprwm/aquamarine/issues/428)).
 
 The daemon recognises it: an awake monitor stays at `0x0` although it lists
-modes, while `/sys/class/drm/card*-*` shows the kernel still driving a pipe the
-compositor can't use: a disconnected connector still `enabled`, or the stuck
-monitor's own connector still `enabled`. It logs the cause, does not step the monitor's settings down, and
+modes, while `/sys/class/drm/card*-*` shows a disconnected connector as still
+`enabled`. It logs the cause, does not step the monitor's settings down, and
 switches to a free console and back through
 systemd-logind, then reloads Hyprland. The console switch makes Hyprland reset
 the kernel's display state. You see a text console for about two seconds.
 If the monitor is still stuck, the next switch waits 30 seconds, then twice as
 long each time, up to 10 minutes.
+
+When two monitors come back close together and each is handed the other's
+pipe, both stay at `0x0` while both are connected. A console switch doesn't
+clear that: Hyprland keeps the swapped pipes, and the screens go on showing the
+console's last image. The daemon logs it instead, and doesn't step the
+monitors' settings down. Turn one of the two monitors off, wait 5 seconds, and
+turn it on again: with it off, the daemon recovers the other one, and the one
+you turn back on gets a free pipe.
 
 logind allows this without root for the active local session. If it refuses,
 the log says so; switch by hand with `sudo chvt 2`, then `sudo chvt 1` (use the

@@ -54,23 +54,28 @@ func staleCRTCStuck(monitors []hypr.Monitor) []string {
 	return stuck
 }
 
-// staleCRTCEvidence lists the connectors whose kernel CRTC the compositor
-// cannot use: a disconnected connector still enabled, or a stuck output's
-// own connector still enabled, which happens when two reconnecting displays
-// are handed each other's CRTC. A stuck output whose connector the kernel
-// has released is not this bug.
-func staleCRTCEvidence(stuck []string, states []hypr.DRMConnectorState) []string {
+// staleCRTCEvidence sorts the connectors whose kernel CRTC the compositor
+// cannot use. released lists disconnected connectors still enabled: a
+// console switch makes the compositor release those. swapped lists stuck
+// outputs whose own connector is still enabled while every connector is
+// connected, as when two reconnecting displays are handed each other's
+// CRTC (hyprwm/aquamarine#428). A console switch does not clear that: the
+// compositor keeps its swapped records, the restore fails and the screens
+// keep the console's last image. Only a display disconnecting clears it.
+func staleCRTCEvidence(stuck []string, states []hypr.DRMConnectorState) (released, swapped []string) {
 	isStuck := map[string]bool{}
 	for _, name := range stuck {
 		isStuck[name] = true
 	}
-	var evidence []string
 	for _, state := range states {
-		if state.Enabled && (!state.Connected || isStuck[state.Name]) {
-			evidence = append(evidence, state.Name)
+		switch {
+		case state.Enabled && !state.Connected:
+			released = append(released, state.Name)
+		case state.Enabled && isStuck[state.Name]:
+			swapped = append(swapped, state.Name)
 		}
 	}
-	return evidence
+	return released, swapped
 }
 
 // observe records one failed apply. It reports whether the failure carries
@@ -114,14 +119,22 @@ func (s *Service) recoverStaleCRTC(ctx context.Context, after []hypr.Monitor) bo
 		s.staleCRTC.observe(nil, nil)
 		return false
 	}
-	stale := staleCRTCEvidence(stuck, s.cfg.ConnectorStates())
-	matched, due := s.staleCRTC.observe(stuck, stale)
+	released, swapped := staleCRTCEvidence(stuck, s.cfg.ConnectorStates())
+	if len(released) == 0 {
+		matched, _ := s.staleCRTC.observe(stuck, swapped)
+		if matched && s.staleCRTC.firstReport() {
+			s.cfg.Logf("%s kept failing without a mode while each still holds a display pipe the compositor gave another monitor: a display stack bug (aquamarine 0.15.0, fixed in 0.15.1); turn one of these monitors off, wait 5 seconds, and turn it on again",
+				strings.Join(stuck, ", "))
+		}
+		return matched
+	}
+	matched, due := s.staleCRTC.observe(stuck, released)
 	if !matched {
 		return false
 	}
 	if s.staleCRTC.firstReport() {
-		s.cfg.Logf("%s kept failing without a mode while the kernel still drives %s: a display stack bug (aquamarine 0.15.0, fixed in 0.15.1) that switching to another console and back clears",
-			strings.Join(stuck, ", "), strings.Join(stale, ", "))
+		s.cfg.Logf("%s kept failing without a mode while the kernel still drives disconnected %s: a display stack bug (aquamarine 0.15.0, fixed in 0.15.1) that switching to another console and back clears",
+			strings.Join(stuck, ", "), strings.Join(released, ", "))
 	}
 	if !due {
 		return true
