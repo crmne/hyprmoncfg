@@ -796,6 +796,12 @@ func (s *Service) ensureConfigInclude(ctx context.Context) {
 		return
 	}
 
+	// Keep dialect discovery above read-only: wake must retain the right syntax
+	// even when monitor configuration has been handed back to Hyprland.
+	if !config.IsManaged(s.cfg.ConfigDir) {
+		return
+	}
+
 	// Before the first apply the generated file does not exist yet, and an
 	// include naming a missing file is a config error on the next reload. The
 	// apply that creates it adds the include in the same breath.
