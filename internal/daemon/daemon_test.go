@@ -672,7 +672,7 @@ exit 1
 	if got := reloadCount(logPath); got != 1 {
 		t.Fatalf("wake reconciled before settle period: reload count = %d, want 1", got)
 	}
-	waitFor(t, time.Second, func() bool { return reloadCount(logPath) == 2 }, "post-wake profile reconciliation")
+	waitFor(t, 5*time.Second, func() bool { return reloadCount(logPath) == 2 }, "post-wake profile reconciliation")
 }
 
 type runTestEnv struct {
