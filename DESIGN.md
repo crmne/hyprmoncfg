@@ -257,13 +257,19 @@ as GNOME does; elsewhere the sensor always applies, and lying flat keeps the
 last turn. The rotation lock is live state, persisted across restarts, that
 holds the current turn; releasing it follows the device again. A reversed
 direction, also persisted and belonging to the device rather than a profile,
-applies the sensor's turns the other way for a sensor mounted backwards; with
-the upright rotation it covers every mounting. It is calibration set once,
-so only the CLI (`hyprmoncfg rotation direction`) and IPC offer it. Both clients
+applies the sensor's turns the other way for a sensor mounted backwards; the sensor
+upright baseline is calibrated separately with `hyprmoncfg rotation calibrate`.
+Calibration records the current sensor reading as zero, unlocks rotation, persists
+without changing profiles, and refuses to run during previews. Direction and sensor
+calibration are device settings offered through the CLI (`hyprmoncfg rotation
+direction` and `hyprmoncfg rotation calibrate`) and IPC. Both clients
 offer **Auto** only for a built-in panel when the daemon reports a sensor, and
 both expose the lock (`L` in the TUI, a toggle beside **Auto** in the panel),
 as does `hyprmoncfg rotation`. Only built-in panels rotate; touch and pen
-transforms are global in Hyprland, which the docs state.
+transforms are global in Hyprland, which the docs state. Connected, enabled,
+independent built-in panels keep touch and pen aligned for fixed rotations too.
+Previews hold the initial orientation until Keep/Revert; both confirmation UIs
+explain that Auto resumes after Keep.
 
 ## Feedback and notification routing
 

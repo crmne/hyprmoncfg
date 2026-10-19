@@ -73,6 +73,7 @@ func TestRotationRejectsUnknownActions(t *testing.T) {
 		"direction":        "direction is normal or reversed",
 		"direction upside": "direction is normal or reversed",
 		"lock now":         "lock takes no value",
+		"calibrate now":    "calibrate takes no value",
 	} {
 		cmd := newRotationCmd()
 		cmd.SetArgs(strings.Fields(args))

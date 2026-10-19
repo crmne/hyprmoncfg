@@ -49,6 +49,30 @@ portrait: set the rotation that looks right with the device upright first,
 then choose **Auto**. The inspector then shows, for example,
 **Auto, upright 270°**, and the sensor's turns add to that.
 
+### Calibrate the sensor's upright position
+
+If Auto adds a quarter turn even though you selected the correct fixed rotation,
+hold the device upright relative to its keyboard (or the way you normally use a
+tablet), then run:
+
+```bash
+hyprmoncfg rotation calibrate
+```
+
+This records the sensor reading as upright and unlocks rotation. It leaves saved
+profiles unchanged and persists across daemon restarts. Set the panel's correct
+fixed rotation, such as 270°, before choosing Auto. Direction reversal changes
+which way turns go; calibration changes where they start. Recalibrate after
+changing the system sensor mount matrix. Calibration requires a current daemon
+and refuses to run during a preview or while the sensor reports the device flat.
+
+### Preview behavior
+
+A preview applies the orientation at its start and holds it while you decide.
+Auto rotation resumes after **Keep**, including when keeping a temporary layout
+without saving a profile. This prevents sensor changes from moving the
+confirmation controls or racing rollback.
+
 ## Tablet mode
 
 A convertible with a tablet-mode switch turns its panel only while folded
@@ -92,8 +116,8 @@ hyprmoncfg rotation direction reversed
 Undo it with `hyprmoncfg rotation direction normal`. The setting belongs to
 the device, not to a profile, and survives restarts. If the panel is the
 right way round only when the device is turned, set its upright rotation
-instead (see [Upright](#upright)). Together the two cover every way a sensor
-can be mounted.
+instead (see [Upright](#upright)). If the sensor reports a non-normal orientation while you hold the device
+upright, calibrate it as described above.
 
 Both come from the device's accelerometer mount matrix in the system hardware
 database, which is missing or wrong for some models, and GNOME and KDE turn
@@ -106,6 +130,8 @@ back to normal.
 
 ## Limits
 
+- Fixed rotations of a connected, enabled built-in panel also keep touch and
+  pen aligned, including after disabling Auto or restarting Hyprland.
 - Touch and pen rotation use Hyprland's global `input:touchdevice:transform`
   and `input:tablet:transform`. An external drawing tablet turns with the
   panel too.

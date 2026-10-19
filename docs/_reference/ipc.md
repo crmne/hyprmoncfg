@@ -48,7 +48,7 @@ Errors replace `result` with an object containing a stable `code`, a human-reada
 | `save` | full `profile` | none |
 | `delete` | `name` | none |
 | `set_profile_auto` | `enabled` boolean | none |
-| `set_rotation` | optional `locked` and `reversed` booleans | none |
+| `set_rotation` | optional `locked`, `reversed`, or `calibrate` booleans | none |
 
 A transaction contains an opaque `id`, the effective profile, and an RFC 3339 `deadline`.
 
@@ -109,13 +109,21 @@ as a laptop, so panels stay upright). Absent `rotation` means the daemon
 predates it; clients then offer neither automatic rotation nor the lock.
 `set_rotation` changes only the fields it is given: `locked` holds or releases
 the current turn, `reversed` sets the direction. Both persist across daemon
-restarts, and the method fails when no sensor is available.
+restarts. `calibrate: true` records the current sensor orientation as upright
+and unlocks rotation, without editing profiles. It cannot be combined with other
+rotation edits and fails during an interactive preview or without a valid sensor
+orientation. Status advertises `calibration_supported: true` and `sensor_upright`
+(the raw quarter-turn reading used as zero). Clients must check that capability
+before sending calibration: old servers ignore unknown fields. The typed Go
+client performs this check. Missing calibration fields retain the original zero
+baseline. Direction reversal applies after subtracting the sensor baseline.
 
 A profile output with `rotation_auto: true` turns with the device; its
 `transform` is the rotation it has when the device is upright. Profiles,
 drafts, `editor_state` and `edit_profile` always describe that upright
 layout, and the daemon turns it on apply, including previews, moving attached
-displays as a resize would. Monitor summaries keep reporting the live
+displays as a resize would. Sensor-driven changes pause until the preview ends.
+Monitor summaries keep reporting the live
 transform. Editor `displays` add `rotation_auto_supported`, true only for a
 built-in panel when a sensor is available; only then may an editor offer the
 `rotation_auto` edit, which the daemon refuses for any other display. Older

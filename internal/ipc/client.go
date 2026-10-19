@@ -171,6 +171,15 @@ func (c *Client) SetProfileAuto(ctx context.Context, enabled bool) error {
 // SetRotation changes automatic rotation. A daemon older than rotation
 // support answers with an unknown-method error.
 func (c *Client) SetRotation(ctx context.Context, params RotationParams) error {
+	if params.Calibrate {
+		status, err := c.Status(ctx)
+		if err != nil {
+			return err
+		}
+		if status.Rotation == nil || !status.Rotation.CalibrationSupported {
+			return errors.New("this hyprmoncfgd does not support sensor calibration; update and restart it")
+		}
+	}
 	return c.call(ctx, MethodRotation, params, nil)
 }
 

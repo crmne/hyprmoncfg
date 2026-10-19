@@ -206,3 +206,69 @@ func TestReversedRotationTurnsTheOtherWayAndPersists(t *testing.T) {
 		t.Fatalf("after a restart = %+v, want reversed right-up turned once", status)
 	}
 }
+
+func TestSensorCalibrationSeparatesUprightFromPanelMounting(t *testing.T) {
+	for _, reversed := range []bool{false, true} {
+		for base := 0; base < 4; base++ {
+			dir := t.TempDir()
+			r := newAutoRotation(dir, t.Logf)
+			names := []string{"normal", "left-up", "bottom-up", "right-up"}
+			r.observe(orientation.Reading{Available: true, Orientation: names[base]})
+			if _, err := r.set(boolPtr(true), nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.configure(nil, &reversed, true); err != nil {
+				t.Fatal(err)
+			}
+			if r.turn() != 0 || r.status().Locked {
+				t.Fatalf("calibrated upright = %d", r.turn())
+			}
+			r = newAutoRotation(dir, t.Logf)
+			for turn := 0; turn < 4; turn++ {
+				r.observe(orientation.Reading{Available: true, Orientation: names[(base+turn)%4]})
+				want := turn
+				if reversed {
+					want = (4 - turn) % 4
+				}
+				if got := profile.RotateTransform(3, r.turn()); got != (3+want)%4 {
+					t.Fatalf("base %d reversed %v turn %d: panel = %d", base, reversed, turn, got)
+				}
+			}
+			r.observeTabletMode(false, nil)
+			if r.turn() != 0 {
+				t.Fatal("calibration changed laptop upright")
+			}
+		}
+	}
+}
+
+func TestCalibrationRejectsMissingOrFlatSensorAndFailedPersistence(t *testing.T) {
+	r := newAutoRotation("", t.Logf)
+	for _, reading := range []orientation.Reading{{}, {Available: true, Orientation: "undefined"}} {
+		r.observe(reading)
+		if _, err := r.configure(nil, nil, true); err == nil {
+			t.Fatal("calibrated without a usable reading")
+		}
+	}
+	r.observe(orientation.Reading{Available: true, Orientation: "right-up"})
+	r.path = t.TempDir() // Cannot replace a directory with a state file.
+	if _, err := r.configure(nil, nil, true); err == nil {
+		t.Fatal("expected write failure")
+	}
+	if r.turn() != 3 || r.status().SensorUpright != 0 {
+		t.Fatal("failed calibration changed live state")
+	}
+}
+
+func TestCalibrationCannotChangeAnInteractivePreview(t *testing.T) {
+	s := &Service{cfg: Config{WatchOrientation: func(context.Context) <-chan orientation.Reading { return nil }}, rotation: newAutoRotation("", t.Logf)}
+	s.rotation.observe(orientation.Reading{Available: true, Orientation: "left-up"})
+	// Use the existing transaction setup rather than touching a compositor.
+	s.pending = &pendingTransaction{}
+	if err := s.SetRotation(ipc.RotationParams{Calibrate: true}); !errors.Is(err, errPreviewActive) {
+		t.Fatalf("calibrate during preview: %v", err)
+	}
+	if s.rotation.turn() != 1 {
+		t.Fatal("preview calibration changed rotation")
+	}
+}

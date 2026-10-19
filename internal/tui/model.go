@@ -2081,7 +2081,14 @@ func (m Model) renderConfirm() string {
 		body = append(body, status)
 	}
 	body = append(body, gap()...)
-	body = append(body, m.styles.help.Width(width).Render(m.confirmApplyHelp()))
+	help := m.confirmApplyHelp()
+	for _, output := range m.pending.profile.Outputs {
+		if output.Enabled && output.RotationAuto && output.MirrorOf == "" {
+			help += "\nAuto rotation resumes after Keep."
+			break
+		}
+	}
+	body = append(body, m.styles.help.Width(width).Render(help))
 	if compact {
 		lines := append([]string{m.styles.modalTitle.Render(title)}, body...)
 		return m.styles.modal.Padding(0, 1).MaxWidth(m.modalMaxWidth()).Render(strings.Join(lines, "\n"))
@@ -2092,7 +2099,7 @@ func (m Model) renderConfirm() string {
 // confirmStageRows sizes the miniature of the layout being kept, which only
 // appears when the terminal has rows to spare for it.
 func (m Model) confirmStageRows(width int) int {
-	spare := m.terminalHeight() - 20
+	spare := m.terminalHeight() - 21
 	if spare < 6 || m.pending == nil {
 		return 0
 	}

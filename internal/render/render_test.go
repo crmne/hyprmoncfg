@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -114,7 +115,43 @@ func TestRenderTurnsTouchInputWithARotatingPanel(t *testing.T) {
 		t.Fatalf("legacy config does not turn touch input:\n%s", legacy)
 	}
 	p.Outputs[0].RotationAuto = false
-	if fixed, _ := RenderConfig(p, []hypr.Monitor{panel}, Options{Format: config.HyprConfigLua, UseMonitorV2: true}); strings.Contains(fixed, "touchdevice") {
-		t.Fatalf("a panel that does not rotate changed touch input:\n%s", fixed)
+	if fixed, _ := RenderConfig(p, []hypr.Monitor{panel}, Options{Format: config.HyprConfigLua, UseMonitorV2: true}); !strings.Contains(fixed, "touchdevice = { transform = 1 }") {
+		t.Fatalf("a fixed panel must keep touch aligned:\n%s", fixed)
+	}
+}
+
+func TestFixedPanelTouchTransformsAcrossFormats(t *testing.T) {
+	for _, name := range []string{"DSI-1", "eDP-1", "DP-1"} {
+		for transform := 0; transform < 8; transform++ {
+			for _, format := range []config.HyprConfigFormat{config.HyprConfigLua, config.HyprConfigLegacy} {
+				panel := hypr.Monitor{Name: name, Width: 1920, Height: 1200, RefreshRate: 60, Scale: 1}
+				p := profile.FromMonitors("Tablet", []hypr.Monitor{panel})
+				p.Outputs[0].Transform = transform
+				rendered, err := RenderConfig(p, []hypr.Monitor{panel}, Options{Format: format})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if panel.IsInternal() {
+					want := fmt.Sprintf("touchdevice {\n    transform = %d", transform)
+					if format == config.HyprConfigLua {
+						want = fmt.Sprintf("touchdevice = { transform = %d }", transform)
+					}
+					if !strings.Contains(rendered, want) {
+						t.Fatalf("touch transform mismatch: %s", rendered)
+					}
+				}
+				if strings.Contains(rendered, "touchdevice") != panel.IsInternal() {
+					t.Fatalf("%s transform %d: %s", name, transform, rendered)
+				}
+				p.Outputs[0].Enabled = false
+				rendered, err = RenderConfig(p, []hypr.Monitor{panel}, Options{Format: format})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(rendered, "touchdevice") {
+					t.Fatal("disabled panel took ownership of touch")
+				}
+			}
+		}
 	}
 }

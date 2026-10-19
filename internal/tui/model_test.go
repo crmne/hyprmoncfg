@@ -3643,3 +3643,17 @@ func TestFooterTellsTheInspectorHowToChangeAValue(t *testing.T) {
 		t.Fatalf("workspace footer should advertise exact count entry: %s", workspaces)
 	}
 }
+
+func TestAutoRotationPreviewExplanationFitsSmallTerminals(t *testing.T) {
+	for _, height := range []int{16, 24, 40} {
+		m := Model{width: 80, height: height, styles: newStyles(), mode: modeConfirm,
+			pending: &pendingApply{profile: profile.New("Tablet", []profile.OutputConfig{{Key: "panel", Name: "DSI-1", Enabled: true, Mode: "1920x1200@60", Scale: 1, Transform: 3, RotationAuto: true}}), deadline: time.Now().Add(20 * time.Second)}}
+		view := ansi.Strip(m.renderConfirm())
+		if !strings.Contains(view, "Auto rotation resumes after Keep.") || !strings.Contains(view, "[Keep]") || !strings.Contains(view, "[Revert]") {
+			t.Fatalf("missing preview guidance/actions:\n%s", view)
+		}
+		if lipgloss.Height(view) > height {
+			t.Fatalf("preview is %d lines in %d rows:\n%s", lipgloss.Height(view), height, view)
+		}
+	}
+}

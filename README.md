@@ -187,7 +187,9 @@ it. See [displays stuck without a mode](docs/_guide/daemon.md#displays-stuck-wit
 
 On 2-in-1 laptops and tablets, a built-in panel set to rotate automatically
 turns with the device, with monitors beside it, touch and pen following, and a
-rotation lock. See [2-in-1s and tablets](docs/_guide/two-in-one.md).
+rotation lock. Fixed built-in-panel rotations keep touch aligned too;
+`hyprmoncfg rotation calibrate` sets the sensor's upright position independently
+of the panel mounting. Auto pauses during previews until Keep. See [2-in-1s and tablets](docs/_guide/two-in-one.md).
 
 A display that comes back shows the workspace it showed before it turned off,
 when the profile plans workspaces. See [workspaces when a display comes back](docs/_guide/daemon.md#workspaces-when-a-display-comes-back).

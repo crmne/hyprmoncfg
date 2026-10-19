@@ -58,15 +58,18 @@ type Document struct {
 // accelerometer reports the orientation. Quarters is the turn applied now,
 // counterclockwise like Hyprland transforms. Locked holds it. On a
 // convertible, Paused means it is folded as a laptop, where panels stay
-// upright.
+// upright. SensorUpright is the raw sensor quarter turn calibrated as zero.
+// CalibrationSupported gates the additive calibrate operation on older daemons.
 type Rotation struct {
-	Available   bool   `json:"available"`
-	Orientation string `json:"orientation,omitempty"`
-	Quarters    int    `json:"quarters"`
-	Locked      bool   `json:"locked"`
-	Reversed    bool   `json:"reversed,omitempty"`
-	TabletMode  bool   `json:"tablet_mode,omitempty"`
-	Paused      bool   `json:"paused,omitempty"`
+	CalibrationSupported bool   `json:"calibration_supported"`
+	SensorUpright        int    `json:"sensor_upright"`
+	Available            bool   `json:"available"`
+	Orientation          string `json:"orientation,omitempty"`
+	Quarters             int    `json:"quarters"`
+	Locked               bool   `json:"locked"`
+	Reversed             bool   `json:"reversed,omitempty"`
+	TabletMode           bool   `json:"tablet_mode,omitempty"`
+	Paused               bool   `json:"paused,omitempty"`
 }
 
 type Daemon struct {

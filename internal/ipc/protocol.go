@@ -130,10 +130,13 @@ type ProfileAutoParams struct {
 
 // RotationParams changes automatic rotation. Each field is optional and
 // left as it is when absent. Reversed turns panels the other way for a
-// device whose accelerometer reports the opposite direction.
+// device whose accelerometer reports the opposite direction. Calibrate records
+// the current sensor orientation as upright and unlocks rotation; callers must
+// first check rotation.calibration_supported and omit the other fields.
 type RotationParams struct {
-	Locked   *bool `json:"locked,omitempty"`
-	Reversed *bool `json:"reversed,omitempty"`
+	Calibrate bool  `json:"calibrate,omitempty"`
+	Locked    *bool `json:"locked,omitempty"`
+	Reversed  *bool `json:"reversed,omitempty"`
 }
 
 type Transaction struct {

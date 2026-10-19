@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/crmne/hyprmoncfg/internal/appstatus"
+	"github.com/crmne/hyprmoncfg/internal/config"
 	"github.com/crmne/hyprmoncfg/internal/ipc"
 	"github.com/crmne/hyprmoncfg/internal/lid"
 	"github.com/crmne/hyprmoncfg/internal/orientation"
@@ -38,7 +39,8 @@ type autoRotation struct {
 	lockedQuarters int
 	// reversed turns panels the other way, for a device whose accelerometer
 	// reports the opposite direction.
-	reversed bool
+	reversed      bool
+	sensorUpright int
 }
 
 const (
@@ -51,9 +53,10 @@ const (
 )
 
 type rotationState struct {
-	Locked   bool `json:"locked"`
-	Quarters int  `json:"quarters"`
-	Reversed bool `json:"reversed,omitempty"`
+	Locked        bool `json:"locked"`
+	Quarters      int  `json:"quarters"`
+	Reversed      bool `json:"reversed,omitempty"`
+	SensorUpright int  `json:"sensor_upright,omitempty"`
 }
 
 func newAutoRotation(configDir string, logf func(string, ...any)) *autoRotation {
@@ -67,6 +70,7 @@ func newAutoRotation(configDir string, logf func(string, ...any)) *autoRotation 
 		if json.Unmarshal(data, &state) == nil {
 			r.locked, r.lockedQuarters = state.Locked, ((state.Quarters%4)+4)%4
 			r.reversed = state.Reversed
+			r.sensorUpright = ((state.SensorUpright % 4) + 4) % 4
 		}
 	}
 	return r
@@ -82,9 +86,9 @@ func (r *autoRotation) turnLocked() int {
 	case r.tabletSwitch && !r.tabletMode:
 		return 0
 	case r.reversed:
-		return (4 - r.quarters) % 4
+		return (4 - r.quarters + r.sensorUpright) % 4
 	}
-	return r.quarters
+	return (r.quarters - r.sensorUpright + 4) % 4
 }
 
 // turn is the quarter turns the daemon applies to panels that rotate.
@@ -142,9 +146,23 @@ func (r *autoRotation) observeTabletMode(on bool, err error) (turnChanged bool) 
 // leaves either as it is. It reports whether the applied turn changed, as it
 // does when releasing a lock taken in another orientation or reversing.
 func (r *autoRotation) set(locked, reversed *bool) (turnChanged bool, err error) {
+	return r.configure(locked, reversed, false)
+}
+
+func (r *autoRotation) configure(locked, reversed *bool, calibrate bool) (turnChanged bool, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	before := r.turnLocked()
+	if calibrate {
+		if _, ok := orientation.Quarters(r.orientation); !r.available || !ok {
+			return false, errors.New("hold the device upright with an available orientation sensor before calibrating")
+		}
+	}
+	previous := rotationState{r.locked, r.lockedQuarters, r.reversed, r.sensorUpright}
+	if calibrate {
+		r.sensorUpright = r.quarters
+		r.locked = false
+	}
 	if reversed != nil {
 		r.reversed = *reversed
 	}
@@ -155,11 +173,13 @@ func (r *autoRotation) set(locked, reversed *bool) (turnChanged bool, err error)
 		r.locked = *locked
 	}
 	if r.path != "" {
-		data, _ := json.Marshal(rotationState{Locked: r.locked, Quarters: r.lockedQuarters, Reversed: r.reversed})
+		data, _ := json.Marshal(rotationState{Locked: r.locked, Quarters: r.lockedQuarters, Reversed: r.reversed, SensorUpright: r.sensorUpright})
 		if err := os.MkdirAll(filepath.Dir(r.path), 0o755); err != nil {
+			r.locked, r.lockedQuarters, r.reversed, r.sensorUpright = previous.Locked, previous.Quarters, previous.Reversed, previous.SensorUpright
 			return false, err
 		}
-		if err := os.WriteFile(r.path, data, 0o644); err != nil {
+		if err := config.WriteFileAtomic(r.path, data, 0o644); err != nil {
+			r.locked, r.lockedQuarters, r.reversed, r.sensorUpright = previous.Locked, previous.Quarters, previous.Reversed, previous.SensorUpright
 			return false, err
 		}
 	}
@@ -173,13 +193,15 @@ func (r *autoRotation) status() *appstatus.Rotation {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return &appstatus.Rotation{
-		Available:   r.available,
-		Orientation: r.orientation,
-		Quarters:    r.turnLocked(),
-		Locked:      r.locked,
-		Reversed:    r.reversed,
-		TabletMode:  r.tabletSwitch && r.tabletMode,
-		Paused:      r.available && !r.locked && r.tabletSwitch && !r.tabletMode,
+		CalibrationSupported: true,
+		SensorUpright:        r.sensorUpright,
+		Available:            r.available,
+		Orientation:          r.orientation,
+		Quarters:             r.turnLocked(),
+		Locked:               r.locked,
+		Reversed:             r.reversed,
+		TabletMode:           r.tabletSwitch && r.tabletMode,
+		Paused:               r.available && !r.locked && r.tabletSwitch && !r.tabletMode,
 	}
 }
 
@@ -198,7 +220,20 @@ func (s *Service) SetRotation(params ipc.RotationParams) error {
 	if s.cfg.WatchOrientation == nil {
 		return errors.New("automatic rotation is not available")
 	}
-	turnChanged, err := s.rotation.set(params.Locked, params.Reversed)
+	if params.Calibrate {
+		if params.Locked != nil || params.Reversed != nil {
+			return errors.New("calibrate cannot be combined with lock or direction changes")
+		}
+		s.writeMu.Lock()
+		defer s.writeMu.Unlock()
+		s.pendingMu.Lock()
+		preview := s.pending != nil
+		s.pendingMu.Unlock()
+		if preview {
+			return errPreviewActive
+		}
+	}
+	turnChanged, err := s.rotation.configure(params.Locked, params.Reversed, params.Calibrate)
 	if err != nil {
 		return err
 	}
@@ -219,8 +254,18 @@ func (s *Service) SetRotation(params ipc.RotationParams) error {
 	if turnChanged {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if err := s.applyBest(ctx); err != nil {
+		var applyErr error
+		if params.Calibrate {
+			applyErr = s.applyBestLocked(ctx)
+		} else {
+			applyErr = s.applyBest(ctx)
+		}
+		if err := applyErr; err != nil && !errors.Is(err, errIncompleteWake) {
 			s.cfg.Logf("rotate after a rotation change: %v", err)
+			if params.Calibrate {
+				s.signalChange()
+				return err
+			}
 		}
 	}
 	s.signalChange()

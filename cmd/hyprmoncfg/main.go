@@ -584,12 +584,13 @@ func resolveHyprConfigForCLI(cmd *cobra.Command, monitorsConf string, hyprConfig
 
 func newRotationCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "rotation [status|lock|unlock|toggle|direction normal|direction reversed]",
+		Use:   "rotation [status|lock|unlock|toggle|calibrate|direction normal|direction reversed]",
 		Short: "Show or lock automatic rotation of built-in panels",
 		Long: "Built-in panels set to rotate automatically follow the device's orientation sensor.\n" +
 			"lock holds the current rotation, unlock follows the sensor again, and toggle switches between them.\n" +
 			"Bind `hyprmoncfg rotation toggle` to a key for a rotation lock.\n" +
 			"direction reversed turns panels the other way, for a device whose sensor reports the opposite direction.\n" +
+			"calibrate treats the current sensor orientation as upright and unlocks rotation. Hold the device upright first.\n" +
 			"Needs hyprmoncfgd.",
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -608,9 +609,9 @@ func newRotationCmd() *cobra.Command {
 }
 
 func runRotation(cmd *cobra.Command, action, value string) error {
-	var params ipc.RotationParams
+	params := ipc.RotationParams{Calibrate: action == "calibrate"}
 	switch action {
-	case "status", "lock", "unlock", "toggle":
+	case "status", "lock", "unlock", "toggle", "calibrate":
 		if value != "" {
 			return fmt.Errorf("%s takes no value", action)
 		}
@@ -623,7 +624,7 @@ func runRotation(cmd *cobra.Command, action, value string) error {
 		reversed := value == "reversed"
 		params.Reversed = &reversed
 	default:
-		return fmt.Errorf("unknown rotation action %q: use status, lock, unlock, toggle or direction", action)
+		return fmt.Errorf("unknown rotation action %q: use status, lock, unlock, toggle, calibrate or direction", action)
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), 20*time.Second)
 	defer cancel()
