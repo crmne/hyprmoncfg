@@ -456,17 +456,18 @@ numbers and lists Refresh after Resolution.
 
 Canvas placement is shared Go (`internal/profile/placement.go`): the panel
 reaches it through the daemon's editor (a drag release sends a snap distance),
-the TUI calls it directly. A drop snaps within the snap distance and leaves any
-overlap by the nearest clear edge, or is refused and returns; exact moves
-(nudges, typed coordinates, Place beside, 0,0) are refused when they would
-overlap; edits that would grow a display into a neighbour are refused unless
-the layout already overlapped. A scale, mode, or rotation change moves only the
-displays attached to the resized one: its row past the old right edge, its
-column past the old bottom edge, displays on its corners, displays continuing
-those rows and columns, and any display a moving one would land on. Being
-stacked above or below a moving display in another row does not by itself move
-a display (`profile.ReflowAfterResize`). The TUI drag freezes the canvas transform at the
-press and derives the position from the grab origin, validating only on drop.
+the TUI calls it directly. Decision, 2026-10-20: overlap is resolved rather
+than rejected for every completed geometry edit, including enabling a display,
+nudges, typed coordinates, Place beside, 0,0, and mode/scale/rotation changes.
+A drop first snaps within the snap distance. Resize edits first preserve the
+existing attached row/column relationships with `profile.ReflowAfterResize`.
+Any remaining collision moves the edited display to the nearest clear outside
+edge, keeping other displays in place where possible. Existing collisions are
+also cleared. Off, mirrored, and modeless outputs occupy no independent area.
+Clear positions, hardware settings, workspace intent, and saved profiles remain
+unchanged. This edits only the draft; preview and explicit save remain required.
+The TUI drag freezes the canvas transform at the press and derives the position
+from the grab origin, resolving collisions on drop.
 
 Brightness stays a live hardware control in the compact panel, outside the expanded
 profile editor. Use the short heading `Brightness`; show the current target as

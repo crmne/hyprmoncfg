@@ -1155,8 +1155,6 @@ func (m *Model) commitNumericInput() tea.Cmd {
 		return nil
 	}
 
-	before := m.currentProfileOutputs()
-	original := m.editOutputs[m.input.OutputIndex]
 	output := &m.editOutputs[m.input.OutputIndex]
 	oldWidth, oldHeight := output.logicalSize()
 	var status string
@@ -1186,21 +1184,11 @@ func (m *Model) commitNumericInput() tea.Cmd {
 			m.input.Input.Err = fmt.Errorf("position must be an integer")
 			return nil
 		}
-		// Typed coordinates are exact: taken as given, or refused when they
-		// would overlap another display, and the entry stays open to fix.
-		x, y, axis := value, output.Y, "X"
+		x, y := value, output.Y
 		if m.input.Kind == numericInputPositionY {
-			x, y, axis = output.X, value, "Y"
-		}
-		if output.MirrorOf == "" {
-			moved := m.currentProfileOutputs()
-			if _, err := profile.MoveOutput(moved, m.input.OutputIndex, x, y, 0); err != nil {
-				m.input.Input.Err = err
-				return nil
-			}
+			x, y = output.X, value
 		}
 		output.X, output.Y = x, y
-		status = fmt.Sprintf("Position %s set to %d for %s", axis, value, output.Name)
 	case numericInputICC:
 		output.ICC = strings.TrimSpace(m.input.Input.Value())
 		if output.ICC == "" {
@@ -1226,14 +1214,13 @@ func (m *Model) commitNumericInput() tea.Cmd {
 		status = fmt.Sprintf("%s set for %s", m.input.Title, output.Name)
 	}
 	m.reflowAfterResize(m.input.OutputIndex, oldWidth, oldHeight)
-	if err := profile.RejectNewOverlap(before, m.currentProfileOutputs()); err != nil {
-		// A scale that grows the display into a neighbour is refused.
-		m.editOutputs[m.input.OutputIndex] = original
-		for idx := range m.editOutputs {
-			m.editOutputs[idx].X, m.editOutputs[idx].Y = before[idx].X, before[idx].Y
-		}
-		m.input.Input.Err = err
-		return nil
+	resolved := m.currentProfileOutputs()
+	profile.ResolveLayoutOverlaps(resolved, m.input.OutputIndex)
+	for i := range resolved {
+		m.editOutputs[i].X, m.editOutputs[i].Y = resolved[i].X, resolved[i].Y
+	}
+	if m.input.Kind == numericInputPositionX || m.input.Kind == numericInputPositionY {
+		status = fmt.Sprintf("Position set to %d,%d for %s", output.X, output.Y, output.Name)
 	}
 	m.layoutChanged()
 	m.setStatusOK(status)

@@ -10,9 +10,8 @@ import (
 
 // placeSelected moves the selected display through the shared placement
 // rules (profile.MoveOutput), the same rules the panel reaches through the
-// daemon's editor. A positive snap distance makes it a pointer drop. A move
-// that would overlap another display is refused with a status message and
-// the display keeps its position.
+// daemon's editor. A positive snap distance makes it a pointer drop.
+// Collisions resolve to the nearest clear edge.
 func (m *Model) placeSelected(x, y, snapDistance int) (profile.SnapAnalysis, bool) {
 	if len(m.editOutputs) == 0 || m.selectedOutput < 0 || m.selectedOutput >= len(m.editOutputs) {
 		return profile.SnapAnalysis{}, false
@@ -27,30 +26,34 @@ func (m *Model) placeSelected(x, y, snapDistance int) (profile.SnapAnalysis, boo
 		// A refusal from an earlier move no longer applies.
 		m.status, m.statusErr = "", false
 	}
-	output := &m.editOutputs[m.selectedOutput]
-	if output.X == outputs[m.selectedOutput].X && output.Y == outputs[m.selectedOutput].Y {
-		return analysis, true
+	moved := false
+	for i := range outputs {
+		if m.editOutputs[i].X != outputs[i].X || m.editOutputs[i].Y != outputs[i].Y {
+			moved = true
+			m.editOutputs[i].X, m.editOutputs[i].Y = outputs[i].X, outputs[i].Y
+		}
 	}
-	output.X, output.Y = outputs[m.selectedOutput].X, outputs[m.selectedOutput].Y
-	m.layoutChanged()
+	if moved {
+		m.layoutChanged()
+	}
 	return analysis, true
 }
 
-// guardLayoutEdit applies an inspector edit and takes it back when it would
-// make displays overlap (a larger mode or scale, a rotation, turning one on),
-// as the panel's editor refuses such an edit. A layout that already overlapped
-// stays editable so it can be fixed.
+// guardLayoutEdit keeps inspector edits collision-free through the same
+// placement rules as the daemon editor, including enabling a hidden display.
 func (m *Model) guardLayoutEdit(edit func()) bool {
-	before := append([]editableOutput(nil), m.editOutputs...)
-	beforeOutputs := m.currentProfileOutputs()
-	wasDirty, wasSaved := m.dirty, m.draftSaved
 	edit()
-	if err := profile.RejectNewOverlap(beforeOutputs, m.currentProfileOutputs()); err != nil {
-		m.editOutputs = before
-		m.dirty, m.draftSaved = wasDirty, wasSaved
-		m.revalidate()
-		m.setStatusErr(err.Error() + "; change not made")
-		return false
+	outputs := m.currentProfileOutputs()
+	profile.ResolveLayoutOverlaps(outputs, m.selectedOutput)
+	moved := false
+	for i := range outputs {
+		if m.editOutputs[i].X != outputs[i].X || m.editOutputs[i].Y != outputs[i].Y {
+			moved = true
+			m.editOutputs[i].X, m.editOutputs[i].Y = outputs[i].X, outputs[i].Y
+		}
+	}
+	if moved {
+		m.layoutChanged()
 	}
 	return true
 }

@@ -180,7 +180,7 @@ func TestReflowAfterResizeLeavesDisplaysInOtherRowsAlone(t *testing.T) {
 			t.Fatalf("%s moved to %d,%d", outputs[idx].Name, outputs[idx].X, outputs[idx].Y)
 		}
 	}
-	if err := RejectNewOverlap(before, outputs); err != nil {
+	if err := ValidateLayout(outputs); err != nil {
 		t.Fatalf("scale change introduced an overlap: %v", err)
 	}
 }
@@ -211,7 +211,6 @@ func TestReflowAfterResizeKeepsADiagonalNeighborClearOfAGrowingOutput(t *testing
 		{Key: "diagonal", Name: "DP-2", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 960, Y: 540},
 	}
 	oldWidth, oldHeight := outputs[0].LogicalSize()
-	before := append([]OutputConfig(nil), outputs...)
 	outputs[0].Scale = 1
 
 	ReflowAfterResize(outputs, 0, oldWidth, oldHeight)
@@ -219,7 +218,7 @@ func TestReflowAfterResizeKeepsADiagonalNeighborClearOfAGrowingOutput(t *testing
 	if outputs[1].X != 1920 || outputs[1].Y != 1080 {
 		t.Fatalf("diagonal output at %d,%d, want 1920,1080", outputs[1].X, outputs[1].Y)
 	}
-	if err := RejectNewOverlap(before, outputs); err != nil {
+	if err := ValidateLayout(outputs); err != nil {
 		t.Fatalf("growing introduced an overlap: %v", err)
 	}
 }

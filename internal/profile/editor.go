@@ -336,6 +336,7 @@ func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 			// The panel's drag release; the TUI drops through MoveOutput.
 			ResolveDrop(draft.Outputs, index, edit.SnapDistance)
 		}
+		ResolveLayoutOverlaps(draft.Outputs, index)
 	}
 
 	enabled := 0
@@ -389,8 +390,8 @@ func (o OutputConfig) LogicalSize() (int, int) {
 // not by itself make a display move. Mirrored or modeless outputs, which have
 // no area of their own, never move. The result depends only on geometry, not
 // on output order. A moving output can still meet one that stays put, or one
-// moving on the other axis, as it could before; the edit is then refused as
-// an overlap unless the layout already overlapped.
+// moving on the other axis; the editor resolves any remaining overlap after
+// this resize pass.
 func ReflowAfterResize(outputs []OutputConfig, index, oldWidth, oldHeight int) {
 	if index < 0 || index >= len(outputs) || !reflowable(outputs[index]) {
 		return
@@ -564,17 +565,15 @@ func ApplySnap(outputs []OutputConfig, selectedIndex, threshold int) SnapAnalysi
 	return analysis
 }
 
-// PlaceOutsideOverlaps turns a pointer drop on top of another display into
-// the nearest valid edge placement. Drag-and-drop editors should not require
-// pixel-perfect releases or surface a validation error for a collision they
-// can resolve unambiguously. Typed position edits still use ValidateLayout so
-// callers that need exact coordinates do not have those coordinates changed.
+// PlaceOutsideOverlaps moves an overlapping display to the nearest clear
+// outside edge. The outermost edges always provide a candidate, even when the
+// display is surrounded. Other displays retain their positions.
 func PlaceOutsideOverlaps(outputs []OutputConfig, selectedIndex int) bool {
 	if selectedIndex < 0 || selectedIndex >= len(outputs) {
 		return false
 	}
 	selected := outputs[selectedIndex]
-	if !selected.Enabled || selected.MirrorOf != "" || !outputOverlapsAny(outputs, selectedIndex, selected.X, selected.Y) {
+	if !reflowable(selected) || !outputOverlapsAny(outputs, selectedIndex, selected.X, selected.Y) {
 		return false
 	}
 
@@ -594,7 +593,7 @@ func PlaceOutsideOverlaps(outputs []OutputConfig, selectedIndex int) bool {
 	}
 
 	for index, other := range outputs {
-		if index == selectedIndex || !other.Enabled || other.MirrorOf != "" {
+		if index == selectedIndex || !reflowable(other) {
 			continue
 		}
 		otherWidth, otherHeight := other.LogicalSize()
@@ -622,7 +621,7 @@ func outputOverlapsAny(outputs []OutputConfig, selectedIndex, x, y int) bool {
 	selected := outputs[selectedIndex]
 	width, height := selected.LogicalSize()
 	for index, other := range outputs {
-		if index == selectedIndex || !other.Enabled || other.MirrorOf != "" {
+		if index == selectedIndex || !reflowable(other) {
 			continue
 		}
 		otherWidth, otherHeight := other.LogicalSize()

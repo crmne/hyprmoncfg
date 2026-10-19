@@ -2466,7 +2466,7 @@ func (m *Model) canMoveSelectedOutput() bool {
 }
 
 // moveSelectedOutput nudges the selected display. Like the panel, a nudge
-// that would cover another display is refused and says why.
+// into occupied space resolves to a clear edge.
 func (m *Model) moveSelectedOutput(dx, dy int) {
 	if len(m.editOutputs) == 0 || !m.canMoveSelectedOutput() {
 		return

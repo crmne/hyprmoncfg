@@ -85,15 +85,16 @@ the Omarchy panel:
 - **Drag** a display and it follows the pointer; the stage holds still until
   you let go. On release it snaps to a neighbour's edge or alignment within
   about one canvas row. Dropped on top of another display, it moves to the
-  nearest clear edge instead. If no clear spot exists it returns to where you
-  picked it up.
-- **Arrow keys**, **Position X/Y**, and `0` are exact: a move that would cover
-  another display is refused and the top bar says which one.
-- `Alt` + arrows place the selected monitor flush left, right, above, or below
-  the nearest enabled monitor and center it on the other axis.
-- A mode, scale, rotation, or Enabled change that would push a display into a
-  neighbour is refused too. A layout that already overlapped stays editable so
-  you can fix it.
+  nearest clear edge instead.
+- **Arrow keys**, **Position X/Y**, and `0` use the requested position when
+  clear. If occupied, the display moves to the nearest clear outside edge.
+- `Alt` + arrows place the selected monitor beside the nearest enabled monitor;
+  any collision with a third display is resolved the same way.
+- Enabling a display automatically finds room when its old position is occupied,
+  so it returns to the canvas and can be moved again. Mode, scale, and rotation
+  changes preserve attached neighbours first, then resolve remaining collisions.
+- Existing overlaps are cleared during geometry edits. Disabled displays and
+  mirrors do not reserve space. Saved profiles change only when you save.
 
 ### Display and Color controls
 

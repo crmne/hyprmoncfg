@@ -1,7 +1,9 @@
 package profile
 
 import (
-	"strings"
+	"fmt"
+	"math/rand/v2"
+	"reflect"
 	"testing"
 )
 
@@ -93,10 +95,10 @@ func TestDropAndMoveMatchThePanelEditPath(t *testing.T) {
 		{"snap to origin alignment", pair, 1, 1930, -20, 24, 1920, 0, false},
 		{"drop across two displays leaves by the nearest clear edge", trio, 1, 500, 800, 24, 500, 2160, false},
 		{"drop bottom alignment with the lower display", trio, 1, 1935, 1450, 24, 1920, 1440, false},
-		// Exact moves are taken as given or refused.
-		{"exact move into a neighbour is refused", pair, 1, 1000, 0, 0, 1920, 0, true},
+		// Exact moves retain clear coordinates and resolve occupied coordinates.
+		{"exact move into a neighbour reflows", pair, 1, 1000, 0, 0, 1920, 0, false},
 		{"exact move to a free spot", pair, 1, 1920, 1080, 0, 1920, 1080, false},
-		{"exact move to origin on top of a display is refused", trio, 1, 0, 0, 0, 1920, 0, true},
+		{"exact move to occupied origin reflows", trio, 1, 0, 0, 0, 0, -720, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			outputs := tc.outputs()
@@ -129,18 +131,19 @@ func TestDropAndMoveMatchThePanelEditPath(t *testing.T) {
 	}
 }
 
-func TestMoveOutputNamesTheOverlapAndKeepsThePosition(t *testing.T) {
+func TestMoveOutputResolvesOverlapAndPreservesOtherDisplays(t *testing.T) {
 	outputs := []OutputConfig{
 		{Key: "a", Name: "DP-1", Enabled: true, Width: 1920, Height: 1080, Scale: 1},
 		{Key: "b", Name: "DP-2", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 1920},
 	}
 	_, err := MoveOutput(outputs, 1, 100, 100, 0)
-	if err == nil || !strings.Contains(err.Error(), "DP-2 would overlap DP-1") {
-		t.Fatalf("error = %v", err)
+	if err != nil || ValidateLayout(outputs) != nil {
+		t.Fatalf("move should resolve the overlap: %v", err)
 	}
-	if outputs[1].X != 1920 || outputs[1].Y != 0 {
-		t.Fatal("a refused move must not change the position")
+	if outputs[0].X != 0 || outputs[0].Y != 0 {
+		t.Fatal("the other display moved")
 	}
+
 	outputs[1].Enabled = false
 	if _, err := MoveOutput(outputs, 1, 100, 100, 0); err != nil || outputs[1].X != 100 {
 		t.Fatalf("an off display occupies nothing and moves freely, got %v at %d", err, outputs[1].X)
@@ -163,17 +166,126 @@ func TestMoveOutputIgnoresDisplaysWithoutAMode(t *testing.T) {
 	}
 }
 
-func TestRejectNewOverlapOnlyBlocksNewOverlaps(t *testing.T) {
-	clear := []OutputConfig{
-		{Key: "a", Name: "DP-1", Enabled: true, Width: 1920, Height: 1080, Scale: 1},
-		{Key: "b", Name: "DP-2", Enabled: true, Width: 1920, Height: 1080, Scale: 1, X: 1920},
+func TestResolveLayoutOverlapsRepairsExistingCollisions(t *testing.T) {
+	outputs := []OutputConfig{
+		{Key: "a", Enabled: true, Width: 1920, Height: 1080, Scale: 1},
+		{Key: "b", Enabled: true, Width: 1920, Height: 1080, Scale: 1},
+		{Key: "c", Enabled: true, Width: 1920, Height: 1080, Scale: 1},
 	}
-	overlapping := append([]OutputConfig(nil), clear...)
-	overlapping[1].X = 1000
-	if RejectNewOverlap(clear, overlapping) == nil {
-		t.Fatal("an edit that creates an overlap must be refused")
+	ResolveLayoutOverlaps(outputs, 1)
+	if err := ValidateLayout(outputs); err != nil {
+		t.Fatal(err)
 	}
-	if RejectNewOverlap(overlapping, overlapping) != nil {
-		t.Fatal("a layout that already overlapped must stay editable so it can be fixed")
+	before := append([]OutputConfig(nil), outputs...)
+	ResolveLayoutOverlaps(outputs, 1)
+	for i := range outputs {
+		if outputs[i].X != before[i].X || outputs[i].Y != before[i].Y {
+			t.Fatal("a clear layout moved")
+		}
+	}
+}
+
+func TestEnableReflowsOccupiedPosition(t *testing.T) {
+	for _, transform := range []int{0, 1, 3} {
+		t.Run(fmt.Sprint(transform), func(t *testing.T) {
+			draft := Profile{Outputs: []OutputConfig{
+				{Key: "desk", Enabled: true, Width: 1920, Height: 1080, Scale: 1},
+				{Key: "returning", Enabled: false, Width: 2560, Height: 1440, Scale: 2, Transform: transform, X: 100, Y: 100},
+				{Key: "off", Enabled: false, Width: 1920, Height: 1080, Scale: 1},
+				{Key: "mirror", Enabled: true, MirrorOf: "desk", Width: 1920, Height: 1080, Scale: 1},
+				{Key: "modeless", Enabled: true, X: 100, Y: 100},
+			}}
+			before := append([]OutputConfig(nil), draft.Outputs...)
+			enabled := true
+			got, err := ApplyEditorEdit(draft, EditorEdit{OutputKey: "returning", Enabled: &enabled})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ValidateLayout(got.Outputs); err != nil {
+				t.Fatal(err)
+			}
+			returning, _ := got.OutputByKey("returning")
+			if !returning.Enabled || (returning.X == 100 && returning.Y == 100) {
+				t.Fatal("returning display was not enabled and placed")
+			}
+			for _, key := range []string{"desk", "off", "mirror", "modeless"} {
+				old, _ := (Profile{Outputs: before}).OutputByKey(key)
+				now, _ := got.OutputByKey(key)
+				if old.X != now.X || old.Y != now.Y || old.Enabled != now.Enabled {
+					t.Fatalf("%s changed", key)
+				}
+			}
+		})
+	}
+}
+
+func TestOverlapResolutionEscapesSurroundedDisplay(t *testing.T) {
+	outputs := []OutputConfig{
+		{Key: "center", Enabled: true, Width: 100, Height: 100, Scale: 1},
+		{Key: "left", Enabled: true, Width: 100, Height: 100, Scale: 1, X: -100},
+		{Key: "right", Enabled: true, Width: 100, Height: 100, Scale: 1, X: 100},
+		{Key: "top", Enabled: true, Width: 100, Height: 100, Scale: 1, Y: -100},
+		{Key: "bottom", Enabled: true, Width: 100, Height: 100, Scale: 1, Y: 100},
+		{Key: "returning", Enabled: true, Width: 100, Height: 100, Scale: 1},
+	}
+	before := append([]OutputConfig(nil), outputs...)
+	ResolveLayoutOverlaps(outputs, 5)
+	if err := ValidateLayout(outputs); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		if outputs[i] != before[i] {
+			t.Fatalf("unaffected display %s moved", outputs[i].Key)
+		}
+	}
+}
+
+func TestOverlapResolutionIgnoresModelessAndMirroredAreas(t *testing.T) {
+	outputs := []OutputConfig{
+		{Key: "selected", Enabled: true, Width: 100, Height: 100, Scale: 1},
+		{Key: "mirror", Enabled: true, MirrorOf: "selected", Width: 100, Height: 100, Scale: 1},
+		{Key: "modeless", Enabled: true, Scale: 1},
+		{Key: "off", Width: 100, Height: 100, Scale: 1},
+	}
+	before := append([]OutputConfig(nil), outputs...)
+	ResolveLayoutOverlaps(outputs, 0)
+	if !reflect.DeepEqual(outputs, before) {
+		t.Fatal("outputs without independent area affected placement")
+	}
+}
+
+func TestUnmirroringFindsIndependentSpace(t *testing.T) {
+	draft := Profile{Outputs: []OutputConfig{
+		{Key: "desk", Enabled: true, Width: 1920, Height: 1080, Scale: 1},
+		{Key: "mirror", Enabled: true, MirrorOf: "desk", Width: 1920, Height: 1080, Scale: 1},
+	}}
+	target := ""
+	got, err := ApplyEditorEdit(draft, EditorEdit{OutputKey: "mirror", MirrorOf: &target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateLayout(got.Outputs); err != nil {
+		t.Fatal(err)
+	}
+	independent, _ := got.OutputByKey("mirror")
+	if independent.MirrorOf != "" || (independent.X == 0 && independent.Y == 0) {
+		t.Fatal("unmirrored display has no independent space")
+	}
+}
+
+func TestResolveLayoutOverlapsMixedGeometry(t *testing.T) {
+	rng := rand.New(rand.NewPCG(23, 59))
+	for iteration := 0; iteration < 500; iteration++ {
+		outputs := make([]OutputConfig, 10)
+		for i := range outputs {
+			outputs[i] = OutputConfig{Key: fmt.Sprint(i), Enabled: true,
+				Width: 100 + rng.IntN(4000), Height: 100 + rng.IntN(2000),
+				Scale: float64(1+rng.IntN(8)) / 2, Transform: rng.IntN(8),
+				X: rng.IntN(4000) - 2000, Y: rng.IntN(4000) - 2000}
+		}
+		ResolveLayoutOverlaps(outputs, rng.IntN(len(outputs)))
+		if err := ValidateLayout(outputs); err != nil {
+			t.Fatalf("iteration %d: %v", iteration, err)
+		}
 	}
 }

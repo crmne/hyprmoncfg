@@ -1,11 +1,9 @@
 package tui
 
 import (
-	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 	"github.com/crmne/hyprmoncfg/internal/profile"
@@ -200,7 +198,7 @@ func TestClickWithoutDragDoesNotMove(t *testing.T) {
 }
 
 // Keyboard moves use the same rule as the panel's nudges: a move that would
-// cover another display is refused with a reason, and nothing changes.
+// cover another display resolves to a clear edge without an error.
 func TestKeyboardMovesNeverOverlap(t *testing.T) {
 	m := paneTestModel(t, tabLayout, []hypr.Monitor{paneTestDesk, paneTestSide}, nil)
 	side, desk := outputIndexNamed(t, m, "DP-2"), outputIndexNamed(t, m, "DP-1")
@@ -209,17 +207,18 @@ func TestKeyboardMovesNeverOverlap(t *testing.T) {
 	m.selectedOutput = side
 	next, _ := m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyLeft})
 	m = mustModel(t, next)
-	if m.editOutputs[side].X != 3840 || !m.statusErr || !strings.Contains(m.status, "DP-2 would overlap DP-1") {
-		t.Fatalf("nudge into a neighbour should be refused, got X=%d status %q", m.editOutputs[side].X, m.status)
+	if m.editOutputs[side].X != 3840 || m.statusErr {
+		t.Fatalf("nudge into a neighbour should resolve, got X=%d status %q", m.editOutputs[side].X, m.status)
 	}
 	next, _ = m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
 	m = mustModel(t, next)
-	if m.editOutputs[side].X != 3840 {
-		t.Fatal("moving to 0,0 on top of another display should be refused")
+	if m.statusErr || profile.ValidateLayout(m.currentProfileOutputs()) != nil {
+		t.Fatal("moving to occupied origin must resolve without an error")
 	}
+	oldX := m.editOutputs[side].X
 	next, _ = m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyRight})
 	m = mustModel(t, next)
-	if m.editOutputs[side].X != 3940 || m.statusErr {
+	if m.editOutputs[side].X != oldX+100 || m.statusErr {
 		t.Fatalf("a free nudge should move, got X=%d", m.editOutputs[side].X)
 	}
 }
@@ -242,8 +241,7 @@ func TestPlaceBesideUsesTheSharedPlacement(t *testing.T) {
 	}
 }
 
-// Inspector edits that would grow a display into a neighbour are refused;
-// typed positions that would overlap keep the entry open with the reason.
+// Typed positions and enabling hidden displays resolve collisions.
 func TestInspectorEditsNeverCreateOverlap(t *testing.T) {
 	m := paneTestModel(t, tabLayout, []hypr.Monitor{paneTestDesk, paneTestSide}, nil)
 	side, desk := outputIndexNamed(t, m, "DP-2"), outputIndexNamed(t, m, "DP-1")
@@ -256,12 +254,11 @@ func TestInspectorEditsNeverCreateOverlap(t *testing.T) {
 	m.input.Input.SetValue("100")
 	next, _ := m.updateNumericInputKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mustModel(t, next)
-	if m.mode != modeNumericInput || m.input.Input.Err == nil || m.editOutputs[desk].X != 0 {
-		t.Fatalf("typed overlap should keep the entry open with an error, got mode %v X=%d", m.mode, m.editOutputs[desk].X)
+	if m.mode != modeMain || m.statusErr || profile.ValidateLayout(m.currentProfileOutputs()) != nil {
+		t.Fatalf("typed overlap should resolve, got mode %v X=%d", m.mode, m.editOutputs[desk].X)
 	}
-	requireContains(t, ansi.Strip(m.View()), "would overlap")
 
-	// Turning on a display whose saved position is covered is refused too.
+	// Turning on a display whose saved position is covered is reflowed too.
 	m.mode, m.input = modeMain, nil
 	m.editOutputs[side].Enabled = false
 	m.editOutputs[side].X = 100
@@ -269,7 +266,7 @@ func TestInspectorEditsNeverCreateOverlap(t *testing.T) {
 	m.selectedOutput = side
 	m.inspectorField = 0
 	m.setInspectorChoice(0, "on")
-	if m.editOutputs[side].Enabled || !m.statusErr || !strings.Contains(m.status, "change not made") {
-		t.Fatalf("enabling onto another display should be refused, enabled=%v status %q", m.editOutputs[side].Enabled, m.status)
+	if !m.editOutputs[side].Enabled || m.statusErr || profile.ValidateLayout(m.currentProfileOutputs()) != nil {
+		t.Fatalf("enabling onto another display should resolve, enabled=%v status %q", m.editOutputs[side].Enabled, m.status)
 	}
 }

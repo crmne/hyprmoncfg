@@ -7,17 +7,9 @@ import "fmt"
 // distance); the TUI calls them directly. Keeping one implementation is what
 // makes a drop, a nudge, or Place beside land in the same spot in both.
 //
-// The rules:
-//   - A drop (snap distance > 0) snaps each axis to the nearest neighbour edge
-//     or alignment within the distance (ApplySnap), then, if the display still
-//     covers another one, moves it to the nearest clear edge
-//     (PlaceOutsideOverlaps). If no clear edge exists, the drop is refused and
-//     the display returns to where it was.
-//   - An exact move (nudge, typed coordinate, Place beside, move to 0,0) is
-//     taken as given, or refused if it would overlap another display.
-//   - A display that is off can be moved freely; a mirror cannot be moved.
-//   - Place beside puts the display flush against the nearest enabled,
-//     independent display on the requested side, centred on the other axis.
+// Moves and edits retain their requested position when clear. Collisions move
+// the edited display to the nearest clear edge, keeping other displays in place.
+// Disabled, mirrored, and modeless outputs occupy no independent layout area.
 
 // PlaceDirection names the side for Place beside.
 type PlaceDirection int
@@ -92,9 +84,8 @@ func ResolveDrop(outputs []OutputConfig, index, snapDistance int) SnapAnalysis {
 }
 
 // MoveOutput moves one display to x, y. With a positive snap distance the move
-// is a pointer drop and ResolveDrop may adjust it; otherwise it is exact. A
-// move that would leave the display covering another is refused: the display
-// keeps its previous position and the overlap is returned as the error.
+// is a pointer drop and ResolveDrop may snap it. Every move resolves collisions
+// to a clear edge, including typed coordinates and keyboard moves.
 func MoveOutput(outputs []OutputConfig, index, x, y, snapDistance int) (SnapAnalysis, error) {
 	if index < 0 || index >= len(outputs) {
 		return SnapAnalysis{}, fmt.Errorf("no display at index %d", index)
@@ -102,7 +93,6 @@ func MoveOutput(outputs []OutputConfig, index, x, y, snapDistance int) (SnapAnal
 	if outputs[index].MirrorOf != "" {
 		return SnapAnalysis{}, fmt.Errorf("%s mirrors another display and follows it", displayName(outputs[index]))
 	}
-	oldX, oldY := outputs[index].X, outputs[index].Y
 	outputs[index].X, outputs[index].Y = x, y
 	if !outputs[index].Enabled {
 		// An off display occupies nothing; its position is kept for when it
@@ -113,46 +103,25 @@ func MoveOutput(outputs []OutputConfig, index, x, y, snapDistance int) (SnapAnal
 	if snapDistance > 0 {
 		analysis = ResolveDrop(outputs, index, snapDistance)
 	}
-	if other := overlappedBy(outputs, index); other >= 0 {
-		outputs[index].X, outputs[index].Y = oldX, oldY
-		return analysis, fmt.Errorf("%s would overlap %s", displayName(outputs[index]), displayName(outputs[other]))
-	}
+	ResolveLayoutOverlaps(outputs, index)
 	return analysis, nil
 }
 
-// RejectNewOverlap reports an overlap that an edit introduced. A layout that
-// already overlapped before the edit is not blocked, so the edit that fixes it
-// can go through.
-func RejectNewOverlap(before, after []OutputConfig) error {
-	if ValidateLayout(before) != nil {
-		return nil
+// ResolveLayoutOverlaps clears collisions after an editor operation. Resolve the
+// edited display first so enabling it never displaces an otherwise valid layout.
+// Then repair any pre-existing collisions. Each placement is clear of every
+// other independent display, so later placements cannot introduce new overlaps.
+func ResolveLayoutOverlaps(outputs []OutputConfig, edited int) {
+	PlaceOutsideOverlaps(outputs, edited)
+	for i := range outputs {
+		if i != edited {
+			PlaceOutsideOverlaps(outputs, i)
+		}
 	}
-	return ValidateLayout(after)
 }
 
 func placeable(output OutputConfig) bool {
 	return output.Enabled && output.MirrorOf == ""
-}
-
-// overlappedBy returns the first display the selected one covers, or -1.
-// Displays without a mode have no area, as in ValidateLayout.
-func overlappedBy(outputs []OutputConfig, index int) int {
-	selected := outputs[index]
-	if selected.Width <= 0 || selected.Height <= 0 {
-		return -1
-	}
-	width, height := selected.LogicalSize()
-	for idx, other := range outputs {
-		if idx == index || !placeable(other) || other.Width <= 0 || other.Height <= 0 {
-			continue
-		}
-		otherWidth, otherHeight := other.LogicalSize()
-		if selected.X < other.X+otherWidth && selected.X+width > other.X &&
-			selected.Y < other.Y+otherHeight && selected.Y+height > other.Y {
-			return idx
-		}
-	}
-	return -1
 }
 
 func displayName(output OutputConfig) string {
