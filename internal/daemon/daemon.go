@@ -102,6 +102,7 @@ type Service struct {
 }
 
 var errDisplaysSleeping = errors.New("displays are sleeping")
+var errIncompleteWake = errors.New("an enabled display is still asleep after a wake request")
 
 // wakeRetryLimit bounds how often the daemon repeats a wake it was asked for.
 // Right after resume or opening the lid, displays still reporting DPMS off
@@ -223,6 +224,7 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 	}
 }
 
+// Run watches display and session events and reconciles layouts until ctx is canceled.
 func (s *Service) Run(ctx context.Context) error {
 	if s.client == nil || s.store == nil {
 		return fmt.Errorf("daemon not initialized")
@@ -663,7 +665,6 @@ func (s *Service) Run(ctx context.Context) error {
 				deferForDisplaySleep("")
 				continue
 			case displaySleepExited:
-				endWakeRequest()
 				s.cfg.LaptopToggle.Reset()
 				settlingAfterWake = true
 				s.cfg.Logf("display wake detected; waiting %s for monitors to settle", s.cfg.WakeSettle)
@@ -731,7 +732,7 @@ func (s *Service) Run(ctx context.Context) error {
 				scheduleRecovery()
 				continue
 			}
-			if errors.Is(err, errDisplaysSleeping) {
+			if errors.Is(err, errDisplaysSleeping) || errors.Is(err, errIncompleteWake) {
 				if wakeRetries > 0 {
 					wakeRetries--
 					s.cfg.Logf("displays still asleep after a wake request; waking them again")
@@ -740,11 +741,15 @@ func (s *Service) Run(ctx context.Context) error {
 					continue
 				}
 				endWakeRequest()
-				if displayGuard.MarkSleeping() {
-					s.cfg.Logf("display sleep detected; pausing automatic switching")
+				if errors.Is(err, errDisplaysSleeping) {
+					if displayGuard.MarkSleeping() {
+						s.cfg.Logf("display sleep detected; pausing automatic switching")
+					}
+					deferForDisplaySleep("")
+					continue
 				}
-				deferForDisplaySleep("")
-				continue
+				s.cfg.Logf("wake retries exhausted; leaving the awake displays usable")
+				err = nil
 			}
 			pending = false
 			settlingAfterWake = false
@@ -895,6 +900,7 @@ func (s *Service) restoresPanelAfterWake(monitors []hypr.Monitor) bool {
 	return false
 }
 
+// tryApplyBest reconciles without waiting for another writer, preserving retry states.
 func (s *Service) tryApplyBest(ctx context.Context) error {
 	if !s.writeMu.TryLock() {
 		return errWriterBusy
@@ -903,20 +909,25 @@ func (s *Service) tryApplyBest(ctx context.Context) error {
 	return s.applyBestLocked(ctx)
 }
 
+// applyBest reconciles after a client operation without exposing preview or
+// incomplete-wake control states as failures of that operation.
 func (s *Service) applyBest(ctx context.Context) error {
 	err := s.applyAutomatic(ctx)
-	if errors.Is(err, errPreviewActive) {
+	if errors.Is(err, errPreviewActive) || errors.Is(err, errIncompleteWake) {
 		return nil
 	}
 	return err
 }
 
+// applyAutomatic serializes reconciliation and returns control states to its caller.
 func (s *Service) applyAutomatic(ctx context.Context) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	return s.applyBestLocked(ctx)
 }
 
+// applyBestLocked selects and applies the effective layout while writeMu is held.
+// An incomplete explicit wake remains pending for the event loop to retry.
 func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	started := time.Now()
 	defer func() {
@@ -1061,7 +1072,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 
 	effective := profile.ExtendConnected(target, monitors)
 	defer func() {
-		if resultErr == nil {
+		if resultErr == nil || errors.Is(resultErr, errIncompleteWake) {
 			s.fallbacks.observeApplied()
 		}
 	}()
@@ -1101,6 +1112,9 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	if !toggleChanged && s.applied.matches(effective, monitors, rules) {
 		s.lastSeenHash = hash
 		_, err := s.cfg.LaptopToggle.Sync(effective, monitors)
+		if err == nil && s.wakeIncomplete(effective, monitors) {
+			return errIncompleteWake
+		}
 		return err
 	}
 	if s.rejected.matches(effective, monitors, rules) {
@@ -1168,7 +1182,27 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	s.lastSeenHash = appliedHash
 	s.cfg.Logf("applied profile: %s", target.Name)
 	s.signalChange()
+	if err == nil && s.wakeIncomplete(effective, appliedMonitors) {
+		return errIncompleteWake
+	}
 	return nil
+}
+
+// Only an explicit resume/lid-open request may wake a sleeping display. Check
+// the intended outputs, so a deliberately disabled output cannot keep waking
+// the others. One lit panel does not mean every output has received the wake.
+func (s *Service) wakeIncomplete(target profile.Profile, monitors []hypr.Monitor) bool {
+	if !s.wakeRequested.Load() {
+		return false
+	}
+	resolver := profile.NewMonitorResolver(monitors)
+	for _, output := range target.Outputs {
+		monitor, ok := resolver.ResolveOutput(output)
+		if ok && output.Enabled && !monitor.Disabled && !monitor.DPMSStatus && !isSyntheticMonitor(monitor) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) SetNotifier(notify func()) {
