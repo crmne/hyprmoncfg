@@ -604,6 +604,9 @@ func (s *Service) Run(ctx context.Context) error {
 						continue
 					}
 				}
+				if state == lid.Closed {
+					endWakeRequest()
+				}
 				if displayGuard.sleeping {
 					deferForDisplaySleep(reason)
 				} else {
@@ -751,6 +754,7 @@ func (s *Service) Run(ctx context.Context) error {
 				s.cfg.Logf("wake retries exhausted; leaving the awake displays usable")
 				err = nil
 			}
+
 			pending = false
 			settlingAfterWake = false
 			endWakeRequest()
@@ -1182,7 +1186,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	s.lastSeenHash = appliedHash
 	s.cfg.Logf("applied profile: %s", target.Name)
 	s.signalChange()
-	if err == nil && s.wakeIncomplete(effective, appliedMonitors) {
+	if (err != nil && s.wakeRequested.Load()) || (err == nil && s.wakeIncomplete(effective, appliedMonitors)) {
 		return errIncompleteWake
 	}
 	return nil

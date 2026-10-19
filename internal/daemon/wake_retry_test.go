@@ -281,3 +281,53 @@ func TestRotationDuringPartialWakeDoesNotLogFailure(t *testing.T) {
 		t.Fatalf("background retry state = %v, want incomplete wake", err)
 	}
 }
+
+func TestClosingLidCancelsAnOutstandingWake(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "DP-1", Make: "Example", Model: "Desk", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1, DPMSStatus: true}}
+	env := newRunTestEnvConfigured(t, monitors, func(cfg *Config) { cfg.WakeSettle = 250 * time.Millisecond })
+	defer env.stop()
+	waitFor(t, 2*time.Second, func() bool { return env.logs.contains("applied profile: Home") }, "startup")
+	env.suspendEvents <- true
+	monitors[0].DPMSStatus = false
+	if err := writeMonitorState(env.monitorStatePath, monitors); err != nil {
+		t.Fatal(err)
+	}
+	env.suspendEvents <- false
+	waitFor(t, time.Second, func() bool { return dpmsWakeCount(env.logPath) == 1 }, "resume wake")
+	env.setLid(lid.Closed)
+	env.lidStates <- lid.Closed
+	waitFor(t, time.Second, func() bool { return !env.svc.wakeRequested.Load() }, "lid cancels wake")
+	time.Sleep(3 * env.svc.cfg.WakeSettle)
+	if got := dpmsWakeCount(env.logPath); got != 1 {
+		t.Fatalf("closed lid caused %d wakes", got)
+	}
+}
+
+func TestFailedPostApplyReadKeepsExplicitWakePending(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "DP-1", Make: "Example", Model: "Desk", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1, DPMSStatus: true}}
+	data, _ := json.Marshal(monitors)
+	env := newApplyBestTestEnvWithMonitors(t, string(data), string(data))
+	if err := env.store.Save(profile.FromMonitors("Desk", monitors)); err != nil {
+		t.Fatal(err)
+	}
+	// Verification sees a valid mode. Only the following monitor refresh fails.
+	scriptPath := filepath.Join(filepath.Dir(env.logPath), "hyprctl")
+	script, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := `if [[ -f "$HYPRCTL_STATE" ]]; then
+    count=0
+    [[ ! -f "$HYPRCTL_STATE.reads" ]] || read -r count < "$HYPRCTL_STATE.reads"
+    count=$((count+1))
+    printf '%s\n' "$count" > "$HYPRCTL_STATE.reads"
+    if (( count >= 2 )); then exit 1; fi`
+	if err := os.WriteFile(scriptPath, []byte(strings.Replace(string(script), `if [[ -f "$HYPRCTL_STATE" ]]; then`, injected, 1)), 0755); err != nil {
+		t.Fatal(err)
+	}
+	svc := New(env.client, env.store, Config{MonitorsConf: env.monitorsConfPath, HyprConfig: env.hyprlandConfigPath, ConfigDir: filepath.Dir(env.monitorsConfPath)})
+	svc.wakeRequested.Store(true)
+	if err := svc.tryApplyBest(context.Background()); !errors.Is(err, errIncompleteWake) {
+		t.Fatalf("post-apply read failure = %v, want pending wake", err)
+	}
+}
