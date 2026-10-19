@@ -349,7 +349,7 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 	if e.TolerateModeless {
 		rescue = e.lightPanels(p, monitors, render.Options{Format: resolvedConfig.Format, UseMonitorV2: supportsV2})
 	}
-	applied, err := e.waitForAppliedProfile(ctx, p, monitors, rescue)
+	applied, err := e.waitForAppliedProfile(ctx, p, monitors, rescue, e.enableWakeCheck(p, monitors, luaDispatch))
 	if err != nil {
 		return rollback(err)
 	}
@@ -501,7 +501,7 @@ func (e Engine) lightPanels(p profile.Profile, before []hypr.Monitor, opts rende
 	}
 }
 
-func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, before []hypr.Monitor, rescue func(context.Context, []hypr.Monitor)) ([]hypr.Monitor, error) {
+func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, before []hypr.Monitor, rescue func(context.Context, []hypr.Monitor), checkWake func(context.Context, []hypr.Monitor) error) ([]hypr.Monitor, error) {
 	ctx, cancel := context.WithTimeout(ctx, applyValidationTimeout)
 	defer cancel()
 
@@ -529,13 +529,17 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 			if !errors.Is(lastErr, ErrVerificationFailed) {
 				lastErr = err
 			}
-		} else if err := validateAppliedProfile(p, before, applied, e.TolerateModeless); err != nil {
-			lastErr = fmt.Errorf("%w: %w", ErrVerificationFailed, err)
-			if rescue != nil {
-				rescue(ctx, applied)
-			}
 		} else {
-			return applied, nil
+			wakeErr := checkWake(ctx, applied)
+			layoutErr := validateAppliedProfile(p, before, applied, e.TolerateModeless)
+			if err := errors.Join(layoutErr, wakeErr); err != nil {
+				lastErr = fmt.Errorf("%w: %w", ErrVerificationFailed, err)
+				if rescue != nil && layoutErr != nil {
+					rescue(ctx, applied)
+				}
+			} else {
+				return applied, nil
+			}
 		}
 
 		select {

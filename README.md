@@ -49,7 +49,7 @@ both themes, workspace planning, and profiles.
 
 ## What you get
 
-- **Spatial layout editor**: drag monitors on a canvas and tune mode, scale, VRR, mirror, transform, and position. Enabling or moving a display into occupied space automatically places it at a clear edge instead of blocking the edit
+- **Spatial layout editor**: drag monitors on a canvas and tune mode, scale, VRR, mirror, transform, and position. Enabling or moving a display into occupied space automatically places it at a clear edge instead of blocking the edit. Applying an enable also wakes that display and verifies it is awake
 - **Visible off displays** -- select a separate Off row and enable it in the draft; preview before changing the live layout
 - **Named profiles** -- save setups like `desk`, `conference`, or `home-office`
 - **Hardware-identity matching** -- profiles follow monitor make, model, and serial instead of unstable connector names

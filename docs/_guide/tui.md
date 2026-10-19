@@ -96,6 +96,11 @@ the Omarchy panel:
 - Existing overlaps are cleared during geometry edits. Disabled displays and
   mirrors do not reserve space. Saved profiles change only when you save.
 
+When a preview turns a previously disabled display on, it also wakes that output
+and checks that Hyprland reports it awake before showing confirmation. A failed
+wake rolls back instead of accepting a black display as successfully enabled.
+Other displays that were already enabled but sleeping are left asleep.
+
 ### Display and Color controls
 
 Press `Enter` on any **Display** or **Color** field to edit it:

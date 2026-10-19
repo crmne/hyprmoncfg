@@ -185,6 +185,14 @@ with no external showing a picture, the daemon keeps a connected internal screen
 on until one does. The saved profile is not changed. Distinguish intentional DPMS sleep from a failed wake before starting
 recovery. Keep the machine's sleep and lock policy intact.
 
+Enabling a previously disabled connected display includes waking that output.
+The shared apply engine sends targeted DPMS wake requests only after the output
+is present and enabled, retries at most three times within the apply verification
+window, and requires awake readback before starting preview confirmation. Failure
+rolls back the previous configuration and disabled state. Already-enabled sleeping
+outputs retain intentional sleep during unrelated edits or automatic reconciliation.
+This behavior is shared by the daemon and direct TUI/CLI apply paths.
+
 The daemon owns recovery while it owns monitor management. A bounded attempt may
 end, but an unresolved intended output must remain scheduled for another attempt
 with capped backoff. Stop or defer on unmanage, suspend, deliberate power-off,

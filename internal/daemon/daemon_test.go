@@ -371,7 +371,7 @@ func TestSavingLayoutPreviewPreservesManualProfileSelection(t *testing.T) {
 }
 
 func TestApplyBestUsesInternalFallbackWhenNoProfilesAndAllOutputsDisabled(t *testing.T) {
-	env := newApplyBestTestEnv(t, `[{"id":1,"name":"eDP-1","description":"Framework Panel","make":"Framework","model":"Panel","serial":"A1","width":2880,"height":1800,"refreshRate":120,"x":0,"y":0,"scale":1.5,"transform":0,"disabled":false,"mirrorOf":""}]`)
+	env := newApplyBestTestEnv(t, `[{"id":1,"name":"eDP-1","description":"Framework Panel","make":"Framework","model":"Panel","serial":"A1","width":2880,"height":1800,"refreshRate":120,"x":0,"y":0,"scale":1.5,"transform":0,"disabled":false,"dpmsStatus":true,"mirrorOf":""}]`)
 
 	svc := New(env.client, env.store, Config{
 		MonitorsConf: env.monitorsConfPath,
@@ -403,7 +403,7 @@ func TestApplyBestUsesInternalFallbackWhenNoProfilesAndAllOutputsDisabled(t *tes
 }
 
 func TestApplyBestUsesSavedProfileBeforeInternalFallback(t *testing.T) {
-	env := newApplyBestTestEnv(t, `[{"id":1,"name":"eDP-1","description":"Framework Panel","make":"Framework","model":"Panel","serial":"A1","width":2880,"height":1800,"refreshRate":120,"x":100,"y":200,"scale":2,"transform":0,"disabled":false,"mirrorOf":""}]`)
+	env := newApplyBestTestEnv(t, `[{"id":1,"name":"eDP-1","description":"Framework Panel","make":"Framework","model":"Panel","serial":"A1","width":2880,"height":1800,"refreshRate":120,"x":100,"y":200,"scale":2,"transform":0,"disabled":false,"dpmsStatus":true,"mirrorOf":""}]`)
 	mon := hypr.Monitor{Name: "eDP-1", Description: "Framework Panel", Make: "Framework", Model: "Panel", Serial: "A1"}
 
 	if err := env.store.Save(profile.New("saved-internal", []profile.OutputConfig{{
@@ -1349,7 +1349,7 @@ func TestApplyBestRecoversFromABlackScreenBesideHyprlandsFallbackHead(t *testing
 		`{"id":0,"name":"eDP-1","description":"BOE 0x0CFD","make":"BOE","model":"0x0CFD","serial":"","width":1920,"height":1080,"refreshRate":144,"x":0,"y":0,"scale":1,"transform":0,"disabled":true,"mirrorOf":""},` +
 		`{"id":1,"name":"FALLBACK","description":"","make":"","model":"","serial":"","width":1920,"height":1080,"refreshRate":60,"x":0,"y":0,"scale":1,"transform":0,"disabled":false,"focused":true,"mirrorOf":""}` +
 		`]`
-	recovered := `[{"id":0,"name":"eDP-1","description":"BOE 0x0CFD","make":"BOE","model":"0x0CFD","serial":"","width":1920,"height":1080,"refreshRate":144,"x":0,"y":0,"scale":1,"transform":0,"disabled":false,"mirrorOf":""}]`
+	recovered := `[{"id":0,"name":"eDP-1","description":"BOE 0x0CFD","make":"BOE","model":"0x0CFD","serial":"","width":1920,"height":1080,"refreshRate":144,"x":0,"y":0,"scale":1,"transform":0,"disabled":false,"dpmsStatus":true,"mirrorOf":""}]`
 
 	env := newApplyBestTestEnvWithMonitors(t, blacked, recovered)
 	svc := New(env.client, env.store, Config{

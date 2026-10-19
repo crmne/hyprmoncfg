@@ -189,3 +189,14 @@ Monitor and workspace-rule reads have a 750 ms deadline per query by default. A 
 Status and editor-state responses include an additive `monitor_set_hash`. Treat it as an opaque equality token for the output keys and their current connector bindings; it includes the connector paths used to distinguish otherwise identical outputs. It excludes layout, focus and power state. These daemon reads check hardware before and after reading workspace rules and return `compositor_busy` if the bindings changed. They therefore perform two monitor queries and one workspace-rule query; the 750 ms limit is per query, not a total response-time guarantee.
 
 Clients should retain the last visible snapshot while connecting, show the message, and retry while visible with at most one request in flight. Do not treat a failed refresh as an empty display list. Compare editor hashes with the latest status hash when both are present, and discard mismatches. Also track observed topology changes locally and reject requests from an older generation, including a change away and back to the same hardware. The hash is not an event counter or an atomic snapshot guarantee. Older daemons omit it; clients can fall back to their available identity/signature fields. Stateless `edit_profile` replies do not include a fresh hardware hash. Known-profile apply and rollback retain their existing serialized lifecycle.
+
+
+## Enabling a sleeping output
+
+Preview apply wakes connected outputs that transition from disabled to enabled,
+using a targeted DPMS request and at most three attempts within the existing apply
+verification window. Confirmation starts only after those outputs report awake.
+Failure follows normal apply rollback, including restoring the previous disabled
+state. Already-enabled sleeping outputs are not woken by unrelated edits.
+The wire schema is unchanged; existing panel clients receive the existing preview
+success or apply error response. Older backends do not perform this wake check.
