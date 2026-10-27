@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # sitemap lastmod comes from each page's last commit
 
       - uses: actions/configure-pages@v5
 
@@ -41,6 +43,15 @@ jobs:
         working-directory: docs
         run: bundle exec jekyll build --destination ./_site
 
+      - name: Plan IndexNow submission
+        run: ruby .github/scripts/indexnow.rb plan docs/_site "$RUNNER_TEMP/indexnow.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: indexnow
+          path: ${{ runner.temp }}/indexnow.json
+          retention-days: 1
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs/_site
@@ -54,3 +65,18 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  indexnow:
+    runs-on: ubuntu-latest
+    needs: deploy
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: indexnow
+      - name: Submit changed URLs to IndexNow
+        run: ruby .github/scripts/indexnow.rb submit indexnow.json
