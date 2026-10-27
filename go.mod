@@ -11,7 +11,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/muesli/termenv v0.16.0
 	github.com/spf13/cobra v1.8.1
-	golang.org/x/sys v0.38.0
+	golang.org/x/sys v0.44.0
 )
 
 require (
