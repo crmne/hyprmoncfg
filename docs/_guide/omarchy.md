@@ -107,8 +107,9 @@ daemon, TUI and panel. **Off** continues to delegate workspace management.
 
 Pair global mode with the optional [Global Workspaces
 widget](https://github.com/crmne/omarchy-global-workspaces). It displays the real
-workspace IDs and the active workspace on each monitor. Omarchy's stock RC2
-widget still assumes per-monitor numbering. Switching ownership does not
+workspace IDs and highlights the globally focused workspace on every bar,
+matching Omarchy's original widget. Omarchy's stock RC2 widget still assumes
+per-monitor numbering. Switching ownership does not
 automatically move or renumber existing windows.
 
 ### Check the configuration load order
