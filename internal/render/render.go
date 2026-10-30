@@ -1,6 +1,7 @@
 package render
 
 import (
+	_ "embed"
 	"fmt"
 	"math"
 	"strconv"
@@ -11,6 +12,9 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/profile"
 	"github.com/crmne/hyprmoncfg/internal/scaling"
 )
+
+//go:embed omarchy_workspaces.lua
+var omarchyGlobalWorkspaces string
 
 type Options struct {
 	Format       config.HyprConfigFormat
@@ -299,6 +303,9 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 	}
 
 	sections := []string{config.GeneratedHeader(config.HyprConfigLua), strings.Join(monitorBlocks, "\n\n")}
+	if p.Workspaces.Enabled {
+		sections = append(sections, strings.TrimSpace(omarchyGlobalWorkspaces))
+	}
 	if len(workspaceLines) > 0 {
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
 	}

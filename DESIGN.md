@@ -128,6 +128,18 @@ applied, not that a slow projector has finished showing a picture.
 
 ### Workspaces
 
+Decision, 2026-10-30: an enabled workspace planner owns global Hyprland IDs,
+including on Omarchy 4.5. Its generated Lua file disables Omarchy's workspace
+reconciliation and replaces the monitor-local shortcuts with global actions.
+This compatibility code belongs in the existing generated file, loaded last;
+it does not add another include or modify packaged Omarchy files. Planner Off
+omits the handoff and keeps its existing delegation semantics. Applying or
+rolling back a profile reloads the corresponding ownership choice together
+with its workspace rules. The global bar widget is a separate optional plugin,
+not a second workspace manager. Omarchy's stock per-monitor widget is not
+compatible with this global mode in 4.5 RC2. Existing windows are never
+automatically renumbered merely to fit a newly selected mode.
+
 Inherit the base profile's enabled planner, strategy, group size, workspace count,
 persistence policy, and existing monitor order. Append the new output to the end
 of that order. Sequential groups of four remain sequential groups of four with

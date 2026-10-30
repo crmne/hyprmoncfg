@@ -156,7 +156,9 @@ An existing file without the marker is treated as user-owned. The TUI and intera
 
 Per-profile `*.conf` and `*.lua` files in `~/.config/hyprmoncfg/profiles/` are different: they are exported copies of each saved profile. Applying a profile still regenerates the active target from JSON and the current monitor state so lid handling, duplicate monitor resolution, Hyprland version detection, verification, and rollback keep working.
 
-When a connected built-in panel rotates automatically, the file also sets `input:touchdevice:transform` and `input:tablet:transform` to the panel's current rotation, so the touchscreen and pen turn with it. Nothing else outside monitor and workspace rules is written.
+When a connected built-in panel rotates automatically, the file also sets `input:touchdevice:transform` and `input:tablet:transform` to the panel's current rotation, so the touchscreen and pen turn with it.
+
+Development builds after 1.25.1 also include an Omarchy workspace handoff when the workspace planner is enabled. In the same generated Lua file, it disables Omarchy's per-monitor reassignment and restores global number, move, history, and cycling shortcuts. There is no additional include. The block detects Omarchy's workspace module at runtime and does nothing on plain Hyprland or older Omarchy installations without that module. Planner **Off** omits it, so the next reload restores the distribution's workspace behaviour. Use a global workspace bar widget with this mode; Omarchy 4.5 RC2's stock widget still labels workspaces per monitor. Existing windows retain their IDs until explicitly moved.
 
 Do not put unrelated Hyprland settings in that file. Keep blocks like `render`, `cursor`, `misc`, and `env` in other sourced config files.
 

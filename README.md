@@ -55,6 +55,7 @@ both themes, workspace planning, and profiles.
 - **Hardware-identity matching** -- profiles follow monitor make, model, and serial instead of unstable connector names
 - **Hotplug and lid-aware daemon** -- apply the right profile automatically when monitors change or the laptop lid closes
 - **Workspace planner** -- assign workspaces across monitors with sequential, interleave, or manual strategies
+- **Omarchy global workspaces (development)**: builds after 1.25.1 keep enabled workspace plans in control of numbering and shortcuts through the existing generated Lua file. Pair with the optional [Global Workspaces widget](https://github.com/crmne/omarchy-global-workspaces); see [compatibility and delegation](docs/_guide/omarchy.md#omarchy-45-per-monitor-workspaces)
 - **Safe apply with revert** -- reload Hyprland, verify the result, and revert unless you confirm
 - **One-writer IPC** -- once the daemon owns the writer lock and serves IPC, the TUI, CLI, and desktop panels send changes through it instead of racing over config files
 - **Include-chain verification** -- refuse to write generated monitor config that Hyprland is not reading
