@@ -296,7 +296,8 @@ explain that Auto resumes after Keep.
 ### Workspace navigation surfaces (2026-10-30)
 
 The companion hyprmoncfg Workspaces widget groups global IDs by their actual
-display and opens a spatial overview. The daemon supplies connected monitor
+display. Right-click opens only the Workspaces tab, including planner controls,
+through the existing panel editor. The daemon supplies connected monitor
 geometry and explicit live workspace rules through the existing status stream.
 Quickshell supplies current workspace locations, occupancy, visibility and focus.
 Actual compositor locations take precedence over the configured plan, including
@@ -311,7 +312,18 @@ describes live rules, not a promise that hyprmoncfg owns workspace management.
 The monitor panel keeps its original icon. The workspace bar uses plain numbers
 with Omarchy's standard sizing and spacing, a small extra gap between monitors,
 and a subtle focus underline. No group backgrounds or extra layout icon. The
-spatial overview opens on right-click, with real display proportions and offsets.
+picker popup contains just Workspaces, without Layout/Profiles navigation or the
+compact monitor panel. It keeps the same draft, Apply/Save and persistent preview
+confirmation. The route opens UI on the clicked monitor and never sends a daemon
+configuration command. Assigned IDs remain direct compositor switching targets
+when no draft or preview is pending. Without a compatible panel, retain the
+live overview and offer installation when the panel is missing.
+
+The main panel offers installation or enablement inside the Workspaces canvas,
+with a grouped-number preview in physical left-to-right, then top-to-bottom
+monitor order. Explain that the picker follows the monitor layout; hide the
+promotion once enabled. The monitor icon matches Omarchy's size exactly, with
+only a small theme-accent check to distinguish it.
 The spatial workspace widget, classic global widget and stock Omarchy widget
 remain separate bar choices. Selecting presentation never changes workspace
 ownership or shortcuts. The spatial widget is the preferred new hyprmoncfg
