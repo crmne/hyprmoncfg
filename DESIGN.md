@@ -308,7 +308,10 @@ does not apply a profile, and remains available while the daemon reconnects.
 Older daemons without the plan field permit a live-only view. The status plan
 describes live rules, not a promise that hyprmoncfg owns workspace management.
 
-The monitor panel icon depicts its live layout within the standard icon slot.
+The monitor panel keeps its original icon. The workspace bar uses plain numbers
+with Omarchy's standard sizing and spacing, a small extra gap between monitors,
+and a subtle focus underline. No group backgrounds or extra layout icon. The
+spatial overview opens on right-click, with real display proportions and offsets.
 The spatial workspace widget, classic global widget and stock Omarchy widget
 remain separate bar choices. Selecting presentation never changes workspace
 ownership or shortcuts. The spatial widget is the preferred new hyprmoncfg
