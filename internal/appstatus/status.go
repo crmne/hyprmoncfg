@@ -48,6 +48,12 @@ type Document struct {
 	RecommendedProfile *ProfileMatch     `json:"recommended_profile"`
 	Profiles           []ProfileSummary  `json:"profiles"`
 	Monitors           []MonitorSummary  `json:"monitors"`
+	// WorkspacePlan describes explicit live workspace rules on connected,
+	// independent displays. Shells combine it with compositor workspace state;
+	// a moved workspace's actual location takes precedence over its assignment.
+	// An absent field identifies an older daemon; an empty array is a known
+	// empty plan. This is not a declaration of workspace-management ownership.
+	WorkspacePlan []WorkspacePlan `json:"workspace_plan"`
 	// Rotation reports the orientation sensor that turns built-in panels set
 	// to rotate automatically. Absent means the daemon predates it or no
 	// daemon is running.
@@ -292,6 +298,28 @@ func BuildEditorDraft(draft profile.Profile) EditorDraft {
 	return EditorDraft{Profile: draft, WorkspacePlan: plan}
 }
 
+// LiveWorkspacePlan reuses the backend's hardware identity and monitor-rule
+// matching without inferring or regenerating a saved workspace strategy.
+func LiveWorkspacePlan(monitors []hypr.Monitor, rules []hypr.WorkspaceRule) []WorkspacePlan {
+	plan := make([]WorkspacePlan, 0, len(monitors))
+	byKey := make(map[string]int, len(monitors))
+	counts := hypr.MonitorMatchCounts(monitors)
+	for _, monitor := range monitors {
+		if monitor.Disabled || monitor.MirrorOf != "" || monitor.Name == "FALLBACK" || monitor.Width <= 0 || monitor.Height <= 0 {
+			continue
+		}
+		key := hypr.MonitorOutputKey(monitor, counts)
+		byKey[key] = len(plan)
+		plan = append(plan, WorkspacePlan{OutputKey: key, OutputName: monitor.Name, Workspaces: []string{}})
+	}
+	for _, rule := range profile.WorkspaceSettingsFromHypr(monitors, rules).Rules {
+		if index, ok := byKey[rule.OutputKey]; ok {
+			plan[index].Workspaces = append(plan[index].Workspaces, rule.Workspace)
+		}
+	}
+	return plan
+}
+
 // editorScaleOptions is the Scale list both editors show; see
 // scaling.SharpChoices.
 func editorScaleOptions(width, height int, current float64) []float64 {
@@ -306,6 +334,7 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 		Daemon:         Daemon{Running: daemonRunning},
 		Profiles:       make([]ProfileSummary, 0, len(profiles)),
 		Monitors:       make([]MonitorSummary, 0, len(monitors)),
+		WorkspacePlan:  LiveWorkspacePlan(monitors, rules),
 	}
 
 	activeName := ""

@@ -86,6 +86,18 @@ After `confirm`, the selected profile becomes a session-scoped override for the 
 
 ## Status events
 
+Status includes `workspace_plan`, an array of `{output_key, output_name,
+workspaces}` groups resolved from the explicit current Hyprland rules using
+the same hardware identity matching as the editor. Disabled, modeless, synthetic
+and mirrored outputs have no independent group. This is a read-only view of
+live rules, not a saved-profile preview or a declaration of workspace ownership.
+
+An absent field means an older daemon. An empty array means a known empty plan.
+Shell clients merge this with their live compositor workspace model: a workspace's
+actual location always wins over its assignment. Switching a workspace remains
+a direct compositor action; there is no workspace-switching IPC method. The
+additive field retains protocol/schema version 1 and existing subscriptions.
+
 Monitor summaries add `usable` and `health` (`usable`, `off`, `sleeping`,
 `no_signal`, or `synthetic`). `enabled` alone is not evidence of a working mode.
 Older daemons omit these fields; clients must not interpret absence as failure.

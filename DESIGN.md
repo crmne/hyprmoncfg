@@ -293,6 +293,29 @@ explain that Auto resumes after Keep.
 
 ## Feedback and notification routing
 
+### Workspace navigation surfaces (2026-10-30)
+
+The companion hyprmoncfg Workspaces widget groups global IDs by their actual
+display and opens a spatial overview. The daemon supplies connected monitor
+geometry and explicit live workspace rules through the existing status stream.
+Quickshell supplies current workspace locations, occupancy, visibility and focus.
+Actual compositor locations take precedence over the configured plan, including
+during hotplug. A reused connector must not inherit another hardware identity's
+cached assignments. Mirrors have no independent workspace group.
+
+Workspace switching stays a direct Hyprland dispatch. It is not an IPC command,
+does not apply a profile, and remains available while the daemon reconnects.
+Older daemons without the plan field permit a live-only view. The status plan
+describes live rules, not a promise that hyprmoncfg owns workspace management.
+
+The monitor panel icon depicts its live layout within the standard icon slot.
+The spatial workspace widget, classic global widget and stock Omarchy widget
+remain separate bar choices. Selecting presentation never changes workspace
+ownership or shortcuts. The spatial widget is the preferred new hyprmoncfg
+workspace surface; existing bar choices are not migrated silently. Configuration
+and workspace planning remain shared with the TUI; a bar switcher has no TUI
+equivalent.
+
 After a new setup has actually been applied, send one normal desktop notification:
 
 > Projector connected
