@@ -14,21 +14,21 @@ Existing tools try to help but bring their own problems. Some need a Python runt
 
 ## What hyprmoncfg does differently
 
-**It's terminal-first, not terminal-only.** The TUI has a real layout canvas with drag-and-drop, focused Display and Color controls, picker dialogs, and a workspace planner. It's not a glorified config editor -- it's a spatial tool that happens to run in your terminal.
+**A native Omarchy panel and a companion TUI.** The [Omarchy Quattro panel]({{ '/omarchy/' | relative_url }}) provides a graphical layout canvas with drag-and-drop, display and colour controls, a workspace planner, and saved profiles. The terminal editor offers the same shared configuration engine with keyboard and mouse controls. It remains useful from a TTY or over SSH when you need to configure a running Hyprland session without the graphical panel.
 
-**One apply engine, everywhere.** The TUI and the daemon use the exact same code path: write the generated monitor config atomically, reload Hyprland, re-read monitor state, verify. No "best effort" daemon behavior. No silent failures.
+**One apply engine, everywhere.** The panel sends changes to the daemon. The TUI uses that daemon when it is running, or the same shared engine directly when it is not: write the generated monitor config atomically, reload Hyprland, re-read monitor state, and verify. Previewed changes revert unless you confirm them.
 
 **Profiles follow your hardware, not your ports.** Each profile stores monitor identity by make, model, and serial -- not by connector name. `DP-1` and `DP-2` can swap all they want. Your layout holds.
 
 **It verifies the generated config is loaded.** Legacy source chains are checked before writing. For Hyprland 0.55+ Lua configs, hyprmoncfg reloads Hyprland and asks the active Lua state to confirm that the generated monitor file actually ran. If it did not, hyprmoncfg rolls the file back.
 
-**One runtime dependency: Hyprland.** Two compiled Go binaries. No Python, no GTK, no GObject introspection, no D-Bus. Install them and you're done. Since it's a TUI, it works over SSH too -- configure monitors on a headless machine from your laptop.
+**A small shared backend.** The core ships as two compiled Go binaries for Hyprland. The graphical panel uses Omarchy's existing Quickshell environment. Optional hardware features use their own integrations, such as iio-sensor-proxy for automatic rotation on a tablet or 2-in-1.
 
 ## How it compares
 
 | | hyprmoncfg | Monique | HyprDynamicMonitors | HyprMon | nwg-displays | kanshi |
 |---|---|---|---|---|---|---|
-| GUI or TUI | TUI | GUI | TUI | TUI | GUI | CLI |
+| GUI or TUI | Native Omarchy GUI + TUI | GUI | TUI | TUI | GUI | CLI |
 | Spatial layout editor | Yes | Yes | Partial | Yes | Yes | No |
 | Drag-and-drop | Yes | Yes | No | Yes | Yes | No |
 | Snapping | Yes | Not documented | No | Yes | Yes | No |
@@ -37,9 +37,9 @@ Existing tools try to help but bring their own problems. Some need a Python runt
 | Workspace planning | Yes | Yes | No | No | Basic | No |
 | Mirror support | Yes | Yes | Yes | Yes | Yes | No |
 | Safe apply with revert | Yes | Yes | No | Partial (manual rollback) | No | No |
-| Hyprland 0.55 Lua config | Yes | No | No | No | Yes | N/A |
+| Hyprland 0.55 Lua config | Yes | No | No | Yes | Yes | N/A |
 | Include-chain verification | Yes | No | No | No | No | No |
-| Additional runtime dependencies | None | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
+| Additional runtime dependencies | Omarchy Quickshell for the panel; optional hardware integrations | Python + GTK4 + libadwaita | UPower, D-Bus | None | Python + GTK3 | None |
 
 ## Demo
 
