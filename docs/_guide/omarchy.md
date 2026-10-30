@@ -99,7 +99,7 @@ to stand down as well. The proposed [per-monitor workspace
 toggle](https://github.com/omacom/omarchy/pull/16213) is tracked upstream;
 it is not part of Omarchy 4.5.0rc2.
 
-Development builds after 1.25.1 make an enabled workspace planner own global
+hyprmoncfg 1.26.0 and newer make an enabled workspace planner own global
 numbering. The existing generated Lua file disables Omarchy's workspace
 reassignment and restores global shortcuts, without another include or changes
 to packaged Omarchy files. This applies through the shared engine used by the
