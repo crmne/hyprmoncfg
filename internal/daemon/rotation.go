@@ -26,9 +26,10 @@ type autoRotation struct {
 	path string
 	logf func(string, ...any)
 
-	available   bool
-	orientation string
-	quarters    int
+	available    bool
+	orientation  string
+	claimPending bool
+	quarters     int
 	// tabletSwitch is true when the device has a tablet-mode switch that
 	// can be read; tabletMode is its state.
 	tabletSwitch bool
@@ -106,8 +107,12 @@ func (r *autoRotation) turn() int {
 func (r *autoRotation) observe(reading orientation.Reading) (statusChanged, turnChanged bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	before, beforeAvailable, beforeOrientation := r.turnLocked(), r.available, r.orientation
+	before, beforeAvailable, beforeOrientation, beforePending := r.turnLocked(), r.available, r.orientation, r.claimPending
 	r.available = reading.Available
+	r.claimPending = reading.ClaimPending
+	if r.claimPending && !beforePending {
+		r.logf("orientation sensor claim refused; retrying until the session is active")
+	}
 	r.orientation = ""
 	if reading.Available {
 		r.orientation = reading.Orientation
@@ -117,7 +122,7 @@ func (r *autoRotation) observe(reading orientation.Reading) (statusChanged, turn
 		}
 	}
 	turnChanged = r.turnLocked() != before
-	statusChanged = turnChanged || r.available != beforeAvailable || r.orientation != beforeOrientation
+	statusChanged = turnChanged || r.available != beforeAvailable || r.orientation != beforeOrientation || r.claimPending != beforePending
 	return statusChanged, turnChanged
 }
 
@@ -194,6 +199,7 @@ func (r *autoRotation) status() *appstatus.Rotation {
 	defer r.mu.Unlock()
 	return &appstatus.Rotation{
 		CalibrationSupported: true,
+		SensorClaimPending:   r.claimPending,
 		SensorUpright:        r.sensorUpright,
 		Available:            r.available,
 		Orientation:          r.orientation,

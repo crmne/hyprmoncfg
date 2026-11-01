@@ -272,3 +272,23 @@ func TestCalibrationCannotChangeAnInteractivePreview(t *testing.T) {
 		t.Fatal("preview calibration changed rotation")
 	}
 }
+
+func TestARefusedSensorClaimIsReportedAndLoggedOnce(t *testing.T) {
+	var logged []string
+	r := newAutoRotation("", func(format string, _ ...any) { logged = append(logged, format) })
+	for range 2 {
+		r.observe(orientation.Reading{ClaimPending: true})
+	}
+	if status := r.status(); !status.SensorClaimPending || status.Available {
+		t.Fatalf("status while refused: %+v", status)
+	}
+	if len(logged) != 1 {
+		t.Fatalf("logged %d times", len(logged))
+	}
+	if statusChanged, _ := r.observe(orientation.Reading{Available: true, Orientation: "normal"}); !statusChanged {
+		t.Fatal("a granted claim did not change the status")
+	}
+	if r.status().SensorClaimPending {
+		t.Fatal("still pending after the claim")
+	}
+}

@@ -66,8 +66,11 @@ type Document struct {
 // convertible, Paused means it is folded as a laptop, where panels stay
 // upright. SensorUpright is the raw sensor quarter turn calibrated as zero.
 // CalibrationSupported gates the additive calibrate operation on older daemons.
+// SensorClaimPending means the sensor is present but polkit or the service has
+// not let the daemon claim it yet, which the daemon keeps retrying.
 type Rotation struct {
 	CalibrationSupported bool   `json:"calibration_supported"`
+	SensorClaimPending   bool   `json:"sensor_claim_pending,omitempty"`
 	SensorUpright        int    `json:"sensor_upright"`
 	Available            bool   `json:"available"`
 	Orientation          string `json:"orientation,omitempty"`
@@ -78,12 +81,22 @@ type Rotation struct {
 	Paused               bool   `json:"paused,omitempty"`
 }
 
+// UnavailableReason says why the panels cannot follow the sensor.
+func (r Rotation) UnavailableReason() string {
+	if r.SensorClaimPending {
+		return "waiting for access to the orientation sensor, which only the active session can claim"
+	}
+	return "no orientation sensor: install iio-sensor-proxy on a device with an accelerometer"
+}
+
 type Daemon struct {
 	Running bool `json:"running"`
 	// Unmanaged reports that monitor configuration was handed back to Hyprland.
 	// The zero value means managed, so a client that never sets it, or one too
 	// old to know the field, reads as the behavior hyprmoncfg has always had.
 	Unmanaged bool `json:"unmanaged,omitempty"`
+	// RenameSupported gates rename_profile, which older daemons do not have.
+	RenameSupported bool `json:"rename_supported,omitempty"`
 	// ProfileOverride names the profile a person confirmed manually for the
 	// current connected monitor set. Empty means automatic best-match selection.
 	// The override is intentionally session-scoped and disappears when the

@@ -41,6 +41,11 @@ device upright, and the rotation is applied on top while hyprmoncfgd runs.
 **Auto** appears only for a built-in panel, and only when hyprmoncfgd reports
 an orientation sensor. Restart hyprmoncfgd after installing iio-sensor-proxy.
 
+iio-sensor-proxy only lets the active session claim the sensor, and a daemon
+started at login can ask before the login screen has let go of the seat. The
+daemon keeps asking, every 2 seconds at first and then up to once a minute, and
+`hyprmoncfg rotation` says it is waiting. Auto starts working without a restart.
+
 ## Upright
 
 The rotation the panel has when you choose **Auto** is its upright rotation.

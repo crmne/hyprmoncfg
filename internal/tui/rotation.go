@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,7 +57,8 @@ func (m *Model) toggleRotationLockCmd() tea.Cmd {
 		return nil
 	}
 	if !m.rotation.Available {
-		m.setStatusErr("No orientation sensor: install iio-sensor-proxy on a device with an accelerometer")
+		reason := m.rotation.UnavailableReason()
+		m.setStatusErr(strings.ToUpper(reason[:1]) + reason[1:])
 		return nil
 	}
 	client := m.ipc
