@@ -46,7 +46,7 @@ func TestIssue60PageAndFooterSizeMatrix(t *testing.T) {
 					t.Errorf("footer missing from last line: %q", lines[len(lines)-1])
 				}
 				if tab == tabProfiles {
-					requireContains(t, ansi.Strip(view), profiles[m.selectedProfile].Name, "[Preview]", "[Edit]", "[Delete]")
+					requireContains(t, ansi.Strip(view), profiles[m.selectedProfile].Name, "[Preview]", "[Edit]", "[Rename]", "[Delete]")
 				}
 			})
 		}

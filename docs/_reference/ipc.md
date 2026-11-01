@@ -47,8 +47,20 @@ Errors replace `result` with an object containing a stable `code`, a human-reada
 | `revert` | `transaction_id` | none |
 | `save` | full `profile` | none |
 | `delete` | `name` | none |
+| `rename_profile` | `name`, `new_name` | none |
 | `set_profile_auto` | `enabled` boolean | none |
 | `set_rotation` | optional `locked`, `reversed`, or `calibrate` booleans | none |
+
+`rename_profile` renames a saved profile and its `.conf` and `.lua` files, and
+the daemon's active, manual and last-applied references follow it. It applies
+nothing and runs no post-apply command. It keeps `created_at`, updates
+`updated_at`, and treats names that share a file as the same name, so a change
+of case works and `Work Desk` cannot become `work-desk` beside an existing
+`Work Desk`. It fails when the new name's files exist, during an interactive
+preview, and for the profile the daemon was started with `--profile` on.
+Daemons with this method report `daemon.rename_supported: true` in the status
+document. Hide Rename when it is absent: older daemons answer with an
+unknown-method error. The typed Go client checks this.
 
 A transaction contains an opaque `id`, the effective profile, and an RFC 3339 `deadline`.
 
@@ -129,6 +141,10 @@ orientation. Status advertises `calibration_supported: true` and `sensor_upright
 before sending calibration: old servers ignore unknown fields. The typed Go
 client performs this check. Missing calibration fields retain the original zero
 baseline. Direction reversal applies after subtracting the sensor baseline.
+`sensor_claim_pending: true` with `available: false` means iio-sensor-proxy is
+running but has refused the claim, which polkit does until the session is
+active. The daemon keeps retrying, so clients should say so rather than suggest
+installing a sensor service.
 
 A profile output with `rotation_auto: true` turns with the device; its
 `transform` is the rotation it has when the device is upright. Profiles,

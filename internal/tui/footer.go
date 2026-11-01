@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -53,6 +54,9 @@ func (m Model) footerHelpText() string {
 		}
 		return join("`drag/arrows` move", "`[ ]` monitors", "`Tab` pane", "`Enter` edit", "`a` preview", "`s` save", "`?` keys")
 	case tabProfiles:
+		if m.renameAvailable() {
+			return join("`↑↓` browse", "`Enter` preview", "`l` edit", "`r` rename", "`e` post-apply command", "`d` delete", "`?` keys")
+		}
 		return join("`↑↓` browse", "`Enter` preview", "`l` edit", "`e` post-apply command", "`d` delete", "`?` keys")
 	case tabWorkspaces:
 		if !m.workspaceEdit.Enabled {
@@ -192,7 +196,11 @@ func (m Model) footerLayout() footerLayout {
 	if lipgloss.Width(helpClean)+lipgloss.Width(info)+1 > width {
 		switch m.tab {
 		case tabProfiles:
-			helpClean = strings.Join([]string{"Enter preview", "l edit", "d delete", "? keys"}, footerSeparator)
+			compact := []string{"Enter preview", "l edit", "d delete", "? keys"}
+			if m.renameAvailable() {
+				compact = slices.Insert(compact, 2, "r rename")
+			}
+			helpClean = strings.Join(compact, footerSeparator)
 		default:
 			helpClean = strings.Join([]string{"a preview", "s save", "? keys"}, footerSeparator)
 		}

@@ -146,7 +146,7 @@ The third tab lists every saved profile and how well it fits the displays that a
 **Automatic profile selection** has its own compact box above the left-hand
 profile list, matching its width. The details column starts at the top alongside it.
 Click its On/Off control to change automatic matching. The **Saved Profiles** box
-contains only the table and its actions: Preview, Edit, and Delete stay pinned
+contains only the table and its actions: Preview, Edit, Rename, and Delete stay pinned
 below the scrolling list and act on the highlighted row. Profile details remain
 alongside the list, or below it in narrow terminals.
 
@@ -165,6 +165,7 @@ Selecting a profile fills the right side: its monitor arrangement on top, its de
 | `Enter`, `a` | Preview the profile, even with automatic selection on |
 | `l` | Load the profile into the layout editor |
 | `e` | Edit the profile's post-apply command |
+| `r` | Rename the profile. Nothing is applied. An older daemon hides this, and `r` keeps resetting from live state |
 | `d` | Ask to delete the profile; `y` or **[Delete profile]** confirms, Enter, Esc, or **[Cancel]** cancels |
 | `s` | Save the current draft |
 
@@ -172,7 +173,7 @@ Selecting a profile fills the right side: its monitor arrangement on top, its de
 **Edit command** button or its heading to edit it; `e` provides the same operation. Selection
 uses highlighting without an extra arrow. The profile action context menu remains
 a panel-only affordance for now; the TUI has visible **Preview**, **Edit**,
-and **Delete** buttons acting on the highlighted profile, with keyboard shortcuts
+**Rename**, and **Delete** buttons acting on the highlighted profile, with keyboard shortcuts
 listed in the footer and help.
 Selection alone does not apply it. The Status column distinguishes the active or
 best match from the row currently selected for inspection.

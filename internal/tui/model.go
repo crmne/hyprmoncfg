@@ -40,6 +40,7 @@ const (
 	modeModePicker
 	modeNumericInput
 	modeProfileExecInput
+	modeProfileRenameInput
 	modeKeybindings
 	modeDeleteConfirm
 )
@@ -78,11 +79,13 @@ type refreshMsg struct {
 	profileOverride string
 	// fallbacks maps connector names to displays the daemon runs below
 	// their saved settings.
-	fallbacks    map[string]appstatus.MonitorFallback
-	rotation     *appstatus.Rotation
-	daemonClient *ipc.Client
-	background   bool
-	err          error
+	fallbacks map[string]appstatus.MonitorFallback
+	rotation  *appstatus.Rotation
+	// daemonRenames reports a daemon with rename_profile.
+	daemonRenames bool
+	daemonClient  *ipc.Client
+	background    bool
+	err           error
 }
 
 type saveMsg struct {
@@ -94,6 +97,12 @@ type saveMsg struct {
 type deleteMsg struct {
 	name string
 	err  error
+}
+
+type renameMsg struct {
+	name    string
+	newName string
+	err     error
 }
 
 type applyMsg struct {
@@ -314,6 +323,7 @@ type Model struct {
 	picker        *modePickerState
 	input         *numericInputState
 	execInput     *profileExecInputState
+	renameInput   *profileRenameState
 	drag          *canvasDragState
 	toast         *toastState
 	snap          *snapHintState
@@ -337,6 +347,7 @@ type Model struct {
 	// rotation is the daemon's automatic rotation, nil without a daemon
 	// that supports it.
 	rotation           *appstatus.Rotation
+	daemonRenames      bool
 	profileModePending bool
 	refreshInFlight    bool
 	applying           bool
@@ -420,6 +431,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.execInput != nil {
 			m.execInput.Input.Width = clampInt(m.modalMaxWidth()-16, 24, 72)
 		}
+		if m.renameInput != nil {
+			m.renameInput.Input.Width = clampInt(m.modalMaxWidth()-16, 24, 72)
+		}
 		return m, nil
 
 	case refreshMsg:
@@ -436,6 +450,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.profileOverride = msg.profileOverride
 			m.fallbacks = msg.fallbacks
 			m.rotation = msg.rotation
+			m.daemonRenames = msg.daemonRenames
 		}
 		if msg.err != nil {
 			m.setStatusErr(msg.err.Error())
@@ -576,6 +591,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
 		return m, m.refreshCmd(false)
 
+	case renameMsg:
+		if msg.err != nil {
+			m.setStatusErr(msg.err.Error())
+			return m, nil
+		}
+		m.followProfileRename(msg.name, msg.newName)
+		m.setStatusOK(fmt.Sprintf("Renamed profile %q to %q", msg.name, msg.newName))
+		return m, m.refreshCmd(false)
+
 	case applyMsg:
 		m.applying = false
 		if msg.err != nil {
@@ -684,6 +708,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateNumericInputKeys(msg)
 		case modeProfileExecInput:
 			return m.updateProfileExecInputKeys(msg)
+		case modeProfileRenameInput:
+			return m.updateProfileRenameKeys(msg)
 		case modeKeybindings:
 			if msg.String() == "ctrl+c" {
 				return m, tea.Quit
@@ -716,6 +742,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.execInput != nil {
 			var cmd tea.Cmd
 			m.execInput.Input, cmd = m.execInput.Input.Update(msg)
+			return m, cmd
+		}
+	case modeProfileRenameInput:
+		if m.renameInput != nil {
+			var cmd tea.Cmd
+			m.renameInput.Input, cmd = m.renameInput.Input.Update(msg)
 			return m, cmd
 		}
 	}
@@ -769,6 +801,10 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "r":
+		// Rename takes r on Profiles; the other tabs still reset.
+		if m.tab == tabProfiles && m.renameAvailable() {
+			return m.updateProfileKeys(msg)
+		}
 		m.resetRequested = true
 		m.draftProfileName = ""
 		m.matchedProfileName = ""
@@ -907,6 +943,13 @@ func (m Model) updateProfileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode, m.deleteProfileName = modeDeleteConfirm, m.profiles[m.selectedProfile].Name
 		return m, nil
+	case "r":
+		if len(m.profiles) == 0 {
+			m.setStatusErr("No profiles to rename")
+			return m, nil
+		}
+		cmd := m.openProfileRename()
+		return m, cmd
 	case "enter":
 		if len(m.profiles) == 0 {
 			m.setStatusErr("No profiles available")
@@ -1123,6 +1166,8 @@ func (m Model) View() string {
 		return m.renderModalScreen(m.renderNumericInput())
 	case modeProfileExecInput:
 		return m.renderModalScreen(m.renderProfileExecInput())
+	case modeProfileRenameInput:
+		return m.renderModalScreen(m.renderProfileRename())
 	case modeKeybindings:
 		return m.renderModalScreen(m.renderKeybindings())
 	default:
@@ -1751,6 +1796,18 @@ func (m Model) renderProfilesView(height int) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", paneGapWidth), right)
 }
 
+// profileActions fills the profile list's action rows, breaking the buttons in
+// two where the pane is too narrow for one line.
+func (m Model) profileActions(width int) string {
+	if !m.renameAvailable() {
+		return "\n" + fitString("[Preview] [Edit] [Delete]", width)
+	}
+	if line := "[Preview] [Edit] [Rename] [Delete]"; lipgloss.Width(line) <= width {
+		return "\n" + line
+	}
+	return fitString("[Preview] [Edit]", width) + "\n" + fitString("[Rename] [Delete]", width)
+}
+
 func (m Model) compactProfileListHeight(height int) int {
 	return clampInt(len(m.profiles)+profileListHeaderRows+profileListActionRows+2, 7, max(7, height/3))
 }
@@ -1761,7 +1818,7 @@ func (m Model) renderProfileListPane(summaries []profileMatchSummary, width, hei
 	innerHeight := max(1, height-style.GetVerticalFrameSize())
 	cols := m.profileListColumns(innerWidth)
 	rows := m.profileListRows(summaries, cols)
-	actions := m.styles.value.Render(fitString("[Preview] [Edit] [Delete]", innerWidth))
+	actions := m.styles.value.Render(m.profileActions(innerWidth))
 	if len(m.profiles) == 0 {
 		actions = ""
 	}
@@ -3152,6 +3209,7 @@ func (m Model) refreshCmd(background bool) tea.Cmd {
 			profileOverride: profileOverride,
 			fallbacks:       daemon.fallbacks,
 			rotation:        daemon.rotation,
+			daemonRenames:   daemon.renames,
 			daemonClient:    replacement,
 			background:      background,
 		}
@@ -3168,6 +3226,7 @@ type daemonProbe struct {
 	profileOverride string
 	fallbacks       map[string]appstatus.MonitorFallback
 	rotation        *appstatus.Rotation
+	renames         bool
 }
 
 func daemonReachable(ctx context.Context, client *ipc.Client) daemonProbe {
@@ -3186,6 +3245,7 @@ func daemonReachable(ctx context.Context, client *ipc.Client) daemonProbe {
 		version:         strings.TrimSpace(document.Version),
 		profileOverride: strings.TrimSpace(document.Daemon.ProfileOverride),
 		rotation:        document.Rotation,
+		renames:         document.Daemon.RenameSupported,
 	}
 	for _, monitor := range document.Monitors {
 		if monitor.Fallback != nil {
@@ -3293,6 +3353,22 @@ func (m Model) deleteCmd(name string) tea.Cmd {
 			return deleteMsg{name: name, err: err}
 		}
 		return deleteMsg{name: name}
+	}
+}
+
+func (m Model) renameCmd(name, newName string) tea.Cmd {
+	if m.ipc != nil {
+		client := m.ipc
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return renameMsg{name: name, newName: newName, err: client.Rename(ctx, name, newName)}
+		}
+	}
+	store := m.store
+	return func() tea.Msg {
+		_, err := store.Rename(name, newName)
+		return renameMsg{name: name, newName: newName, err: err}
 	}
 }
 

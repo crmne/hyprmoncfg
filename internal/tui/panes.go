@@ -202,7 +202,7 @@ const (
 	profileAutomaticPaneHeight = 3
 	// Table header and spacer; actions remain pinned below the scrolling rows.
 	profileListHeaderRows = 2
-	profileListActionRows = 1
+	profileListActionRows = 2
 )
 
 // profileListColumns is the shared column geometry of that table, so the

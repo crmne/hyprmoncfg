@@ -152,6 +152,18 @@ func (c *Client) Delete(ctx context.Context, name string) error {
 	return c.call(ctx, MethodDelete, DeleteParams{Name: name}, nil)
 }
 
+// Rename gives a saved profile a new name through the daemon.
+func (c *Client) Rename(ctx context.Context, name, newName string) error {
+	status, err := c.Status(ctx)
+	if err != nil {
+		return err
+	}
+	if !status.Daemon.RenameSupported {
+		return errors.New("this hyprmoncfgd does not support renaming profiles; update and restart it")
+	}
+	return c.call(ctx, MethodRename, RenameParams{Name: name, NewName: newName}, nil)
+}
+
 // Manage hands monitor configuration to hyprmoncfg: the include goes back into
 // the Hyprland config and the daemon resumes applying profiles.
 func (c *Client) Manage(ctx context.Context) error {

@@ -24,6 +24,7 @@ type testHandler struct {
 	managed      bool
 	profileAuto  bool
 	rotation     RotationParams
+	renamed      RenameParams
 	disconnected []string
 	editor       appstatus.EditorDocument
 	edited       appstatus.EditorDraft
@@ -44,6 +45,12 @@ func (h *testHandler) Commit(_ string, _ CommitParams) error       { return nil 
 func (h *testHandler) Revert(_ string, _ TransactionParams) error  { return h.revertErr }
 func (h *testHandler) Save(_ SaveParams) error                     { return nil }
 func (h *testHandler) Delete(_ DeleteParams) error                 { return nil }
+func (h *testHandler) Rename(params RenameParams) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.renamed = params
+	return nil
+}
 
 func (h *testHandler) Manage() error {
 	h.mu.Lock()
@@ -410,5 +417,31 @@ func TestDispatchRoutesRotation(t *testing.T) {
 	handler.mu.Unlock()
 	if got.Locked == nil || !*got.Locked || got.Reversed != nil {
 		t.Fatalf("routed %+v, want only the lock", got)
+	}
+}
+
+func TestRenameRequiresDaemonCapability(t *testing.T) {
+	for _, supported := range []bool{false, true} {
+		handler := &testHandler{document: appstatus.Document{Daemon: appstatus.Daemon{RenameSupported: supported}}}
+		_, path, _ := runTestServer(t, handler)
+		client, err := Dial(context.Background(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = client.Rename(context.Background(), "Desk", "Studio")
+		client.Close()
+		if (err == nil) != supported {
+			t.Fatalf("supported %v: %v", supported, err)
+		}
+		handler.mu.Lock()
+		got := handler.renamed
+		handler.mu.Unlock()
+		want := RenameParams{}
+		if supported {
+			want = RenameParams{Name: "Desk", NewName: "Studio"}
+		}
+		if got != want {
+			t.Fatalf("supported %v: handler saw %+v", supported, got)
+		}
 	}
 }

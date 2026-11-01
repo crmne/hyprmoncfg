@@ -35,6 +35,7 @@ const (
 	MethodRevert      = "revert"
 	MethodSave        = "save"
 	MethodDelete      = "delete"
+	MethodRename      = "rename_profile"
 	MethodManage      = "manage"
 	MethodUnmanage    = "unmanage"
 	MethodProfileAuto = "set_profile_auto"
@@ -124,6 +125,13 @@ type DeleteParams struct {
 	Name string `json:"name"`
 }
 
+// RenameParams names a saved profile and what to call it. Check
+// daemon.rename_supported first; an older daemon has no such method.
+type RenameParams struct {
+	Name    string `json:"name"`
+	NewName string `json:"new_name"`
+}
+
 type ProfileAutoParams struct {
 	Enabled bool `json:"enabled"`
 }
@@ -155,6 +163,7 @@ type Handler interface {
 	Revert(owner string, params TransactionParams) error
 	Save(params SaveParams) error
 	Delete(params DeleteParams) error
+	Rename(params RenameParams) error
 	// Manage and Unmanage move monitor configuration between hyprmoncfg and
 	// Hyprland's own config. Unmanage has to stop the daemon applying as well as
 	// take the include out, or the next monitor event puts it straight back.

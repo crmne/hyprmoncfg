@@ -62,6 +62,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newSaveCmd(&configDir))
 	root.AddCommand(newApplyCmd(&configDir, &monitorsConf, &hyprConfig))
 	root.AddCommand(newDeleteCmd(&configDir))
+	root.AddCommand(newRenameCmd(&configDir))
 	root.AddCommand(newDoctorCmd(&monitorsConf, &hyprConfig))
 	root.AddCommand(newManageCmd(&configDir, &monitorsConf, &hyprConfig))
 	root.AddCommand(newUnmanageCmd(&configDir, &monitorsConf, &hyprConfig))
@@ -393,6 +394,37 @@ func newDeleteCmd(configDir *string) *cobra.Command {
 	}
 }
 
+func newRenameCmd(configDir *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <old> <new>",
+		Short: "Rename a saved profile",
+		Long:  "Rename a saved profile and its generated files. Nothing is applied and no post-apply command runs.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, store, err := bootstrap(*configDir)
+			if err != nil {
+				return err
+			}
+			session, err := openWriterSession(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer session.Close()
+			if session.ipc != nil {
+				ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+				defer cancel()
+				if err := session.ipc.Rename(ctx, args[0], args[1]); err != nil {
+					return err
+				}
+			} else if _, err := store.Rename(args[0], args[1]); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Renamed profile %q to %q\n", args[0], strings.TrimSpace(args[1]))
+			return nil
+		},
+	}
+}
+
 func newDoctorCmd(monitorsConf *string, hyprConfig *string) *cobra.Command {
 	var fix bool
 
@@ -659,7 +691,7 @@ func runRotation(cmd *cobra.Command, action, value string) error {
 	}
 	if action != "status" {
 		if !status.Rotation.Available {
-			return errors.New("no orientation sensor: install iio-sensor-proxy on a device with an accelerometer")
+			return errors.New(status.Rotation.UnavailableReason())
 		}
 		if err := client.SetRotation(ctx, params); err != nil {
 			return err
@@ -673,6 +705,9 @@ func runRotation(cmd *cobra.Command, action, value string) error {
 }
 
 func rotationSummary(rotation appstatus.Rotation) string {
+	if rotation.SensorClaimPending {
+		return "Automatic rotation: waiting for access to the orientation sensor"
+	}
 	if !rotation.Available {
 		return "Automatic rotation: no orientation sensor"
 	}

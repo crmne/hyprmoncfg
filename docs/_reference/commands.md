@@ -21,6 +21,7 @@ Running `hyprmoncfg` with no arguments opens the TUI.
 | `hyprmoncfg save <name>` | Save current monitor state as a named profile |
 | `hyprmoncfg apply <name>` | Apply a saved profile |
 | `hyprmoncfg delete <name>` | Delete a saved profile |
+| `hyprmoncfg rename <old> <new>` | Rename a saved profile and its generated files. Fails if `<new>` is taken, during a preview, or for the profile `hyprmoncfgd --profile` is forced to. Applies nothing and runs no post-apply command |
 | `hyprmoncfg rotation` | Show automatic rotation of built-in panels: following the sensor, paused while folded as a laptop, or locked |
 | `hyprmoncfg rotation lock\|unlock\|toggle` | Hold the current rotation, follow the device again, or switch between the two. Needs hyprmoncfgd |
 | `hyprmoncfg rotation calibrate` | Treat the current sensor reading as upright and unlock rotation. Hold the device upright first; requires daemon calibration support and no active preview |

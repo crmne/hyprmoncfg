@@ -10,6 +10,7 @@ import (
 
 	"github.com/crmne/hyprmoncfg/internal/appstatus"
 	"github.com/crmne/hyprmoncfg/internal/config"
+	"github.com/crmne/hyprmoncfg/internal/profile"
 )
 
 func TestConfirmApplySignalRejectsConfiguration(t *testing.T) {
@@ -56,6 +57,7 @@ func TestRotationSummarySaysHowPanelsTurn(t *testing.T) {
 		want     string
 	}{
 		{appstatus.Rotation{}, "Automatic rotation: no orientation sensor"},
+		{appstatus.Rotation{SensorClaimPending: true}, "Automatic rotation: waiting for access to the orientation sensor"},
 		{appstatus.Rotation{Available: true, Quarters: 1}, "Automatic rotation: following the sensor, turned 90°"},
 		{appstatus.Rotation{Available: true, Locked: true, Quarters: 2}, "Automatic rotation: locked, upside down"},
 		{appstatus.Rotation{Available: true, Paused: true}, "Automatic rotation: paused while folded as a laptop, upright"},
@@ -82,5 +84,36 @@ func TestRotationRejectsUnknownActions(t *testing.T) {
 		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s: err = %v, want %q", args, err, want)
 		}
+	}
+}
+
+func TestRenameCommandWithoutADaemon(t *testing.T) {
+	// An empty runtime directory has no daemon socket, so this stays in direct
+	// mode and never reaches a running hyprmoncfgd.
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	// The command needs hyprctl to exist, not to do anything.
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "hyprctl"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	configDir := t.TempDir()
+	store := profile.NewStore(configDir)
+	p := profile.New("Dock", []profile.OutputConfig{{Key: "a", Name: "DP-1", Enabled: true, Width: 1920, Height: 1080, Refresh: 60, Scale: 1}})
+	if err := store.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newRenameCmd(&configDir)
+	var output strings.Builder
+	cmd.SetOut(&output)
+	cmd.SetArgs([]string{"Dock", "Studio"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(output.String()); got != `Renamed profile "Dock" to "Studio"` {
+		t.Fatalf("output %q", got)
+	}
+	if _, err := store.Load("Studio"); err != nil {
+		t.Fatal(err)
 	}
 }

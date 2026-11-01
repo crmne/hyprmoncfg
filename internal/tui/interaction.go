@@ -1271,7 +1271,7 @@ func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case modeNumericInput, modeProfileExecInput, modeSaveConfirm:
+	case modeNumericInput, modeProfileExecInput, modeProfileRenameInput, modeSaveConfirm:
 		return m, nil
 	}
 
@@ -1492,7 +1492,7 @@ func (m Model) updateProfilesMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if automaticRect.inner(m.styles.inactivePane).contains(msg.X, msg.Y) {
 		return m.toggleProfileAutomatic()
 	}
-	for _, action := range []struct{ label, key string }{{"[Preview]", "enter"}, {"[Edit]", "l"}, {"[Delete]", "d"}} {
+	for _, action := range []struct{ label, key string }{{"[Preview]", "enter"}, {"[Edit]", "l"}, {"[Rename]", "r"}, {"[Delete]", "d"}} {
 		if len(m.profiles) > 0 && m.visibleActionAt(msg.X, msg.Y, action.label) {
 			if action.key == "enter" {
 				return m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyEnter})

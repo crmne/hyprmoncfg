@@ -2,13 +2,23 @@ package profile
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/crmne/hyprmoncfg/internal/config"
 )
+
+// ErrProfileExists is returned when a rename would take over another
+// profile's files.
+var ErrProfileExists = errors.New("profile already exists")
+
+// moveFile is os.Rename, replaceable so tests can fail one step of a rename.
+var moveFile = os.Rename
 
 type Store struct {
 	dir string
@@ -105,6 +115,99 @@ func (s *Store) Delete(name string) error {
 		}
 	}
 	return nil
+}
+
+// Rename gives a saved profile a new name and returns it. The new JSON appears
+// before the old one goes, so a crash leaves a duplicate rather than a lost
+// profile, and an error restores what was moved. A name that maps to the same
+// files, such as a change of case, is one atomic write. Symlinks stay links, so
+// a dotfile manager keeps owning its file under its original name. Rename
+// neither applies the profile nor runs its post-apply command.
+func (s *Store) Rename(oldName, newName string) (Profile, error) {
+	newName = strings.TrimSpace(newName)
+	if strings.TrimSpace(oldName) == "" || newName == "" {
+		return Profile{}, errors.New("profile name is required")
+	}
+	p, err := s.Load(oldName)
+	if errors.Is(err, os.ErrNotExist) {
+		return Profile{}, fmt.Errorf("profile %q not found", oldName)
+	}
+	if err != nil {
+		return Profile{}, err
+	}
+	if p.Name == newName {
+		return p, nil
+	}
+	from, to := s.PathsForName(oldName), s.PathsForName(newName)
+	if from != to {
+		for _, path := range []string{to.JSON, to.Conf, to.Lua} {
+			if _, err := os.Lstat(path); err == nil {
+				return Profile{}, fmt.Errorf("%w: %s", ErrProfileExists, filepath.Base(path))
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return Profile{}, err
+			}
+		}
+	}
+
+	p.Name = newName
+	p.UpdatedAt = time.Now().UTC()
+	buf, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return Profile{}, err
+	}
+	buf = append(buf, '\n')
+	if from == to {
+		return p, config.WriteFileAtomic(from.JSON, buf, 0o644)
+	}
+	return p, renameProfileFiles(from, to, buf)
+}
+
+func renameProfileFiles(from, to FilePaths, content []byte) (err error) {
+	original, err := os.ReadFile(from.JSON)
+	if err != nil {
+		return err
+	}
+	target, err := os.Readlink(from.JSON)
+	linked := err == nil
+
+	var moved [][2]string
+	defer func() {
+		if err == nil {
+			return
+		}
+		for _, move := range moved {
+			err = errors.Join(err, moveFile(move[1], move[0]))
+		}
+		if removeErr := os.Remove(to.JSON); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			err = errors.Join(err, removeErr)
+		}
+		if linked {
+			err = errors.Join(err, config.WriteFileAtomic(from.JSON, original, 0o644))
+		}
+	}()
+
+	if linked {
+		if err := os.Symlink(target, to.JSON); err != nil {
+			return err
+		}
+	}
+	if err := config.WriteFileAtomic(to.JSON, content, 0o644); err != nil {
+		return err
+	}
+	for _, move := range [][2]string{{from.Conf, to.Conf}, {from.Lua, to.Lua}} {
+		if err := moveFile(move[0], move[1]); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		moved = append(moved, move)
+	}
+	return os.Remove(from.JSON)
+}
+
+// SameFiles reports whether two profile names share one set of files.
+func (s *Store) SameFiles(a, b string) bool {
+	return s.PathsForName(a) == s.PathsForName(b)
 }
 
 func (s *Store) PathsForName(name string) FilePaths {

@@ -64,6 +64,10 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 				{"d", "Delete it"},
 			},
 		})
+		if m.renameAvailable() {
+			profileKeys := &groups[len(groups)-1]
+			profileKeys.bindings = append(profileKeys.bindings, keyBinding{"r", "Rename it"})
+		}
 	case tabWorkspaces:
 		adjustAction := "Adjust it, or reorder monitors"
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
@@ -81,6 +85,10 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 		})
 	}
 
+	resetAction := "Reset from live Hyprland state"
+	if tab == tabProfiles && m.renameAvailable() {
+		resetAction += " (on Layout and Workspaces)"
+	}
 	return append(groups, keyGroup{
 		title: "Anywhere",
 		bindings: []keyBinding{
@@ -88,7 +96,7 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 			{"a", "Preview the current draft or selected profile, then Keep or Revert"},
 			{"s", "Save the current draft as a profile"},
 			{"U", fmt.Sprintf("Disable displays outside the draft: %t (toggle)", m.disableUnknownOutputs)},
-			{"r", "Reset from live Hyprland state"},
+			{"r", resetAction},
 			{"?", "Show these keys"},
 			{"R", "Restart the daemon after an upgrade"},
 			{"L", "Lock or unlock automatic rotation of built-in panels"},

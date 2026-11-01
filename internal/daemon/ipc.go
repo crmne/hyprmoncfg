@@ -47,6 +47,7 @@ func (s *Service) Status() (appstatus.Document, error) {
 	}
 	document := appstatus.Build(buildinfo.Version, true, profiles, monitors, rules, s.matchOptions())
 	document.Daemon.Unmanaged = !config.IsManaged(s.cfg.ConfigDir)
+	document.Daemon.RenameSupported = true
 	if s.cfg.WatchOrientation != nil {
 		document.Rotation = s.rotation.status()
 	}
@@ -427,6 +428,44 @@ func (s *Service) Delete(params ipc.DeleteParams) error {
 	if err := s.store.Delete(params.Name); err != nil {
 		return err
 	}
+	s.signalChange()
+	return nil
+}
+
+// Rename gives a saved profile a new name. Everything that remembers the old
+// name follows it, so the next reconcile still sees the layout it applied and
+// neither reapplies it nor runs its post-apply command.
+func (s *Service) Rename(params ipc.RenameParams) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.pendingMu.Lock()
+	preview := s.pending != nil
+	s.pendingMu.Unlock()
+	if preview {
+		return fmt.Errorf("finish the preview before renaming a profile: %w", errPreviewActive)
+	}
+	if s.cfg.ForcedProfile != "" && s.store.SameFiles(s.cfg.ForcedProfile, params.Name) {
+		return fmt.Errorf("hyprmoncfgd was started with --profile %q; change that first", s.cfg.ForcedProfile)
+	}
+	renamed, err := s.store.Rename(params.Name, params.NewName)
+	if err != nil {
+		return err
+	}
+	follows := func(name string) bool { return name != "" && s.store.SameFiles(name, params.Name) }
+	if follows(s.lastProfile.Name) {
+		s.lastProfile.Name = renamed.Name
+	}
+	if s.applied != nil && follows(s.applied.requested.Name) {
+		s.applied.requested.Name, s.applied.live.Name = renamed.Name, renamed.Name
+	}
+	if s.rejected != nil && follows(s.rejected.requested.Name) {
+		s.rejected.requested.Name = renamed.Name
+	}
+	s.manualMu.Lock()
+	if follows(s.manualProfile.Name) {
+		s.manualProfile.Name = renamed.Name
+	}
+	s.manualMu.Unlock()
 	s.signalChange()
 	return nil
 }

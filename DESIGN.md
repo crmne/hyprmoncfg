@@ -140,6 +140,19 @@ not a second workspace manager. Omarchy's stock per-monitor widget is not
 compatible with this global mode in 4.5 RC2. Existing windows are never
 automatically renumbered merely to fit a newly selected mode.
 
+### Omarchy display panel
+
+Omarchy's display panel reapplies its saved settings on `monitor.added` and
+`hyprland.start`, after the generated file has loaded, so loading last does not
+stop it. The generated Lua file sets `omarchy_monitor_panel_settings = false`
+so hyprmoncfg stays the only monitor writer. Edits made in that panel are real
+choices, so the daemon reads its settings file before reconciling and folds what
+changed into the active profile. Settings present at startup are a baseline, not
+edits. An edit for an unplugged monitor waits until it returns. Identical monitors are skipped because Omarchy numbers them in its own
+order, and a panel on automatic rotation keeps its transform.
+
+Hotplug events use `--hotplug-debounce` (300ms); other triggers keep `--debounce`.
+
 Inherit the base profile's enabled planner, strategy, group size, workspace count,
 persistence policy, and existing monitor order. Append the new output to the end
 of that order. Sequential groups of four remain sequential groups of four with
@@ -279,7 +292,9 @@ holds the current turn; releasing it follows the device again. A reversed
 direction, also persisted and belonging to the device rather than a profile,
 applies the sensor's turns the other way for a sensor mounted backwards; the sensor
 upright baseline is calibrated separately with `hyprmoncfg rotation calibrate`.
-Calibration records the current sensor reading as zero, unlocks rotation, persists
+A refused claim is not a missing sensor: polkit lets only the active session
+claim, so a daemon started at login retries with capped backoff and reports the
+wait rather than advising an install. Calibration records the current sensor reading as zero, unlocks rotation, persists
 without changing profiles, and refuses to run during previews. Direction and sensor
 calibration are device settings offered through the CLI (`hyprmoncfg rotation
 direction` and `hyprmoncfg rotation calibrate`) and IPC. Both clients
@@ -367,6 +382,12 @@ menu and documented shortcuts. Do not make important actions keyboard-only in th
 panel or mouse-only in the TUI. Delete requires an explicit confirmation or undo.
 Deleting the current saved profile must not blank screens or apply another layout
 as a hidden side effect. Its live arrangement can become an unsaved setup.
+
+Decision, 2026-11-01 (#100): `r` renames on the Profiles tab, where it replaces
+Reset from live state; Reset stays on the other tabs, and a daemon without
+`daemon.rename_supported` keeps `r` as Reset and hides the action. Rename refuses
+during any preview, and for a profile forced with `--profile`, whose name lives in
+the service's arguments. Symlinked files stay links to their original targets.
 
 Rename is a backend operation with collision checks and an atomic/recoverable
 persistence contract. It updates profile references and sidecars consistently,
