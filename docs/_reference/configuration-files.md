@@ -160,6 +160,8 @@ When a connected built-in panel rotates automatically, the file also sets `input
 
 hyprmoncfg 1.26.0 and newer also include an Omarchy workspace handoff when the workspace planner is enabled. In the same generated Lua file, it disables Omarchy's per-monitor reassignment and restores global number, move, history, and cycling shortcuts. There is no additional include. The block detects Omarchy's workspace module at runtime and does nothing on plain Hyprland or older Omarchy installations without that module. Planner **Off** omits it, so the next reload restores the distribution's workspace behaviour. Use a global workspace bar widget with this mode; Omarchy 4.5 RC2's stock widget still labels workspaces per monitor. Existing windows retain their IDs until explicitly moved.
 
+The generated Lua file also sets `omarchy_monitor_panel_settings = false`, so settings saved in Omarchy's display panel do not override your profile when a monitor is plugged in or Hyprland starts. Edits made in that panel are not lost: while hyprmoncfg manages your monitors, the daemon folds them into the active profile. On Omarchy it also sets `GDK_SCALE` from the lowest active scale and honours Omarchy's Mirror Display toggle while it is on.
+
 Do not put unrelated Hyprland settings in that file. Keep blocks like `render`, `cursor`, `misc`, and `env` in other sourced config files.
 
 The file is written atomically (temp file + rename) to prevent partial writes from corrupting your config. Interactive applies keep an in-memory snapshot and restore it on rejection, timeout, interruption, or quit unless you explicitly keep the new configuration.

@@ -23,10 +23,15 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/suspend"
 )
 
+const defaultHotplugDebounce = 300 * time.Millisecond
+
 type Config struct {
-	PowerAwareRefresh   bool
-	ReadBatteryState    func() (battery bool, known bool)
-	Debounce            time.Duration
+	PowerAwareRefresh bool
+	ReadBatteryState  func() (battery bool, known bool)
+	Debounce          time.Duration
+	// HotplugDebounce is the wait after a real monitor event, shorter than
+	// Debounce so a plugged-in display lands in place quickly.
+	HotplugDebounce     time.Duration
 	WakeSettle          time.Duration
 	PollInterval        time.Duration
 	LidPollInterval     time.Duration
@@ -45,7 +50,10 @@ type Config struct {
 	ClaimWatcher   func(context.Context)
 	ReleaseWatcher func(context.Context) error
 	LaptopToggle   *omarchywatch.LaptopToggle
-	WakeConfig     *omarchywatch.WakeConfig
+	// PanelSettings reports edits made in Omarchy's display panel. Nil means
+	// there is no such panel to follow.
+	PanelSettings *omarchywatch.PanelSettings
+	WakeConfig    *omarchywatch.WakeConfig
 	// ConnectorStates reads which DRM connectors are connected and which
 	// the kernel still routes a CRTC to. Nil turns stale-CRTC recovery off.
 	ConnectorStates func() []hypr.DRMConnectorState
@@ -176,6 +184,10 @@ func New(client *hypr.Client, store *profile.Store, cfg Config) *Service {
 	if cfg.Debounce <= 0 {
 		cfg.Debounce = 1200 * time.Millisecond
 	}
+	if cfg.HotplugDebounce <= 0 {
+		cfg.HotplugDebounce = defaultHotplugDebounce
+	}
+	cfg.HotplugDebounce = min(cfg.HotplugDebounce, cfg.Debounce)
 	if cfg.WakeSettle <= 0 {
 		cfg.WakeSettle = 2 * time.Second
 	}
@@ -430,7 +442,7 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}
 	scheduleMonitorTrigger := func(reason string) {
-		delay := s.cfg.Debounce
+		delay := monitorTriggerDelay(reason, s.cfg)
 		if settlingAfterWake {
 			delay = s.cfg.WakeSettle
 		}
@@ -1056,6 +1068,8 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		}
 	}
 
+	target = s.importPanelEdits(target, monitors, manualHold)
+
 	disabled, toggleChanged, err := s.cfg.LaptopToggle.Changed()
 	if err != nil {
 		return err
@@ -1241,6 +1255,51 @@ func (s *Service) clearManualOverride() {
 // manualOverride returns the profile a person chose by hand. The choice holds
 // until the monitor set changes, and it is a profile rather than a flag so the
 // daemon can put it back when something else moves the displays.
+// importPanelEdits folds edits from Omarchy's display panel into the saved
+// profile, so reconciling keeps what the user just chose instead of reverting it.
+func (s *Service) importPanelEdits(target profile.Profile, monitors []hypr.Monitor, manualHold bool) profile.Profile {
+	changes, err := s.cfg.PanelSettings.Changes()
+	if err != nil {
+		s.cfg.Logf("read Omarchy panel settings: %v", err)
+		return target
+	}
+	if len(changes) == 0 {
+		return target
+	}
+	if _, err := s.store.Load(target.Name); err != nil {
+		s.cfg.Logf("Omarchy panel edit left to the live layout: no saved profile for it")
+		return target
+	}
+	updated, imported, skipped, absent := omarchywatch.ImportPanelEdits(target, monitors, changes)
+	s.cfg.PanelSettings.Hold(absent)
+	for _, reason := range skipped {
+		s.cfg.Logf("Omarchy panel edit skipped: %s", reason)
+	}
+	if len(imported) == 0 {
+		return target
+	}
+	if err := s.store.Save(updated); err != nil {
+		s.cfg.Logf("save Omarchy panel edit: %v", err)
+		return target
+	}
+	if manualHold {
+		s.manualMu.Lock()
+		s.manualProfile = updated
+		s.manualMu.Unlock()
+	}
+	s.cfg.Logf("imported Omarchy panel edit into profile %q: %s", updated.Name, strings.Join(imported, ","))
+	return updated
+}
+
+// monitorTriggerDelay gives real hotplug events the short wait. Every other
+// trigger keeps the full debounce.
+func monitorTriggerDelay(reason string, cfg Config) time.Duration {
+	if strings.HasPrefix(reason, string(hypr.EventMonitorAdded)) || strings.HasPrefix(reason, string(hypr.EventMonitorRemoved)) {
+		return cfg.HotplugDebounce
+	}
+	return cfg.Debounce
+}
+
 func (s *Service) manualOverride(monitorSet string) (profile.Profile, bool) {
 	s.manualMu.Lock()
 	defer s.manualMu.Unlock()

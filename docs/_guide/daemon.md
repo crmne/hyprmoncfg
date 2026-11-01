@@ -263,7 +263,8 @@ hyprmoncfgd
 ### Useful flags
 
 ```bash
-hyprmoncfgd --debounce 1500ms     # wait longer before applying after a plug event
+hyprmoncfgd --hotplug-debounce 1s  # wait longer before applying after a plug event (default 300ms)
+hyprmoncfgd --debounce 1500ms     # wait longer on every other trigger, and on hotplug too unless set above
 hyprmoncfgd --wake-settle 2s      # quiet period after displays wake
 hyprmoncfgd --poll-interval 5s    # how often to run fallback monitor checks
 hyprmoncfgd --lid-poll-interval 1s # how often to run fallback lid checks

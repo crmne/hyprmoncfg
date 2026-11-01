@@ -30,6 +30,48 @@ func TestOmarchyWorkspaceOwnershipFollowsPlanner(t *testing.T) {
 	}
 }
 
+func TestOmarchyMonitorPanelHandoffIsLuaOnly(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "DP-1", Description: "Test display", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1}}
+	p := profile.FromMonitors("Desk", monitors)
+	for _, enabled := range []bool{true, false} {
+		p.Workspaces.Enabled = enabled
+		for _, format := range []config.HyprConfigFormat{config.HyprConfigLua, config.HyprConfigLegacy} {
+			got, err := RenderConfig(p, monitors, Options{Format: format, UseMonitorV2: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := format == config.HyprConfigLua
+			if strings.Contains(got, "omarchy_monitor_panel_settings = false") != want {
+				t.Fatalf("panel handoff: planner=%v format=%v\n%s", enabled, format, got)
+			}
+		}
+	}
+}
+
+func TestOmarchyGDKScaleFollowsLowestActiveScale(t *testing.T) {
+	cases := []struct {
+		name string
+		outs []matchedOutput
+		want string
+	}{
+		{"rounds", []matchedOutput{{config: profile.OutputConfig{Enabled: true, Scale: 1.6}}}, `hl.env("GDK_SCALE", "2")`},
+		{"lowest wins", []matchedOutput{{config: profile.OutputConfig{Enabled: true, Scale: 2}}, {config: profile.OutputConfig{Enabled: true, Scale: 1.25}}}, `hl.env("GDK_SCALE", "1")`},
+		{"skips off and mirrored", []matchedOutput{
+			{config: profile.OutputConfig{Enabled: false, Scale: 1}},
+			{config: profile.OutputConfig{Enabled: true, Scale: 1, MirrorOf: "a"}},
+			{config: profile.OutputConfig{Enabled: true, Scale: 2}},
+		}, `hl.env("GDK_SCALE", "2")`},
+	}
+	for _, tc := range cases {
+		if got := omarchyGDKScaleSection(tc.outs); !strings.Contains(got, tc.want) {
+			t.Fatalf("%s: got %q", tc.name, got)
+		}
+	}
+	if got := omarchyGDKScaleSection(nil); got != "" {
+		t.Fatalf("no outputs: %q", got)
+	}
+}
+
 func TestOmarchyWorkspaceHandoffRuntime(t *testing.T) {
 	lua, err := exec.LookPath("lua")
 	if err != nil {

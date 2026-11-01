@@ -1372,3 +1372,24 @@ func TestApplyBestRecoversFromABlackScreenBesideHyprlandsFallbackHead(t *testing
 		t.Fatalf("the synthetic head was written into the config:\n%s", rendered)
 	}
 }
+
+func TestHotplugEventsUseTheShortDebounce(t *testing.T) {
+	cfg := Config{Debounce: time.Second, HotplugDebounce: 300 * time.Millisecond}
+	for reason, want := range map[string]time.Duration{
+		"monitoradded:DP-1":   300 * time.Millisecond,
+		"monitorremoved:DP-1": 300 * time.Millisecond,
+		"poll-change":         time.Second,
+		"power-source":        time.Second,
+	} {
+		if got := monitorTriggerDelay(reason, cfg); got != want {
+			t.Fatalf("%s: %s", reason, got)
+		}
+	}
+}
+
+func TestHotplugDebounceNeverExceedsDebounce(t *testing.T) {
+	svc := New(nil, nil, Config{Debounce: 50 * time.Millisecond})
+	if svc.cfg.HotplugDebounce != 50*time.Millisecond {
+		t.Fatalf("got %s", svc.cfg.HotplugDebounce)
+	}
+}

@@ -36,6 +36,7 @@ func newRootCmd() *cobra.Command {
 	var configDir string
 	var debounce time.Duration
 	var wakeSettle time.Duration
+	var hotplugDebounce time.Duration
 	var poll time.Duration
 	var lidPoll time.Duration
 	var forceProfile string
@@ -77,9 +78,15 @@ func newRootCmd() *cobra.Command {
 			// when someone turns monitor management off.
 			watcherOwner := omarchywatch.New(logf)
 
+			// Someone who slowed the debounce for their hardware keeps it on hotplug too.
+			if cmd.Flags().Changed("debounce") && !cmd.Flags().Changed("hotplug-debounce") {
+				hotplugDebounce = debounce
+			}
+
 			svc := daemon.New(client, store, daemon.Config{
 				PowerAwareRefresh: powerAwareRefresh,
 				Debounce:          debounce,
+				HotplugDebounce:   hotplugDebounce,
 				WakeSettle:        wakeSettle,
 				PollInterval:      poll,
 				LidPollInterval:   lidPoll,
@@ -90,6 +97,7 @@ func newRootCmd() *cobra.Command {
 				ClaimWatcher:      watcherOwner.Start,
 				ReleaseWatcher:    watcherOwner.Release,
 				LaptopToggle:      omarchywatch.NewLaptopToggle(),
+				PanelSettings:     omarchywatch.NewPanelSettings(),
 				WakeConfig:        omarchywatch.NewWakeConfig(),
 				ConnectorStates:   hypr.DRMConnectorStates,
 				SwitchConsole:     console.SwitchAwayAndBack,
@@ -145,6 +153,7 @@ func newRootCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&configDir, "config-dir", "", "Config directory (default: ~/.config/hyprmoncfg)")
 	cmd.Flags().DurationVar(&debounce, "debounce", 1200*time.Millisecond, "Debounce duration before applying profile")
+	cmd.Flags().DurationVar(&hotplugDebounce, "hotplug-debounce", 300*time.Millisecond, "Wait after a monitor is plugged in or removed before applying")
 	cmd.Flags().DurationVar(&wakeSettle, "wake-settle", 2*time.Second, "Quiet period after display wake before applying profile")
 	cmd.Flags().DurationVar(&poll, "poll-interval", 5*time.Second, "Polling interval for monitor changes")
 	cmd.Flags().DurationVar(&lidPoll, "lid-poll-interval", lid.DefaultPollInterval, "Polling interval for lid-state fallback checks")

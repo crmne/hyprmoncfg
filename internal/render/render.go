@@ -16,6 +16,48 @@ import (
 //go:embed omarchy_workspaces.lua
 var omarchyGlobalWorkspaces string
 
+// omarchyMonitorPanelHandoff stops the Omarchy display panel's saved settings
+// from overriding this file. Loading last is not enough: Omarchy reapplies them
+// from its monitor.added handler, after the config has loaded.
+const omarchyMonitorPanelHandoff = `-- hyprmoncfg owns monitor configuration, so Omarchy's display panel settings stand down.
+omarchy_monitor_panel_settings = false`
+
+// omarchyMirrorToggle keeps Omarchy's Mirror Display action working. Its toggle
+// is a Lua file loaded before this one, so its rules would otherwise be replaced
+// by the profile's.
+const omarchyMirrorToggle = `-- Omarchy's Mirror Display toggle takes effect over the profile while it is on.
+do
+  local state = os.getenv("XDG_STATE_HOME") or (os.getenv("HOME") .. "/.local/state")
+  local path = state .. "/omarchy/toggles/hypr/internal-monitor-mirror.lua"
+  local file = io.open(path, "r")
+  if type(o) == "table" and file then
+    file:close()
+    dofile(path)
+  elseif file then
+    file:close()
+  end
+end`
+
+// omarchyGDKScaleSection takes over GDK_SCALE, which Omarchy's panel settings set
+// and leave to this file once they stand down. As there, it follows the lowest
+// scale, rounded because GTK only honors integers.
+func omarchyGDKScaleSection(matched []matchedOutput) string {
+	lowest := 0.0
+	for _, item := range matched {
+		if !item.config.Enabled || item.config.MirrorOf != "" || item.config.Scale <= 0 {
+			continue
+		}
+		if lowest == 0 || item.config.Scale < lowest {
+			lowest = item.config.Scale
+		}
+	}
+	if lowest == 0 {
+		return ""
+	}
+	gdkScale := int(math.Max(1, math.Floor(lowest+0.5)))
+	return fmt.Sprintf("-- Omarchy leaves GDK_SCALE to this file.\nif type(o) == \"table\" then hl.env(\"GDK_SCALE\", %q) end", strconv.Itoa(gdkScale))
+}
+
 type Options struct {
 	Format       config.HyprConfigFormat
 	UseMonitorV2 bool
@@ -302,13 +344,17 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 		workspaceLines = append(workspaceLines, renderLuaWorkspaceRule(rule.Workspace, selector, rule.Default, rule.Persistent))
 	}
 
-	sections := []string{config.GeneratedHeader(config.HyprConfigLua), strings.Join(monitorBlocks, "\n\n")}
+	sections := []string{config.GeneratedHeader(config.HyprConfigLua), omarchyMonitorPanelHandoff, strings.Join(monitorBlocks, "\n\n")}
 	if p.Workspaces.Enabled {
 		sections = append(sections, strings.TrimSpace(omarchyGlobalWorkspaces))
 	}
 	if len(workspaceLines) > 0 {
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
 	}
+	if section := omarchyGDKScaleSection(matched); section != "" {
+		sections = append(sections, section)
+	}
+	sections = append(sections, omarchyMirrorToggle)
 	if transform, ok := panelTouchTransform(matched); ok {
 		sections = append(sections, fmt.Sprintf("hl.config({ input = { touchdevice = { transform = %d }, tablet = { transform = %d } } })", transform, transform))
 	}
