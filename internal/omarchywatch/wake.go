@@ -72,13 +72,20 @@ func (w *WakeConfig) Sync(p profile.Profile, monitors []hypr.Monitor) (WakeSnaps
 	// Do not create a Lua config on legacy Omarchy, or add a block to the old
 	// generated file while it is waiting to be retired after a safe apply.
 	if err == nil && !config.IsGeneratedMonitorsConfig(content) {
-		previous, body, err := splitWakeBlock(string(content))
-		if err != nil {
-			return snapshot, err
-		}
 		block := wakeStart + "-- Shared with Omarchy while hyprmoncfg manages displays.\n" +
 			fmt.Sprintf("hl.monitor({ output = %q, mode = \"preferred\", position = \"%dx%d\", scale = %s })\n",
 				output.Name, output.X, output.Y, strconv.FormatFloat(output.Scale, 'f', -1, 64)) + wakeEnd
+		text := string(content)
+		if relocated, ok := relocateWakeBlock(text, block); ok {
+			if err := writeWakeConfig(w.monitorsPath, relocated); err != nil {
+				return snapshot, err
+			}
+			text = relocated
+		}
+		previous, body, err := splitWakeBlock(text)
+		if err != nil {
+			return snapshot, err
+		}
 		if block != previous {
 			if err := writeWakeConfig(w.monitorsPath, joinWakeBlock(block, body)); err != nil {
 				return snapshot, err
@@ -156,6 +163,18 @@ func splitWakeBlock(content string) (block, body string, err error) {
 		return content[:end], bom + content[end:], nil
 	}
 	return "", "", errors.New("hyprmoncfg wake settings were moved or their markers were edited; leaving monitors.lua intact")
+}
+
+// Omarchy's config migration keeps unrecognized lines below its new template,
+// which strands our block. An exact copy of what we would write is still ours,
+// so move it back. Anything else may be the user's and stays refused.
+func relocateWakeBlock(content, block string) (string, bool) {
+	body := strings.TrimPrefix(content, "\ufeff")
+	if strings.HasPrefix(body, wakeStart) || strings.Count(body, wakeStart) != 1 ||
+		strings.Count(body, wakeEnd) != 1 || !strings.Contains(body, block) {
+		return "", false
+	}
+	return joinWakeBlock(block, strings.Replace(content, block, "", 1)), true
 }
 
 func joinWakeBlock(block, body string) string {

@@ -182,6 +182,31 @@ func TestWakeConfigPreservesSymlinksAndRefusesReadOnlyOrEditedBlocks(t *testing.
 	}
 }
 
+func TestWakeConfigMovesItsOwnBlockBackAfterOmarchyStrandsIt(t *testing.T) {
+	w, p, monitors := wakeFixture(t, numericDefaults)
+	if _, err := w.Sync(p, monitors); err != nil {
+		t.Fatal(err)
+	}
+	written := readWakeTestFile(t, w.monitorsPath)
+	block, body, err := splitWakeBlock(written)
+	if err != nil || block == "" {
+		t.Fatalf("no wake block: %v", err)
+	}
+	const kept = "-- Kept from your earlier monitors.lua\n"
+	writeWakeTestFile(t, w.monitorsPath, body+kept+block, 0o640)
+	if _, err := w.Sync(p, monitors); err != nil {
+		t.Fatal(err)
+	}
+	if got := readWakeTestFile(t, w.monitorsPath); got != block+body+kept {
+		t.Fatalf("block was not moved back:\n%s", got)
+	}
+	stranded := body + kept + strings.Replace(block, "scale = ", "scale = 9", 1)
+	writeWakeTestFile(t, w.monitorsPath, stranded, 0o640)
+	if _, err := w.Sync(p, monitors); err == nil || readWakeTestFile(t, w.monitorsPath) != stranded {
+		t.Fatal("moved a wake block that differs from ours")
+	}
+}
+
 func TestWakeConfigRollsBackIfRememberingScaleFails(t *testing.T) {
 	w, p, monitors := wakeFixture(t, numericDefaults)
 	w.scalePath = w.monitorsPath + "/cannot-write-through-a-file"
