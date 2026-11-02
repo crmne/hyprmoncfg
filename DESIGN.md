@@ -492,8 +492,8 @@ has a heavy border, so selection does not rely on color. Hardware facts sit unde
 the Layout stage; the other column holds only Display and Color. Previews on
 Workspaces and Profiles put the stage above the plan or details, and stacked
 terminals give the stage only the rows the arrangement needs. Closed sets of two
-or three values are choice rows (every option visible, arrows, Enter or a click
-select), Scale arrows step between sharp scales, and Position X/Y are typed in
+or three values are choice rows in the TUI (every option visible, arrows, Enter
+or a click select) and, from three values, selectors in the panel, Scale arrows step between sharp scales, and Position X/Y are typed in
 place with 10px and 1px steps. Keep/Revert shows a draining countdown with
 clickable Keep and Revert. Operations, names, defaults and page order are
 unchanged; this is presentation.
@@ -516,12 +516,14 @@ scale that is not sharp, in both clients and every dialog. Arrows step the full 
 ends with Custom… for typing an exact scale with the same sharpness
 explanation in both clients. Sharpness is computed only in Go
 (`internal/scaling`): the TUI calls it directly, and the panel asks the
-daemon's stateless `scale_info` for the pills, the sharp list, the verdict and
+daemon's stateless `scale_info` for the presets, the sharp list, the verdict and
 the closest sharp scale, and applies typed scales with `snap_scale`, so the
 two clients cannot disagree. The other choice rows (Enabled, Refresh, VRR, Color
 depth, SDR EOTF, WCG and HDR capability, and the panel's Rotation) stop at the
-ends on arrows, and Enter advances and wraps; Scale is the exception, since
-Enter opens its list.
+ends on arrows. In the TUI, Enter advances and wraps them; Scale is the
+exception, since Enter opens its list. In the panel these rows with three or
+more options are selectors (decided 2026-11-02), so Enter opens their list;
+the arrows behave the same in both clients.
 
 Decision, 2026-10-17 (resolution and refresh): both clients edit the mode as
 two controls, as Omarchy's Display panel does. Resolution is a list of the
