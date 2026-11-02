@@ -38,7 +38,7 @@ jobs:
     if: inputs.version != ''
     permissions:
       contents: write
-    uses: crmne/native-packages/.github/workflows/package.yml@226fb48cb375c7cb309a3e642c7228a6e00e9ebf # v0.10.0
+    uses: crmne/native-packages/.github/workflows/package.yml@25a4214d2f203357c84b069f39de7c17c0be6253 # v0.11.0
     with:
       version: ${{ inputs.version }}
       # Attaches DEB/RPM packages and AUR recipes to the release, then pushes
@@ -117,7 +117,7 @@ jobs:
           sudo apt-get install -y libarchive-tools binutils rpm
       - uses: goreleaser/goreleaser-action@v6
         with:
-          version: v2.18.1
+          version: v2.19.0
           args: release --snapshot --clean --skip=publish
       - name: Package snapshot archives and AUR recipes with the shared CLI
         run: |
