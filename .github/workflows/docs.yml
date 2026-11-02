@@ -27,7 +27,7 @@ jobs:
         with:
           fetch-depth: 0 # sitemap lastmod comes from each page's last commit
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
       - uses: ruby/setup-ruby@v1
         with:
