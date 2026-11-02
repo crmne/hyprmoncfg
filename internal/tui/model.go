@@ -201,6 +201,7 @@ type editableOutput struct {
 	VRR               int
 	Transform         int
 	RotationAuto      bool
+	RotationUpright   int
 	Focused           bool
 	DPMSStatus        bool
 	IsInternal        bool
@@ -540,6 +541,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case rotationCalibrateMsg:
+		if msg.err != nil {
+			m.setStatusErr(msg.err.Error())
+			return m, nil
+		}
+		m.setStatusOK("This position now counts as upright")
+		return m, nil
+
 	case daemonRestartMsg:
 		if msg.err != nil {
 			m.setStatusErr(msg.err.Error())
@@ -791,6 +800,8 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.restartDaemonCmd()
 	case "L":
 		return m, m.toggleRotationLockCmd()
+	case "C":
+		return m, m.calibrateRotationCmd()
 	case "U":
 		m.disableUnknownOutputs = !m.disableUnknownOutputs
 		m.markDirty()
@@ -3963,6 +3974,7 @@ func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, ha
 		VRR:               saved.VRR,
 		Transform:         saved.Transform,
 		RotationAuto:      saved.RotationAuto,
+		RotationUpright:   saved.RotationUpright,
 		IsInternal:        isInternalOutputName(saved.Name),
 		MirrorOf:          saved.MirrorOf,
 		Bitdepth:          saved.Bitdepth,
@@ -4173,6 +4185,7 @@ func (o editableOutput) profileOutput() profile.OutputConfig {
 		VRR:               o.VRR,
 		Transform:         o.Transform,
 		RotationAuto:      o.RotationAuto,
+		RotationUpright:   o.RotationUpright,
 		MirrorOf:          o.MirrorOf,
 		Bitdepth:          o.Bitdepth,
 		CM:                o.CM,

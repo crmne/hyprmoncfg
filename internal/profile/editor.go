@@ -138,6 +138,7 @@ func PreserveUnreportedSettings(draft *Profile, saved Profile) {
 		output.SDREOTF = stored.SDREOTF
 		output.ICC = stored.ICC
 		output.RotationAuto = stored.RotationAuto
+		output.RotationUpright = stored.RotationUpright
 	}
 }
 
@@ -219,6 +220,7 @@ func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 			}
 			output.VRR = *edit.VRR
 		}
+		wasAuto, previousTransform := output.RotationAuto, output.Transform
 		if edit.Transform != nil {
 			if *edit.Transform < 0 || *edit.Transform > 7 {
 				return Profile{}, fmt.Errorf("invalid transform %d", *edit.Transform)
@@ -231,6 +233,7 @@ func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 			}
 			output.RotationAuto = *edit.RotationAuto
 		}
+		output.RememberRotationUpright(wasAuto, previousTransform)
 		if edit.MirrorOf != nil {
 			target := strings.TrimSpace(*edit.MirrorOf)
 			if target == output.Key {

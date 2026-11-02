@@ -1034,9 +1034,9 @@ func (m *Model) applyFieldPickerValue(output *editableOutput, field int, value s
 		}
 	case 6:
 		// Auto keeps the rotation as the panel's upright one.
+		wasAuto, previousTransform := output.RotationAuto, output.Transform
 		if value == rotationAutoValue {
 			output.RotationAuto = true
-			break
 		}
 		for i, label := range []string{"normal", "90", "180", "270", "flipped", "flipped+90", "flipped+180", "flipped+270"} {
 			if label == value {
@@ -1045,6 +1045,9 @@ func (m *Model) applyFieldPickerValue(output *editableOutput, field int, value s
 				break
 			}
 		}
+		remembered := profile.OutputConfig{Transform: output.Transform, RotationAuto: output.RotationAuto, RotationUpright: output.RotationUpright}
+		remembered.RememberRotationUpright(wasAuto, previousTransform)
+		output.Transform, output.RotationUpright = remembered.Transform, remembered.RotationUpright
 	case 9:
 		if value == "None" {
 			output.MirrorOf = ""

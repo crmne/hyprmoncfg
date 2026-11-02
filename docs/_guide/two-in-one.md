@@ -54,11 +54,18 @@ portrait: set the rotation that looks right with the device upright first,
 then choose **Auto**. The inspector then shows, for example,
 **Auto, upright 270°**, and the sensor's turns add to that.
 
+Leaving Auto remembers that upright rotation. Choosing **Normal** and then
+**Auto** again restores it, because Normal says nothing about which way is up.
+To replace it, choose the new rotation and then **Auto**. To make Normal the
+upright rotation again, choose any other fixed rotation, then **Normal**, then
+**Auto**. To hold a turn for a while, use the lock rather than a fixed rotation.
+
 ### Calibrate the sensor's upright position
 
 If Auto adds a quarter turn even though you selected the correct fixed rotation,
 hold the device upright relative to its keyboard (or the way you normally use a
-tablet), then run:
+tablet), then press **Calibrate** in the Omarchy panel, press `C` in the TUI, or
+run:
 
 ```bash
 hyprmoncfg rotation calibrate

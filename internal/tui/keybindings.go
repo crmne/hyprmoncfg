@@ -100,6 +100,7 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 			{"?", "Show these keys"},
 			{"R", "Restart the daemon after an upgrade"},
 			{"L", "Lock or unlock automatic rotation of built-in panels"},
+			{"C", "Calibrate automatic rotation: hold the device upright first"},
 			{"q", "Quit"},
 		},
 	})

@@ -146,6 +146,9 @@ running but has refused the claim, which polkit does until the session is
 active. The daemon keeps retrying, so clients should say so rather than suggest
 installing a sensor service.
 
+`rotation_upright` holds a sideways upright rotation while a panel set to
+Normal is away from Auto; clients leave it alone.
+
 A profile output with `rotation_auto: true` turns with the device; its
 `transform` is the rotation it has when the device is upright. Profiles,
 drafts, `editor_state` and `edit_profile` always describe that upright

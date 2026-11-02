@@ -31,7 +31,10 @@ type OutputConfig struct {
 	// RotationAuto makes a built-in panel follow the device's orientation
 	// sensor. Transform is then how the panel is turned when the device is
 	// upright.
-	RotationAuto      bool    `json:"rotation_auto,omitempty"`
+	RotationAuto bool `json:"rotation_auto,omitempty"`
+	// RotationUpright remembers a sideways upright Transform while the panel
+	// is on a fixed rotation, so choosing Normal does not lose it.
+	RotationUpright   int     `json:"rotation_upright,omitempty"`
 	MirrorOf          string  `json:"mirror_of,omitempty"`
 	Bitdepth          int     `json:"bitdepth,omitempty"`
 	CM                string  `json:"cm,omitempty"`

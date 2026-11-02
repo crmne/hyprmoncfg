@@ -21,6 +21,10 @@ type rotationLockMsg struct {
 	err    error
 }
 
+type rotationCalibrateMsg struct {
+	err error
+}
+
 // rotationQuarters is how far the daemon turns panels that rotate
 // automatically, so live state read while the device is turned still drafts
 // the upright layout.
@@ -71,6 +75,28 @@ func (m *Model) toggleRotationLockCmd() tea.Cmd {
 				return rotationLockMsg{err: errors.New("hyprmoncfgd is not connected")}
 			}
 			return rotationLockMsg{locked: locked, err: client.SetRotation(ctx, ipc.RotationParams{Locked: &locked})}
+		},
+		m.refreshCmd(true),
+	)
+}
+
+// calibrateRotationCmd makes the device's current position its upright one.
+func (m *Model) calibrateRotationCmd() tea.Cmd {
+	if m.ipc == nil || m.rotation == nil {
+		m.setStatusErr("Calibration needs hyprmoncfgd")
+		return nil
+	}
+	if !m.rotation.Available {
+		reason := m.rotation.UnavailableReason()
+		m.setStatusErr(strings.ToUpper(reason[:1]) + reason[1:])
+		return nil
+	}
+	client := m.ipc
+	return tea.Sequence(
+		func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			return rotationCalibrateMsg{err: client.SetRotation(ctx, ipc.RotationParams{Calibrate: true})}
 		},
 		m.refreshCmd(true),
 	)

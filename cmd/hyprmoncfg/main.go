@@ -701,8 +701,13 @@ func runRotation(cmd *cobra.Command, action, value string) error {
 		}
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), rotationSummary(*status.Rotation))
+	if action == "calibrate" {
+		fmt.Fprintln(cmd.OutOrStdout(), calibrationHint)
+	}
 	return nil
 }
+
+const calibrationHint = "This position now counts as upright. If the screen is still sideways, choose the fixed rotation that looks right, then choose Auto again."
 
 func rotationSummary(rotation appstatus.Rotation) string {
 	if rotation.SensorClaimPending {

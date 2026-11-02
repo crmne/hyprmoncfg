@@ -297,7 +297,10 @@ claim, so a daemon started at login retries with capped backoff and reports the
 wait rather than advising an install. Calibration records the current sensor reading as zero, unlocks rotation, persists
 without changing profiles, and refuses to run during previews. Direction and sensor
 calibration are device settings offered through the CLI (`hyprmoncfg rotation
-direction` and `hyprmoncfg rotation calibrate`) and IPC. Both clients
+direction` and `hyprmoncfg rotation calibrate`) and IPC; both clients also offer
+calibration directly. Leaving Auto keeps the upright rotation in
+`rotation_upright`; returning from Normal restores it, and any other fixed
+rotation replaces it, because Normal carries no claim about which way is up. Both clients
 offer **Auto** only for a built-in panel when the daemon reports a sensor, and
 both expose the lock (`L` in the TUI, a toggle beside **Auto** in the panel),
 as does `hyprmoncfg rotation`. Only built-in panels rotate; touch and pen

@@ -28,6 +28,21 @@ func CanRotateAutomatically(output OutputConfig) bool {
 	return (hypr.Monitor{Name: output.Name}).IsInternal()
 }
 
+// RememberRotationUpright keeps a panel's upright rotation when its rotation
+// choice changes. Leaving Auto remembers it. Going back to Auto from Normal
+// restores it, because Normal says nothing about which way is up, while
+// choosing any other fixed rotation replaces it.
+func (o *OutputConfig) RememberRotationUpright(wasAuto bool, previousTransform int) {
+	switch {
+	case wasAuto && !o.RotationAuto && o.Transform == 0:
+		o.RotationUpright = previousTransform
+	case !wasAuto && o.RotationAuto && o.Transform == 0:
+		o.Transform, o.RotationUpright = o.RotationUpright, 0
+	case o.RotationAuto || o.Transform != 0:
+		o.RotationUpright = 0
+	}
+}
+
 var errRotationAutoExternal = errors.New("only a built-in panel can rotate with the device")
 
 // Oriented returns the layout an upright profile has when the device is
@@ -89,6 +104,7 @@ func uprightDraft(draft *Profile, quarters int, exact *Profile) {
 			if saved, ok := exact.OutputByKey(output.Key); ok {
 				output.X, output.Y, output.Transform = saved.X, saved.Y, saved.Transform
 				output.RotationAuto = saved.RotationAuto
+				output.RotationUpright = saved.RotationUpright
 			}
 			continue
 		}
