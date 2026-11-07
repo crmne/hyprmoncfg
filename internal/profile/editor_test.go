@@ -145,6 +145,36 @@ func TestEditorProfileFromStatePreservesProfileOnlySettings(t *testing.T) {
 	}
 }
 
+func TestApplyEditorEditAcceptsEveryVRRMode(t *testing.T) {
+	draft := Profile{Name: "desk", Outputs: []OutputConfig{{
+		Key: "desk", Name: "DP-1", Enabled: true, Width: 2560, Height: 1440, Scale: 1,
+	}}}
+	// -1 follows the global misc:vrr; 3 is fullscreen with game or video content.
+	for vrr := -1; vrr <= 3; vrr++ {
+		got, err := ApplyEditorEdit(draft, EditorEdit{OutputKey: "desk", VRR: &vrr})
+		if err != nil {
+			t.Fatalf("VRR %d: %v", vrr, err)
+		}
+		if got.Outputs[0].VRR != vrr {
+			t.Fatalf("VRR = %d, want %d", got.Outputs[0].VRR, vrr)
+		}
+		if err := got.Validate(); err != nil {
+			t.Fatalf("VRR %d: %v", vrr, err)
+		}
+	}
+	for _, vrr := range []int{-2, 4} {
+		if _, err := ApplyEditorEdit(draft, EditorEdit{OutputKey: "desk", VRR: &vrr}); err == nil {
+			t.Fatalf("expected VRR %d to be rejected", vrr)
+		}
+		invalid := draft
+		invalid.Outputs = []OutputConfig{draft.Outputs[0]}
+		invalid.Outputs[0].VRR = vrr
+		if err := invalid.Validate(); err == nil {
+			t.Fatalf("expected a profile with VRR %d to be invalid", vrr)
+		}
+	}
+}
+
 func TestValidateLayoutIgnoresAnOutputWithoutAMode(t *testing.T) {
 	outputs := []OutputConfig{
 		{Name: "DP-1", Enabled: true, Width: 3840, Height: 2160, Scale: 1},

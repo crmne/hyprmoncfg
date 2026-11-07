@@ -169,19 +169,19 @@ func TestScaleRowFitsSmallTerminals(t *testing.T) {
 func TestChoiceRowsClampArrowsAndWrapEnter(t *testing.T) {
 	m := scalePillModel(t, 158, 37, 1)
 	m.inspectorField = 5
-	m.editOutputs[0].VRR = 2
+	m.editOutputs[0].VRR = 3
 	next, _ := m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyRight})
 	m = mustModel(t, next)
-	if m.editOutputs[0].VRR != 2 {
+	if m.editOutputs[0].VRR != 3 {
 		t.Fatal("right on the last option should stay")
 	}
 	next, _ = m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mustModel(t, next)
-	if m.editOutputs[0].VRR != 0 {
+	if m.editOutputs[0].VRR != -1 {
 		t.Fatal("Enter on the last option should wrap to the first")
 	}
 	next, _ = m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
-	if mustModel(t, next).editOutputs[0].VRR != 0 {
+	if mustModel(t, next).editOutputs[0].VRR != -1 {
 		t.Fatal("h on the first option should stay")
 	}
 }
