@@ -158,7 +158,7 @@ func CommandForOutput(name string, out profile.OutputConfig, mirrorTarget string
 	}
 
 	vrr := out.VRR
-	if vrr < 0 || vrr > 2 {
+	if vrr < -1 || vrr > 3 {
 		vrr = 0
 	}
 
