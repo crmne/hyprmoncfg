@@ -44,6 +44,10 @@ if [[ "${1-}" == "-j" && "${2-}" == "version" ]]; then
   printf '{"version":"0.56.2"}'
   exit 0
 fi
+if [[ "${1-}" == "-j" && "${2-}" == "monitors" && "${3-}" == "all" ]]; then
+  printf '[{"name":"eDP-1","make":"BOE","model":"Panel","disabled":true,"dpmsStatus":false},{"name":"DP-1","make":"Dell","model":"Monitor","disabled":false,"dpmsStatus":false}]'
+  exit 0
+fi
 printf 'ok'
 `
 			if err := os.WriteFile(filepath.Join(dir, "hyprctl"), []byte(script), 0o755); err != nil {
@@ -80,8 +84,10 @@ printf 'ok'
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(calls), "hl.dsp.dpms") || strings.Contains(string(calls), "dispatch dpms on") {
-				t.Fatalf("a busy Lua-mode Hyprland should still get the Lua wake command, got:\n%s", calls)
+			if !strings.Contains(string(calls), `hl.dsp.dpms({ action = "enable", monitor = "DP-1" })`) ||
+				strings.Contains(string(calls), `monitor = "eDP-1"`) ||
+				strings.Contains(string(calls), "dispatch dpms on") {
+				t.Fatalf("a busy Lua-mode Hyprland should wake only the enabled monitor, got:\n%s", calls)
 			}
 
 		})

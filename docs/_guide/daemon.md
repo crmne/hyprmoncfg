@@ -94,9 +94,11 @@ restarts reconciliation. Verification reports all failed outputs, not just the
 first. Monitor/workspace discovery queries have a 750ms timeout. This does not
 prove physical projector readiness.
 
-Resuming or opening the lid is a request for light. When displays still report
-DPMS off right afterwards, the daemon treats it as a wake that did not take and
-repeats it up to three times before treating the displays as asleep by choice.
+Resuming or opening the lid is a request for light on outputs the active layout
+has enabled. Deliberately disabled outputs stay off. When enabled displays still
+report DPMS off right afterwards, the daemon treats it as a wake that did not
+take and repeats it up to three times before treating the displays as asleep
+by choice.
 It stops early once every enabled display in the layout is awake, so a lit laptop
 panel doesn't end the wake while an external display is still off. After three
 retries it stops, and the awake displays stay usable. If the

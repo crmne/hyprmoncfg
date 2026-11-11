@@ -862,13 +862,18 @@ func (s *Service) refreshLidState(ctx context.Context) {
 	s.clearManualOverride()
 }
 
-// wakeDisplays turns every output's DPMS on. Opening the lid or resuming from
-// sleep is the user asking for light; without this the screens stay dark until
-// a keypress, and an external monitor left undriven can take half a minute to
-// come back on its own.
+// wakeDisplays turns DPMS on for outputs Hyprland currently reports as enabled.
+// Opening the lid or resuming from sleep asks for light, but must not revive an
+// output the active profile deliberately disabled.
 func (s *Service) wakeDisplays(ctx context.Context) {
 	wakeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
+	monitors, err := s.queryMonitors(wakeCtx)
+	if err != nil {
+		s.cfg.Logf("could not query displays before wake: %v", err)
+		return
+	}
 
 	// Ask briefly and keep the rest of the budget for the wake itself. Without
 	// an answer, use the dialect seen last: guessing legacy sends Lua-mode
@@ -883,7 +888,7 @@ func (s *Service) wakeDisplays(ctx context.Context) {
 			s.luaDialect.Store(luaDispatch)
 		}
 	}
-	if err := s.client.WakeDisplays(wakeCtx, luaDispatch); err != nil {
+	if err := s.client.WakeDisplays(wakeCtx, monitors, luaDispatch); err != nil {
 		s.cfg.Logf("could not wake displays: %v", err)
 	}
 }

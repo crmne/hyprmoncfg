@@ -109,9 +109,10 @@ func TestRunRetriesPartialWakeWithoutReloadingOrWakingForever(t *testing.T) {
 		t.Fatal(err)
 	}
 	env.suspendEvents <- false
-	waitFor(t, 2*time.Second, func() bool { return dpmsWakeCount(env.logPath) == 1+wakeRetryLimit }, "partial wake retries")
+	wantWakes := len(monitors) * (1 + wakeRetryLimit)
+	waitFor(t, 2*time.Second, func() bool { return dpmsWakeCount(env.logPath) == wantWakes }, "partial wake retries")
 	time.Sleep(4 * env.svc.cfg.WakeSettle)
-	if got := dpmsWakeCount(env.logPath); got != 1+wakeRetryLimit {
+	if got := dpmsWakeCount(env.logPath); got != wantWakes {
 		t.Fatalf("unbounded wake requests: %d", got)
 	}
 	if got := reloadCount(env.logPath); got != 1 {
