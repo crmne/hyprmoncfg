@@ -49,6 +49,19 @@ type OutputConfig struct {
 	MaxAvgLuminance   int     `json:"max_avg_luminance,omitempty"`
 	SDREOTF           string  `json:"sdr_eotf,omitempty"`
 	ICC               string  `json:"icc,omitempty"`
+	// Main marks the display desktop shells should treat as primary (bar,
+	// notifications). Config-only: Hyprland has no such setting.
+	Main bool `json:"main,omitempty"`
+}
+
+// MainOutput returns the output marked main, if any.
+func (p Profile) MainOutput() (OutputConfig, bool) {
+	for _, output := range p.Outputs {
+		if output.Main {
+			return output, true
+		}
+	}
+	return OutputConfig{}, false
 }
 
 type WorkspaceStrategy string

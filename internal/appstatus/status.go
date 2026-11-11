@@ -119,6 +119,8 @@ type PreviewReference struct {
 
 type ProfileReference struct {
 	Name string `json:"name"`
+	// Main is the output key of the profile's main display, empty when unset.
+	Main string `json:"main,omitempty"`
 }
 
 type ProfileMatch struct {
@@ -354,6 +356,9 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 	if active, ok := profile.OrientedExactStateMatch(profiles, monitors, rules, opts.OrientationQuarters); ok {
 		activeName = active.Name
 		document.ActiveProfile = &ProfileReference{Name: active.Name}
+		if main, ok := active.MainOutput(); ok {
+			document.ActiveProfile.Main = main.Key
+		}
 	}
 
 	recommendedName := ""

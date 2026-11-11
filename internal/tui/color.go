@@ -4,7 +4,7 @@ package tui
 // wire values. Keep these terms aligned with the Omarchy panel's inspector.
 func fieldOptionLabel(field int, value string) string {
 	switch field {
-	case 0:
+	case 0, fieldMain:
 		switch value {
 		case "on":
 			return "On"
