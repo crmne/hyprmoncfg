@@ -139,6 +139,16 @@ func PreserveUnreportedSettings(draft *Profile, saved Profile) {
 		output.ICC = stored.ICC
 		output.RotationAuto = stored.RotationAuto
 		output.RotationUpright = stored.RotationUpright
+		// Main is config-only. Carrying false too keeps an explicit Off.
+		output.Main = stored.Main
+	}
+	// Keep at most one main display, as Validate requires.
+	mainSeen := false
+	for idx := range draft.Outputs {
+		if draft.Outputs[idx].Main {
+			draft.Outputs[idx].Main = !mainSeen
+			mainSeen = true
+		}
 	}
 }
 

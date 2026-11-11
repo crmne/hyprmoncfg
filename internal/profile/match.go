@@ -257,14 +257,42 @@ func OrientedExactStateMatch(profiles []Profile, monitors []hypr.Monitor, rules 
 	return profiles[index], true
 }
 
+// OrientedSelectedStateMatch is OrientedExactStateMatch for when the profile
+// last selected for these monitors is known. Main is config-only, so profiles
+// differing only in their main display all match the live state; the
+// selection resolves that tie. Without a selection, or when the selection is
+// not among the matches, an ambiguous result stays unmatched.
+func OrientedSelectedStateMatch(profiles []Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, quarters int, selected string) (Profile, bool) {
+	indexes := exactStateMatchIndexes(OrientedProfiles(profiles, quarters), monitors, rules)
+	if len(indexes) == 1 {
+		return profiles[indexes[0]], true
+	}
+	if selected == "" {
+		return Profile{}, false
+	}
+	for _, index := range indexes {
+		if profiles[index].Name == selected {
+			return profiles[index], true
+		}
+	}
+	return Profile{}, false
+}
+
 func exactStateMatchIndex(profiles []Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) (int, bool) {
-	if len(profiles) == 0 || len(monitors) == 0 {
+	indexes := exactStateMatchIndexes(profiles, monitors, rules)
+	if len(indexes) != 1 {
 		return 0, false
+	}
+	return indexes[0], true
+}
+
+func exactStateMatchIndexes(profiles []Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule) []int {
+	if len(profiles) == 0 || len(monitors) == 0 {
+		return nil
 	}
 
 	current := FromState("", monitors, rules)
-	match := 0
-	matches := 0
+	var matches []int
 	for index, candidate := range profiles {
 		// An automatically extended layout is a draft, even if its known
 		// displays still have exactly their saved settings.
@@ -274,13 +302,9 @@ func exactStateMatchIndex(profiles []Profile, monitors []hypr.Monitor, rules []h
 		if !profilesShareEffectiveState(candidate, current, monitors) {
 			continue
 		}
-		match = index
-		matches++
-		if matches > 1 {
-			return 0, false
-		}
+		matches = append(matches, index)
 	}
-	return match, matches == 1
+	return matches
 }
 
 func profilesShareEffectiveState(a, b Profile, monitors []hypr.Monitor) bool {

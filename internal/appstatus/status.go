@@ -342,6 +342,23 @@ func editorScaleOptions(width, height int, current float64) []float64 {
 }
 
 func Build(version string, daemonRunning bool, profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, opts profile.MatchOptions) Document {
+	return BuildWithSelection(version, daemonRunning, profiles, monitors, rules, opts, "")
+}
+
+// liveMainKey returns monitors[].key of the live display the profile's main
+// output resolves to by hardware identity, so it carries any duplicate
+// suffix. It falls back to the saved key when the display is not connected.
+func liveMainKey(main profile.OutputConfig, monitors []hypr.Monitor) string {
+	if live, ok := profile.NewMonitorResolver(monitors).ResolveOutput(main); ok {
+		return hypr.MonitorOutputKey(live, hypr.MonitorMatchCounts(monitors))
+	}
+	return main.Key
+}
+
+// BuildWithSelection is Build when the profile last selected for these
+// monitors is known. It decides between saved profiles that differ only in
+// config-only settings such as the main display.
+func BuildWithSelection(version string, daemonRunning bool, profiles []profile.Profile, monitors []hypr.Monitor, rules []hypr.WorkspaceRule, opts profile.MatchOptions, selected string) Document {
 	document := Document{
 		MonitorSetHash: HardwareSnapshotHash(monitors),
 		SchemaVersion:  SchemaVersion,
@@ -353,11 +370,11 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 	}
 
 	activeName := ""
-	if active, ok := profile.OrientedExactStateMatch(profiles, monitors, rules, opts.OrientationQuarters); ok {
+	if active, ok := profile.OrientedSelectedStateMatch(profiles, monitors, rules, opts.OrientationQuarters, selected); ok {
 		activeName = active.Name
 		document.ActiveProfile = &ProfileReference{Name: active.Name}
 		if main, ok := active.MainOutput(); ok {
-			document.ActiveProfile.Main = main.Key
+			document.ActiveProfile.Main = liveMainKey(main, monitors)
 		}
 	}
 
