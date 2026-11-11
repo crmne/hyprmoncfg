@@ -178,7 +178,14 @@ func (p Profile) Validate() error {
 	if len(p.Outputs) == 0 {
 		return fmt.Errorf("profile has no outputs")
 	}
+	mains := 0
 	for i, out := range p.Outputs {
+		if out.Main {
+			mains++
+			if mains > 1 {
+				return fmt.Errorf("output %d: only one display can be main", i)
+			}
+		}
 		if out.Key == "" {
 			return fmt.Errorf("output %d has empty key", i)
 		}
