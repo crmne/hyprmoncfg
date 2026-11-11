@@ -162,6 +162,8 @@ hyprmoncfg 1.26.0 and newer also include an Omarchy workspace handoff when the w
 
 The generated Lua file also sets `omarchy_monitor_panel_settings = false`, so settings saved in Omarchy's display panel do not override your profile when a monitor is plugged in or Hyprland starts. Edits made in that panel are not lost: while hyprmoncfg manages your monitors, the daemon folds them into the active profile. On Omarchy it also sets `GDK_SCALE` from the lowest active scale and honours Omarchy's Mirror Display toggle while it is on.
 
+`GDK_SCALE` is only written while Hyprland runs with `xwayland:force_zero_scaling` on, which is the state Omarchy's panel scaling sets up: X11 clients then get a 1x screen and scale themselves. With that option off, XWayland gives X11 clients the monitor's own resolution and the compositor scales them, so a global `GDK_SCALE` would be applied a second time and apps that honour it, JavaFX wallets and GTK apps among them, come up magnified on a scaled display. hyprmoncfg leaves the variable alone there, and on an older Hyprland that cannot report the option it keeps writing it as before.
+
 Do not put unrelated Hyprland settings in that file. Keep blocks like `render`, `cursor`, `misc`, and `env` in other sourced config files.
 
 The file is written atomically (temp file + rename) to prevent partial writes from corrupting your config. Interactive applies keep an in-memory snapshot and restore it on rejection, timeout, interruption, or quit unless you explicitly keep the new configuration.
