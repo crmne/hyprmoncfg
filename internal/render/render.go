@@ -41,7 +41,15 @@ end`
 // omarchyGDKScaleSection takes over GDK_SCALE, which Omarchy's panel settings set
 // and leave to this file once they stand down. As there, it follows the lowest
 // scale, rounded because GTK only honors integers.
-func omarchyGDKScaleSection(matched []matchedOutput) string {
+//
+// Only for XWayland under force_zero_scaling, where apps see a 1x screen and
+// must scale themselves. With that off, XWayland hands X11 clients the
+// monitor's own resolution and the compositor scales them, so pinning
+// GDK_SCALE as well applies the scale twice and magnifies those apps.
+func omarchyGDKScaleSection(matched []matchedOutput, xwaylandScalesX11 bool) string {
+	if xwaylandScalesX11 {
+		return ""
+	}
 	lowest := 0.0
 	for _, item := range matched {
 		if !item.config.Enabled || item.config.MirrorOf != "" || item.config.Scale <= 0 {
@@ -63,6 +71,10 @@ type Options struct {
 	UseMonitorV2 bool
 	// PrepareDisconnected permits wake rules when every output is absent.
 	PrepareDisconnected bool
+	// XWaylandScalesX11 means XWayland gives X11 clients their monitor's own
+	// resolution and the compositor scales them, so GDK_SCALE must be left
+	// alone instead of pinning a second scale on top.
+	XWaylandScalesX11 bool
 }
 
 func RenderHyprlandConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) (string, error) {
@@ -71,7 +83,7 @@ func RenderHyprlandConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool
 
 func RenderConfig(p profile.Profile, monitors []hypr.Monitor, opts Options) (string, error) {
 	if opts.Format == config.HyprConfigLua {
-		return renderLuaConfig(p, monitors, opts.UseMonitorV2, opts.PrepareDisconnected)
+		return renderLuaConfig(p, monitors, opts.UseMonitorV2, opts.PrepareDisconnected, opts.XWaylandScalesX11)
 	}
 	return renderLegacyConfig(p, monitors, opts.UseMonitorV2, opts.PrepareDisconnected)
 }
@@ -284,7 +296,7 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepa
 	return strings.Join(sections, "\n\n") + "\n", nil
 }
 
-func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareDisconnected bool) (string, error) {
+func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareDisconnected, xwaylandScalesX11 bool) (string, error) {
 	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
 	resolver := profile.NewMonitorResolver(monitors)
@@ -351,7 +363,7 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 	if len(workspaceLines) > 0 {
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
 	}
-	if section := omarchyGDKScaleSection(matched); section != "" {
+	if section := omarchyGDKScaleSection(matched, xwaylandScalesX11); section != "" {
 		sections = append(sections, section)
 	}
 	sections = append(sections, omarchyMirrorToggle)

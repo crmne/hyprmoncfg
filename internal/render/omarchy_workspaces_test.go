@@ -63,12 +63,29 @@ func TestOmarchyGDKScaleFollowsLowestActiveScale(t *testing.T) {
 		}, `hl.env("GDK_SCALE", "2")`},
 	}
 	for _, tc := range cases {
-		if got := omarchyGDKScaleSection(tc.outs); !strings.Contains(got, tc.want) {
+		if got := omarchyGDKScaleSection(tc.outs, false); !strings.Contains(got, tc.want) {
 			t.Fatalf("%s: got %q", tc.name, got)
 		}
 	}
-	if got := omarchyGDKScaleSection(nil); got != "" {
+	if got := omarchyGDKScaleSection(nil, false); got != "" {
 		t.Fatalf("no outputs: %q", got)
+	}
+	if got := omarchyGDKScaleSection(cases[0].outs, true); got != "" {
+		t.Fatalf("XWayland scales X11 clients itself, GDK_SCALE must stay untouched: %q", got)
+	}
+}
+
+func TestOmarchyGDKScaleYieldsToXWaylandScaling(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "eDP-1", Description: "Laptop panel", Width: 2880, Height: 1920, RefreshRate: 120, Scale: 2}}
+	p := profile.FromMonitors("Laptop", monitors)
+	for _, xwaylandScalesX11 := range []bool{false, true} {
+		got, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLua, UseMonitorV2: true, XWaylandScalesX11: xwaylandScalesX11})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(got, `hl.env("GDK_SCALE"`) == xwaylandScalesX11 {
+			t.Fatalf("xwaylandScalesX11=%v\n%s", xwaylandScalesX11, got)
+		}
 	}
 }
 
