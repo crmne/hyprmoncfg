@@ -1019,6 +1019,14 @@ func (m *Model) commitModePicker() tea.Cmd {
 
 func (m *Model) applyFieldPickerValue(output *editableOutput, field int, value string) {
 	switch field {
+	case fieldMain:
+		// one main display per profile
+		if value == "on" {
+			for i := range m.editOutputs {
+				m.editOutputs[i].Main = false
+			}
+		}
+		output.Main = value == "on"
 	case 3:
 		output.Bitdepth, _ = strconv.Atoi(value)
 	case 4:

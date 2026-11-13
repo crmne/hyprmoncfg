@@ -16,6 +16,9 @@ import (
 // edit the one stored mode string; only presentation is split.
 const fieldRefresh = 21
 
+// fieldMain marks the profile's main display (one per profile).
+const fieldMain = 22
+
 // resolutionKey is the resolution part of a mode, "3840x2160". A mode that
 // does not parse (such as "preferred") is its own resolution.
 func resolutionKey(mode string) string {

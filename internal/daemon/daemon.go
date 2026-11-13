@@ -97,8 +97,13 @@ type Service struct {
 	lastSeenHash   string
 	lastProfile    profile.Profile
 	lastMonitorSet string
-	lastLidState   lid.State
-	lidState       lid.State
+	// selectedMu guards a copy of the last selection for status readers,
+	// which do not hold writeMu.
+	selectedMu         sync.Mutex
+	selectedName       string
+	selectedMonitorSet string
+	lastLidState       lid.State
+	lidState           lid.State
 	// lidClosed mirrors lidState for readers outside the event loop, such
 	// as status requests, which score profiles with the lid in mind.
 	lidClosed    atomic.Bool
@@ -1183,7 +1188,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		}
 		s.cfg.Logf("saved Laptop Display toggle in profile %q", target.Name)
 	}
-	s.lastProfile, s.lastMonitorSet = target, monitorSet
+	s.setLastProfile(target, monitorSet)
 	s.lastLidState = s.lidState
 
 	appliedHash := hash
@@ -1243,6 +1248,25 @@ func (s *Service) setManualOverride(monitorSet string, chosen profile.Profile) {
 	s.manualSet = monitorSet
 	s.manualProfile = chosen
 	s.manualMu.Unlock()
+}
+
+// setLastProfile records the profile selected for a monitor set.
+func (s *Service) setLastProfile(p profile.Profile, monitorSet string) {
+	s.lastProfile, s.lastMonitorSet = p, monitorSet
+	s.selectedMu.Lock()
+	s.selectedName, s.selectedMonitorSet = p.Name, monitorSet
+	s.selectedMu.Unlock()
+}
+
+// selectedProfileName returns the profile last selected for monitorSet, or
+// "" when none is known for it.
+func (s *Service) selectedProfileName(monitorSet string) string {
+	s.selectedMu.Lock()
+	defer s.selectedMu.Unlock()
+	if monitorSet == "" || s.selectedMonitorSet != monitorSet {
+		return ""
+	}
+	return s.selectedName
 }
 
 func (s *Service) clearManualOverride() {

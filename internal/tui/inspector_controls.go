@@ -16,7 +16,7 @@ import (
 // their pickers. The wire values are the ones layoutFieldValue reports.
 func inspectorChoiceValues(field int) []string {
 	switch field {
-	case 0:
+	case 0, fieldMain:
 		return []string{"on", "off"}
 	case 3:
 		return []string{"8", "10"}

@@ -220,6 +220,7 @@ type editableOutput struct {
 	MaxAvgLuminance   int
 	SDREOTF           string
 	ICC               string
+	Main              bool
 }
 
 type canvasCell struct {
@@ -1553,7 +1554,7 @@ func inspectorFieldsForTab(tab inspectorTab) []int {
 	if tab == inspectorTabColor {
 		return []int{3, 4, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
 	}
-	return []int{0, 1, fieldRefresh, 2, 5, 6, 7, 8, 9}
+	return []int{0, 1, fieldRefresh, 2, 5, 6, 7, 8, 9, fieldMain}
 }
 
 func (m *Model) normalizeInspectorField() {
@@ -3756,6 +3757,8 @@ func (m Model) layoutFieldValue(output editableOutput, field int) string {
 			return "None"
 		}
 		return output.ICC
+	case fieldMain:
+		return boolText(output.Main)
 	default:
 		return ""
 	}
@@ -3990,6 +3993,7 @@ func editableOutputFromProfile(saved profile.OutputConfig, live hypr.Monitor, ha
 		MaxAvgLuminance:   saved.MaxAvgLuminance,
 		SDREOTF:           saved.SDREOTF,
 		ICC:               saved.ICC,
+		Main:              saved.Main,
 	}
 
 	mode := saved.NormalizedMode()
@@ -4200,6 +4204,7 @@ func (o editableOutput) profileOutput() profile.OutputConfig {
 		MaxAvgLuminance:   o.MaxAvgLuminance,
 		SDREOTF:           o.SDREOTF,
 		ICC:               o.ICC,
+		Main:              o.Main,
 	}
 }
 
@@ -5087,6 +5092,8 @@ var layoutFields = []string{
 	// Refresh is field 21 so the other field numbers stay put; the Display
 	// tab lists it right after Resolution.
 	"Refresh",
+	// kept short: the Display tab sizes its label column to the longest label
+	"Main",
 }
 
 const advancedFieldStart = 10
@@ -5120,6 +5127,8 @@ func layoutFieldShortLabel(field int) string {
 		return "HDR cap."
 	case 20:
 		return "ICC profile"
+	case fieldMain:
+		return "Main"
 	case 6:
 		return "Rot"
 	case 7:

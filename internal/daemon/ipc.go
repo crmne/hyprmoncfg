@@ -45,7 +45,7 @@ func (s *Service) Status() (appstatus.Document, error) {
 	if err != nil {
 		return appstatus.Document{}, err
 	}
-	document := appstatus.Build(buildinfo.Version, true, profiles, monitors, rules, s.matchOptions())
+	document := appstatus.BuildWithSelection(buildinfo.Version, true, profiles, monitors, rules, s.matchOptions(), s.selectedProfileName(profile.MonitorSetHash(monitors)))
 	document.Daemon.Unmanaged = !config.IsManaged(s.cfg.ConfigDir)
 	document.Daemon.RenameSupported = true
 	if s.cfg.WatchOrientation != nil {
@@ -174,8 +174,7 @@ func (s *Service) Unmanage() error {
 		}
 	}
 	s.applied = nil
-	s.lastProfile = profile.Profile{}
-	s.lastMonitorSet = ""
+	s.setLastProfile(profile.Profile{}, "")
 
 	if resolved, err := s.resolveHyprConfig(ctx); err != nil {
 		s.cfg.Logf("could not resolve the Hyprland config: %v", err)
@@ -263,7 +262,7 @@ func (s *Service) SetProfileAuto(params ipc.ProfileAutoParams) error {
 	}
 	s.setManualOverride(profile.MonitorSetHash(monitors), active)
 	s.applied = rememberApplied(active, monitors)
-	s.lastProfile, s.lastMonitorSet = active, profile.MonitorSetHash(monitors)
+	s.setLastProfile(active, profile.MonitorSetHash(monitors))
 	s.lastLidState = s.lidState
 	s.cfg.Logf("automatic profile selection off; pinned %q for this monitor set", active.Name)
 	s.signalChange()
@@ -399,7 +398,7 @@ func (s *Service) commitPreview(owner string, transactionID string, save bool) e
 		s.applied = rememberApplied(pending.profile, monitors)
 	}
 	s.cfg.Logf("kept profile preview %q", pending.profile.Name)
-	s.lastProfile, s.lastMonitorSet = pending.requested, pending.monitorSet
+	s.setLastProfile(pending.requested, pending.monitorSet)
 	s.lastLidState = s.lidState
 	s.signalChange()
 	return nil
@@ -453,7 +452,9 @@ func (s *Service) Rename(params ipc.RenameParams) error {
 	}
 	follows := func(name string) bool { return name != "" && s.store.SameFiles(name, params.Name) }
 	if follows(s.lastProfile.Name) {
-		s.lastProfile.Name = renamed.Name
+		renamedLast := s.lastProfile
+		renamedLast.Name = renamed.Name
+		s.setLastProfile(renamedLast, s.lastMonitorSet)
 	}
 	if s.applied != nil && follows(s.applied.requested.Name) {
 		s.applied.requested.Name, s.applied.live.Name = renamed.Name, renamed.Name

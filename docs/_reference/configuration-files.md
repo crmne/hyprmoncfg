@@ -31,7 +31,7 @@ hyprmoncfgd --config-dir /path/to/profiles
 
 Each profile stores:
 
-- **Monitor outputs**: hardware identity (make, model, serial), resolution, refresh rate, scale, position, transform, VRR mode, and `rotation_auto` for a built-in panel that turns with the device, whose `transform` is then its upright rotation
+- **Monitor outputs**: hardware identity (make, model, serial), resolution, refresh rate, scale, position, transform, VRR mode, and `rotation_auto` for a built-in panel that turns with the device, whose `transform` is then its upright rotation, and `main: true` on at most one output to mark the display bars and shells should treat as primary. Main is config-only: hyprmoncfg writes nothing for it to Hyprland, and a profile with more than one main output is rejected
 - **Workspace settings**: strategy, max workspaces, group size, monitor order, explicit rules
 
 Generated workspace plans support `workspaces.persist_all: true` to keep every
