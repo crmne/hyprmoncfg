@@ -1,6 +1,8 @@
 ---
 title: Getting Started
-description: Install hyprmoncfg and go from zero to a saved profile in two minutes.
+description: Install hyprmoncfg, configure Hyprland, and go from zero to a saved monitor profile in two minutes.
+seo:
+  title: "Getting Started: Hyprland monitor setup"
 nav_order: 1
 ---
 

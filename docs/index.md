@@ -1,6 +1,8 @@
 ---
 layout: home
 title: hyprmoncfg
+seo:
+  title: Multi-monitor layouts for Hyprland
 description: Create multi-monitor layouts for Hyprland and switch them automatically on hotplug and lid events.
 permalink: /
 hero:
