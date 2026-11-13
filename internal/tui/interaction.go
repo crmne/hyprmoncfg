@@ -1025,10 +1025,14 @@ func (m *Model) applyFieldPickerValue(output *editableOutput, field int, value s
 		output.CM = value
 	case 5:
 		switch value {
+		case "global":
+			output.VRR = -1
 		case "on":
 			output.VRR = 1
 		case "fullscreen":
 			output.VRR = 2
+		case "games":
+			output.VRR = 3
 		default:
 			output.VRR = 0
 		}

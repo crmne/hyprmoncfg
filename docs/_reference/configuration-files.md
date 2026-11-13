@@ -31,7 +31,7 @@ hyprmoncfgd --config-dir /path/to/profiles
 
 Each profile stores:
 
-- **Monitor outputs**: hardware identity (make, model, serial), resolution, refresh rate, scale, position, transform, VRR mode, and `rotation_auto` for a built-in panel that turns with the device, whose `transform` is then its upright rotation
+- **Monitor outputs**: hardware identity (make, model, serial), resolution, refresh rate, scale, position, transform, VRR mode (`-1` follows the global `misc:vrr`, `0` off, `1` on, `2` fullscreen only, `3` fullscreen games and video), and `rotation_auto` for a built-in panel that turns with the device, whose `transform` is then its upright rotation
 - **Workspace settings**: strategy, max workspaces, group size, monitor order, explicit rules
 
 Generated workspace plans support `workspaces.persist_all: true` to keep every

@@ -9,7 +9,8 @@ import (
 )
 
 // VRRMode handles hyprctl reporting VRR as either a bool or an int.
-// bool: false=0, true=1. int: 0=off, 1=on, 2=fullscreen-only.
+// bool: false=0, true=1. int: -1=follow global, 0=off, 1=on,
+// 2=fullscreen-only, 3=fullscreen with game or video content.
 type VRRMode int
 
 func (v *VRRMode) UnmarshalJSON(data []byte) error {

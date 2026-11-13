@@ -108,6 +108,45 @@ func TestChoiceRowsCycleByKeyAndSelectByPointer(t *testing.T) {
 	}
 }
 
+// VRR also offers Hyprland's follow-global (-1) and fullscreen games (3)
+// modes; its row wraps in the inspector so every option stays clickable.
+func TestVRRRowOffersFollowGlobalAndFullscreenGames(t *testing.T) {
+	m := paneTestModel(t, tabLayout, []hypr.Monitor{paneTestDesk}, nil)
+	m.width, m.height = 120, 37
+	m.layoutFocus = layoutFocusInspector
+	m.inspectorField = 5
+	m.editOutputs[0].VRR = 2
+
+	next, _ := m.updateLayoutKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mustModel(t, next)
+	if m.editOutputs[0].VRR != 3 {
+		t.Fatalf("Enter after Fullscreen should pick Fullscreen (games), got VRR=%d", m.editOutputs[0].VRR)
+	}
+	if got := m.layoutFieldValue(m.editOutputs[0], 5); got != "games" {
+		t.Fatalf("VRR 3 value = %q", got)
+	}
+
+	inspector, _ := m.layoutInspectorRect()
+	x, y := findVisiblePositionBelow(t, m.View(), "Follow global", inspector.y)
+	next, _ = m.updateMouse(mousePressAt(x+1, y))
+	m = mustModel(t, next)
+	if m.editOutputs[0].VRR != -1 {
+		t.Fatalf("clicking Follow global should select it, got VRR=%d", m.editOutputs[0].VRR)
+	}
+
+	x, y = findVisiblePositionBelow(t, m.View(), "Fullscreen (games)", inspector.y)
+	next, _ = m.updateMouse(mousePressAt(x+1, y))
+	m = mustModel(t, next)
+	if m.editOutputs[0].VRR != 3 {
+		t.Fatalf("clicking Fullscreen (games) should select it, got VRR=%d", m.editOutputs[0].VRR)
+	}
+
+	m.editOutputs[0].VRR = 4
+	if issue, ok := m.layoutFieldIssue(m.editOutputs[0], 5); !ok || issue != "invalid" {
+		t.Fatalf("VRR 4 should be flagged invalid, got %q %v", issue, ok)
+	}
+}
+
 func TestScaleArrowsStepBetweenSharpScales(t *testing.T) {
 	m := paneTestModel(t, tabLayout, []hypr.Monitor{paneTestDesk}, nil)
 	m.layoutFocus = layoutFocusInspector
