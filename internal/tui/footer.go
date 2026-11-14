@@ -66,6 +66,11 @@ func (m Model) footerHelpText() string {
 			return join("`↑↓` select", "`←→` assign", "`Enter` type count", "`a` preview", "`s` save", "`?` keys")
 		}
 		return join("`↑↓` select", "`←→` adjust", "`Enter` type count", "`a` preview", "`s` save", "`?` keys")
+	case tabWallpapers:
+		if m.omarchyAvailable() {
+			return join("`↑↓` display", "`Enter` path", "`c` choose", "`d` clear", "`?` keys")
+		}
+		return join("`↑↓` display", "`Enter` path", "`d` clear", "`?` keys")
 	default:
 		return ""
 	}
@@ -149,6 +154,20 @@ func (m Model) restartHint() string {
 	return fmt.Sprintf("Daemon %s · restart: R", m.daemonVersion)
 }
 
+// shortRestartHint keeps the action when four tabs leave no room for the
+// version, as on an 80-column terminal.
+func (m Model) shortRestartHint() string {
+	return "Daemon restart: R"
+}
+
+// minimalTopStatus is the last step down before truncating.
+func (m Model) minimalTopStatus() string {
+	if m.daemonOK && m.daemonNeedsRestart() {
+		return m.styles.warning.Render(m.shortRestartHint())
+	}
+	return m.renderCompactTopStatus()
+}
+
 func (m Model) renderTopStatus() string {
 	parts := []string{m.unsavedBadge()}
 	if label := m.activeProfileLabel(); label != "" {
@@ -199,6 +218,12 @@ func (m Model) footerLayout() footerLayout {
 			compact := []string{"Enter preview", "l edit", "d delete", "? keys"}
 			if m.renameAvailable() {
 				compact = slices.Insert(compact, 2, "r rename")
+			}
+			helpClean = strings.Join(compact, footerSeparator)
+		case tabWallpapers:
+			compact := []string{"Enter path", "d clear", "? keys"}
+			if m.omarchyAvailable() {
+				compact = slices.Insert(compact, 1, "c choose")
 			}
 			helpClean = strings.Join(compact, footerSeparator)
 		default:

@@ -108,6 +108,13 @@ func (s *Store) Save(p Profile) error {
 }
 
 func (s *Store) Delete(name string) error {
+	saved := name
+	if p, err := s.Load(name); err == nil {
+		saved = p.Name
+	}
+	if err := s.dropWallpapers(saved); err != nil {
+		return err
+	}
 	paths := s.PathsForName(name)
 	for _, path := range []string{paths.JSON, paths.Conf, paths.Lua} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -149,6 +156,7 @@ func (s *Store) Rename(oldName, newName string) (Profile, error) {
 		}
 	}
 
+	savedName := p.Name
 	p.Name = newName
 	p.UpdatedAt = time.Now().UTC()
 	buf, err := json.MarshalIndent(p, "", "  ")
@@ -156,10 +164,26 @@ func (s *Store) Rename(oldName, newName string) (Profile, error) {
 		return Profile{}, err
 	}
 	buf = append(buf, '\n')
-	if from == to {
-		return p, config.WriteFileAtomic(from.JSON, buf, 0o644)
+
+	// Wallpapers move first, so a failed write leaves everything as it was,
+	// and move back if the profile files then cannot follow.
+	moved, err := s.renameWallpapers(savedName, newName)
+	if err != nil {
+		return Profile{}, err
 	}
-	return p, renameProfileFiles(from, to, buf)
+	if from == to {
+		err = config.WriteFileAtomic(from.JSON, buf, 0o644)
+	} else {
+		err = renameProfileFiles(from, to, buf)
+	}
+	if err != nil && moved {
+		_, restoreErr := s.renameWallpapers(newName, savedName)
+		err = errors.Join(err, restoreErr)
+	}
+	if err != nil {
+		return Profile{}, err
+	}
+	return p, nil
 }
 
 func renameProfileFiles(from, to FilePaths, content []byte) (err error) {

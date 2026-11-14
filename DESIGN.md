@@ -393,7 +393,8 @@ during any preview, and for a profile forced with `--profile`, whose name lives 
 the service's arguments. Symlinked files stay links to their original targets.
 
 Rename is a backend operation with collision checks and an atomic/recoverable
-persistence contract. It updates profile references and sidecars consistently,
+persistence contract. It updates profile references, sidecars, and the
+profile's wallpapers entry consistently,
 preserves timestamps as appropriate, respects supported symlink/dotfile workflows,
 and does not execute hooks. Never implement it as an uncoordinated client-side
 save followed by delete. Duplicate creates a distinct editable profile; copying
@@ -445,8 +446,9 @@ Never report success merely because the preview timer vanished.
 
 ## Shared interface structure
 
-Proposed main page order: **Layout, Workspaces, Profiles**, numbered 1, 2, 3 in both
-clients. Layout and workspaces edit one draft; Profiles manages saved arrangements.
+Main page order: **Layout, Workspaces, Profiles, Wallpapers**, numbered 1, 2, 3, 4 in both
+clients. Layout and workspaces edit one draft; Profiles manages saved arrangements;
+Wallpapers assigns per-display pictures to a saved profile.
 Change labels, shortcuts, help, tests, and docs together, and mention the changed
 2/3 shortcuts in release notes. Preferences is a separate small dialog/view reached
 from the header or action menu, not a fourth permanent editor page.
@@ -470,7 +472,7 @@ draft; selecting the row only reveals its inspector. Reserve space above active
 geometry and keep crowded rows reachable using the existing monitor-selection
 keys. Profile actions are visible buttons, with shortcuts explained in help;
 keep shortcuts in the footer and keyboard help, never inside action labels.
-Only the numbered 1, 2, 3 navigation tabs retain inline shortcut hints.
+Only the numbered 1, 2, 3, 4 navigation tabs retain inline shortcut hints.
 
 Automatic profile selection is a global control in its own compact box above
 the left-hand profile list, matching that column's width, not the full window. The
@@ -574,6 +576,31 @@ the header or label normal automatic behavior repeatedly. A saved setup needs it
 name and display count; paused matching remains explicit and actionable. Creating a
 profile retains the current draft and reveals naming, Discard, and Preview & save.
 Keep explicit dirty/creating/browsing state distinct from the live setup status.
+
+### Wallpapers
+
+The fourth page assigns a picture to each display a saved profile turns on, for
+the active profile or the one opened from Profiles (`w`). Pictures live in the
+Omarchy panel plugin's `wallpapers.json`, by profile name and output key, never
+in profile JSON; the plugin draws them and owns the format.
+`internal/wallpaper` mirrors its rules, writes atomically, and never rewrites a
+file it cannot read. `profile.Store` moves or drops a profile's entry inside
+Rename and Delete, before touching the profile files and undoing it if they
+fail, so the daemon, CLI and TUI stay consistent without the plugin observing
+them. The TUI takes a typed path or Omarchy's file chooser, both validated the
+same way.
+
+Capability gaps: the TUI shows file names, not thumbnails, and nothing draws
+the pictures without the plugin.
+
+```mermaid
+flowchart LR
+  Tab[TUI Wallpapers tab] --> Path[wallpaper_path dialog] --> Chooser[[omarchy file select]]
+  Tab --> WStore[wallpaper.Store] --> JSON[(wallpapers.json)]
+  PStore[profile.Store Rename/Delete] --> WStore
+  Daemon[hyprmoncfgd rename/delete] & CLI[hyprmoncfg rename/delete] & TUIRename[TUI rename/delete] --> PStore
+  Plugin[[Omarchy panel plugin layer]] -- watches and draws --> JSON
+```
 
 ## Accepted display presentation (2026-09-22)
 

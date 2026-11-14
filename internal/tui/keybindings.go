@@ -62,6 +62,7 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 				{"l", "Load it into the layout editor"},
 				{"e", "Edit post-apply command"},
 				{"d", "Delete it"},
+				{"w", "Choose its wallpapers"},
 			},
 		})
 		if m.renameAvailable() {
@@ -83,6 +84,21 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 				{"Enter", "Type an exact workspace or group count"},
 			},
 		})
+	case tabWallpapers:
+		bindings := []keyBinding{
+			{"↑ ↓, click", "Select a display of this profile"},
+			{"Enter", "Type the path of a PNG, JPEG or WebP picture"},
+		}
+		if m.omarchyAvailable() {
+			bindings = append(bindings, keyBinding{"c", "Choose a picture with Omarchy's file chooser"})
+		}
+		groups = append(groups, keyGroup{
+			title:    "Selected display",
+			bindings: append(bindings, keyBinding{"d", "Clear it, so it keeps the Omarchy background"}),
+		}, keyGroup{
+			title:    "Drawing",
+			bindings: []keyBinding{{"", "Shown by the Omarchy panel plugin; saved either way"}},
+		})
 	}
 
 	resetAction := "Reset from live Hyprland state"
@@ -92,7 +108,7 @@ func (m Model) keyGroupsFor(tab mainTab) []keyGroup {
 	return append(groups, keyGroup{
 		title: "Anywhere",
 		bindings: []keyBinding{
-			{"1 2 3", "Switch tabs"},
+			{"1 2 3 4", "Switch tabs"},
 			{"a", "Preview the current draft or selected profile, then Keep or Revert"},
 			{"s", "Save the current draft as a profile"},
 			{"U", fmt.Sprintf("Disable displays outside the draft: %t (toggle)", m.disableUnknownOutputs)},

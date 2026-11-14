@@ -108,7 +108,7 @@ func (m *Model) commitProfileRename() tea.Cmd {
 
 // followProfileRename keeps the selection and every record of the old name.
 func (m *Model) followProfileRename(name, newName string) {
-	for _, tracked := range []*string{&m.draftProfileName, &m.matchedProfileName, &m.activeProfileName, &m.profileOverride} {
+	for _, tracked := range []*string{&m.draftProfileName, &m.matchedProfileName, &m.activeProfileName, &m.profileOverride, &m.wallpaperOverride} {
 		if strings.EqualFold(strings.TrimSpace(*tracked), strings.TrimSpace(name)) {
 			*tracked = newName
 		}
