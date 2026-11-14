@@ -59,7 +59,7 @@ VRR`. The saved profile is unchanged. See [Daemon Behavior](/daemon/#displays-th
 
 | Key | Action |
 |-----|--------|
-| `1` `2` `3` | Switch tabs (layout, workspaces, profiles) |
+| `1` `2` `3` `4` | Switch tabs (layout, workspaces, profiles, wallpapers) |
 | `a` | Preview the current draft or selected profile, then Keep or Revert |
 | `s` | Save current draft as a named profile |
 | `r` | Reset from live Hyprland state |
@@ -167,16 +167,41 @@ Selecting a profile fills the right side: its monitor arrangement on top, its de
 | `e` | Edit the profile's post-apply command |
 | `r` | Rename the profile. Nothing is applied. An older daemon hides this, and `r` keeps resetting from live state |
 | `d` | Ask to delete the profile; `y` or **[Delete profile]** confirms, Enter, Esc, or **[Cancel]** cancels |
+| `w` | Open the Wallpapers tab for the profile |
 | `s` | Save the current draft |
 
 **Post-apply command** is the final profile detail. Click its
 **Edit command** button or its heading to edit it; `e` provides the same operation. Selection
 uses highlighting without an extra arrow. The profile action context menu remains
 a panel-only affordance for now; the TUI has visible **Preview**, **Edit**,
-**Rename**, and **Delete** buttons acting on the highlighted profile, with keyboard shortcuts
+**Rename**, **Delete**, and **Wallpapers…** buttons acting on the highlighted profile, with keyboard shortcuts
 listed in the footer and help.
 Selection alone does not apply it. The Status column distinguishes the active or
 best match from the row currently selected for inspection.
+
+## Wallpapers
+
+The fourth tab gives each display of a saved profile its own picture, the same
+pictures the [Omarchy panel plugin](https://github.com/crmne/omarchy-hyprmoncfg)
+sets on its Wallpapers tab. The plugin draws them: when hyprmoncfg switches
+profiles, each display gets its picture back, and displays without one keep the
+Omarchy background. Without the plugin the pictures are saved but not shown.
+
+The tab opens on the active profile. `w` or **Wallpapers…** on the Profiles tab
+opens it for the highlighted profile instead, so a profile can be set up before
+its displays are plugged in. The profile's arrangement sits on top; below it,
+one row per display the profile turns on, with the picture's file name or
+`Omarchy background`.
+
+| Key | Action |
+|-----|--------|
+| `↑` `↓`, click | Select a display |
+| `Enter`, **[Path…]** | Type the path of a PNG, JPEG or WebP picture; `~/` works |
+| `c`, **[Choose…]** | Pick one with Omarchy's file chooser, then confirm the path. Hidden without `omarchy` |
+| `d`, **[Clear]** | Clear the display's picture |
+
+The TUI shows file names, not thumbnails. Renaming or deleting a profile, from
+any client, keeps its pictures with it.
 
 ## Workspace planner
 

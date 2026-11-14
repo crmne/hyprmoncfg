@@ -18,6 +18,8 @@ hyprmoncfg also writes generated `home-office.conf` and `home-office.lua` sideca
 
 `hyprmoncfgd` also keeps `~/.config/hyprmoncfg/display-fallbacks.json` for displays that need a gentle wake or run below their saved settings because they would not stay on at them (see [the daemon guide](/daemon/#displays-that-wont-stay-on)). It is live state, not a profile. Applying any profile clears the stepped-down settings; deleting the file forgets everything once the daemon restarts.
 
+`~/.config/hyprmoncfg/wallpapers.json` holds per-display wallpapers, by profile name and display key. The [Omarchy panel plugin](https://github.com/crmne/omarchy-hyprmoncfg) owns its format and draws the pictures; the TUI's Wallpapers tab edits it, and renaming or deleting a profile moves or drops that profile's entry. A file in a format this version does not know is left untouched.
+
 {% include alert.html type="warning" title="Every Profile File Is A Match Candidate" content="`hyprmoncfgd` scans every `*.json` file in this directory. Old backups, temporary experiments, and duplicate layouts are not ignored just because you forgot about them." %}
 
 Override the storage directory with `--config-dir`:

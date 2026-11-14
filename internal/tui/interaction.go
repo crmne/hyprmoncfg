@@ -1306,7 +1306,7 @@ func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if tab, ok := m.tabAt(msg.X, msg.Y); ok && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-		m.tab = tab
+		m.switchTab(tab)
 		return m, nil
 	}
 
@@ -1323,6 +1323,8 @@ func (m *Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.updateProfilesMouse(msg)
 	case tabWorkspaces:
 		return m.updateWorkspaceMouse(msg)
+	case tabWallpapers:
+		return m.updateWallpapersMouse(msg)
 	default:
 		return m, nil
 	}
@@ -1495,7 +1497,7 @@ func (m Model) updateProfilesMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if automaticRect.inner(m.styles.inactivePane).contains(msg.X, msg.Y) {
 		return m.toggleProfileAutomatic()
 	}
-	for _, action := range []struct{ label, key string }{{"[Preview]", "enter"}, {"[Edit]", "l"}, {"[Rename]", "r"}, {"[Delete]", "d"}} {
+	for _, action := range []struct{ label, key string }{{"[Preview]", "enter"}, {"[Edit]", "l"}, {"[Rename]", "r"}, {"[Delete]", "d"}, {"[Wallpapers…]", "w"}} {
 		if len(m.profiles) > 0 && m.visibleActionAt(msg.X, msg.Y, action.label) {
 			if action.key == "enter" {
 				return m.updateProfileKeys(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1748,10 +1750,15 @@ func (m Model) restartHintAt(x, y int) bool {
 	if !m.daemonNeedsRestart() || y != m.appContentY() {
 		return false
 	}
-	width := m.footerContentWidth()
-	hint := lipgloss.Width(m.restartHint())
+	// Hit only the hint as drawn: a narrow tab row draws the short one.
+	plainTabs := ansi.Strip(m.renderTabs())
 	localX := x - m.appContentX()
-	return localX > width-hint-2 && localX <= width
+	for _, hint := range []string{m.restartHint(), m.shortRestartHint()} {
+		if start, ok := visibleTextColumn(plainTabs, hint); ok {
+			return localX >= start && localX < start+lipgloss.Width(hint)
+		}
+	}
+	return false
 }
 
 func (m Model) tabAt(x, y int) (mainTab, bool) {
@@ -1765,9 +1772,8 @@ func (m Model) tabAt(x, y int) (mainTab, bool) {
 		return tabLayout, false
 	}
 
-	labels := []string{"Layout", "Workspaces", "Profiles"}
 	cursorX := 1
-	for idx, label := range labels {
+	for idx, label := range tabLabels {
 		width := lipgloss.Width(fmt.Sprintf(" %d %s ", idx+1, label))
 		if localX >= cursorX && localX < cursorX+width {
 			return mainTab(idx), true

@@ -28,6 +28,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/profile"
 	"github.com/crmne/hyprmoncfg/internal/profileio"
 	"github.com/crmne/hyprmoncfg/internal/scaling"
+	"github.com/crmne/hyprmoncfg/internal/wallpaper"
 )
 
 type uiMode int
@@ -43,6 +44,7 @@ const (
 	modeProfileRenameInput
 	modeKeybindings
 	modeDeleteConfirm
+	modeWallpaperPathInput
 )
 
 type mainTab int
@@ -51,7 +53,11 @@ const (
 	tabLayout mainTab = iota
 	tabWorkspaces
 	tabProfiles
+	tabWallpapers
 )
+
+// tabLabels are the numbered tabs, in the panel's page order.
+var tabLabels = []string{"Layout", "Workspaces", "Profiles", "Wallpapers"}
 
 type layoutFocus int
 
@@ -296,6 +302,10 @@ type Model struct {
 	ipc     *ipc.Client
 	openURL func(string) error
 
+	// chooseFile and hasOmarchy reach Omarchy's file chooser; tests swap them.
+	chooseFile func() (string, error)
+	hasOmarchy func() bool
+
 	styles styles
 
 	mode        uiMode
@@ -316,6 +326,11 @@ type Model struct {
 	selectedProfile   int
 	deleteProfileName string
 
+	wallpaperOverride string
+	wallpaperSelected int
+	wallpaperDoc      wallpaper.Document
+	wallpaperErr      error
+
 	pending       *pendingApply
 	revertGuard   *pendingRevertGuard
 	remoteGuard   *pendingRemoteGuard
@@ -325,6 +340,7 @@ type Model struct {
 	input         *numericInputState
 	execInput     *profileExecInputState
 	renameInput   *profileRenameState
+	wallpaperPath *wallpaperPathState
 	drag          *canvasDragState
 	toast         *toastState
 	snap          *snapHintState
@@ -598,6 +614,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setStatusOK(fmt.Sprintf("Deleted profile %q", msg.name))
 		m.selectedProfile = clampIndex(m.selectedProfile, len(m.profiles))
+		m.reloadWallpapers()
 		return m, m.refreshCmd(false)
 
 	case renameMsg:
@@ -607,7 +624,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.followProfileRename(msg.name, msg.newName)
 		m.setStatusOK(fmt.Sprintf("Renamed profile %q to %q", msg.name, msg.newName))
+		// The store moved the profile's wallpapers with it.
+		m.reloadWallpapers()
 		return m, m.refreshCmd(false)
+
+	case wallpaperChosenMsg:
+		return m.handleWallpaperChosen(msg)
 
 	case applyMsg:
 		m.applying = false
@@ -719,6 +741,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateProfileExecInputKeys(msg)
 		case modeProfileRenameInput:
 			return m.updateProfileRenameKeys(msg)
+		case modeWallpaperPathInput:
+			return m.updateWallpaperPathKeys(msg)
 		case modeKeybindings:
 			if msg.String() == "ctrl+c" {
 				return m, tea.Quit
@@ -759,6 +783,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.renameInput.Input, cmd = m.renameInput.Input.Update(msg)
 			return m, cmd
 		}
+	case modeWallpaperPathInput:
+		if m.wallpaperPath != nil {
+			var cmd tea.Cmd
+			m.wallpaperPath.Input, cmd = m.wallpaperPath.Input.Update(msg)
+			return m, cmd
+		}
 	}
 
 	return m, nil
@@ -778,10 +808,10 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "1":
-		m.tab = tabLayout
+		m.switchTab(tabLayout)
 		return m, nil
 	case "2":
-		m.tab = tabWorkspaces
+		m.switchTab(tabWorkspaces)
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual && !m.workspaceEdit.ManualRulesInitialized {
 			m.workspaceEdit.Rules = m.materializeManualWorkspaceRules()
 			m.workspaceEdit.ManualRulesInitialized = len(m.workspaceEdit.Rules) > 0
@@ -791,7 +821,10 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "3":
-		m.tab = tabProfiles
+		m.switchTab(tabProfiles)
+		return m, nil
+	case "4":
+		m.switchTab(tabWallpapers)
 		return m, nil
 	case "?":
 		m.mode = modeKeybindings
@@ -856,6 +889,8 @@ func (m Model) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateProfileKeys(msg)
 	case tabWorkspaces:
 		return m.updateWorkspaceKeys(msg)
+	case tabWallpapers:
+		return m.updateWallpaperKeys(msg)
 	default:
 		return m, nil
 	}
@@ -978,7 +1013,13 @@ func (m Model) updateProfileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loadProfile(m.profiles[m.selectedProfile])
-		m.tab = tabLayout
+		m.switchTab(tabLayout)
+	case "w":
+		if len(m.profiles) == 0 {
+			m.setStatusErr("No profiles available")
+			return m, nil
+		}
+		m.openWallpapersFor(m.profiles[m.selectedProfile].Name)
 	default:
 		return m, nil
 	}
@@ -1179,6 +1220,8 @@ func (m Model) View() string {
 		return m.renderModalScreen(m.renderProfileExecInput())
 	case modeProfileRenameInput:
 		return m.renderModalScreen(m.renderProfileRename())
+	case modeWallpaperPathInput:
+		return m.renderModalScreen(m.renderWallpaperPath())
 	case modeKeybindings:
 		return m.renderModalScreen(m.renderKeybindings())
 	default:
@@ -1205,6 +1248,8 @@ func (m Model) renderMain() string {
 		body = m.renderProfilesView(bodyHeight)
 	case tabWorkspaces:
 		body = m.renderWorkspaceView(bodyHeight)
+	case tabWallpapers:
+		body = m.renderWallpapersView(bodyHeight)
 	}
 	body = lipgloss.NewStyle().Height(bodyHeight).MaxHeight(bodyHeight).Render(body)
 
@@ -1231,7 +1276,7 @@ func (m Model) renderMain() string {
 }
 
 func (m Model) renderTabs() string {
-	labels := []string{"Layout", "Workspaces", "Profiles"}
+	labels := tabLabels
 	parts := make([]string, 0, len(labels)*2+1)
 	lineStyle := withFG(lipgloss.NewStyle(), m.styles.palette.paneBorder)
 	parts = append(parts, lineStyle.Render("─"))
@@ -1256,6 +1301,9 @@ func (m Model) renderTabs() string {
 	availableStatus := max(1, width-lipgloss.Width(left)-2)
 	if lipgloss.Width(status) > availableStatus {
 		status = m.renderCompactTopStatus()
+	}
+	if lipgloss.Width(status) > availableStatus {
+		status = m.minimalTopStatus()
 	}
 	if lipgloss.Width(status) > availableStatus {
 		status = ansi.Truncate(status, availableStatus, "")
@@ -1810,13 +1858,14 @@ func (m Model) renderProfilesView(height int) string {
 // profileActions fills the profile list's action rows, breaking the buttons in
 // two where the pane is too narrow for one line.
 func (m Model) profileActions(width int) string {
-	if !m.renameAvailable() {
-		return "\n" + fitString("[Preview] [Edit] [Delete]", width)
+	first, second := "[Preview] [Edit]", "[Delete] [Wallpapers…]"
+	if m.renameAvailable() {
+		second = "[Rename] " + second
 	}
-	if line := "[Preview] [Edit] [Rename] [Delete]"; lipgloss.Width(line) <= width {
+	if line := first + " " + second; lipgloss.Width(line) <= width {
 		return "\n" + line
 	}
-	return fitString("[Preview] [Edit]", width) + "\n" + fitString("[Rename] [Delete]", width)
+	return fitString(first, width) + "\n" + fitString(second, width)
 }
 
 func (m Model) compactProfileListHeight(height int) int {
