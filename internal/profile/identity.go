@@ -181,8 +181,11 @@ func normalizeIdentityRefs(outputs []OutputConfig, workspaces *WorkspaceSettings
 		if resolved := index.resolveReference(rule.OutputKey, rule.OutputName); resolved != "" {
 			rule.OutputKey = resolved
 		}
-		if rule.OutputName == "" && rule.OutputKey != "" {
-			if output, ok := index.byKey[rule.OutputKey]; ok {
+		// The key is the display's identity; the connector is only where it
+		// was plugged in when the rule was saved. Displays swap connectors,
+		// so a key the profile knows always supplies the current one.
+		if rule.OutputKey != "" {
+			if output, ok := index.byKey[rule.OutputKey]; ok && output.Name != "" {
 				rule.OutputName = output.Name
 			}
 		}
