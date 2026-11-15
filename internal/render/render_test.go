@@ -155,3 +155,31 @@ func TestFixedPanelTouchTransformsAcrossFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderWritesEveryVRRMode(t *testing.T) {
+	desk := hypr.Monitor{Name: "DP-1", Width: 2560, Height: 1440, RefreshRate: 144, Scale: 1}
+	for vrr := -1; vrr <= 3; vrr++ {
+		p := profile.FromMonitors("Desk", []hypr.Monitor{desk})
+		p.Outputs[0].VRR = vrr
+		if cmd := CommandForOutput("DP-1", p.Outputs[0], ""); !strings.HasSuffix(cmd, fmt.Sprintf(",vrr,%d", vrr)) {
+			t.Fatalf("VRR %d: keyword rule = %s", vrr, cmd)
+		}
+		for _, opts := range []Options{
+			{Format: config.HyprConfigLegacy, UseMonitorV2: true},
+			{Format: config.HyprConfigLua, UseMonitorV2: true},
+		} {
+			rendered, err := RenderConfig(p, []hypr.Monitor{desk}, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(rendered, fmt.Sprintf("  vrr = %d", vrr)) {
+				t.Fatalf("VRR %d (%v): %s", vrr, opts.Format, rendered)
+			}
+		}
+	}
+
+	out := profile.OutputConfig{Enabled: true, Width: 2560, Height: 1440, Refresh: 144, Scale: 1, VRR: 4}
+	if cmd := CommandForOutput("DP-1", out, ""); !strings.HasSuffix(cmd, ",vrr,0") {
+		t.Fatalf("an unknown VRR mode should fall back to off, got %s", cmd)
+	}
+}

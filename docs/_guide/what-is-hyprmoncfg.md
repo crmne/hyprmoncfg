@@ -1,6 +1,6 @@
 ---
 title: What is hyprmoncfg?
-description: Create multi-monitor layouts for Hyprland, save them as profiles, and switch them automatically.
+description: Create multi-monitor layouts for Hyprland, save them as profiles, and switch them automatically. Works with Hyprland Lua configs and legacy .conf.
 nav_order: 0
 ---
 

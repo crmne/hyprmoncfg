@@ -81,6 +81,47 @@ func (c *Client) Monitors(ctx context.Context) ([]Monitor, error) {
 	return enricher.enrich(ctx, monitors)
 }
 
+// XWaylandForcedZeroScaling reports Hyprland's xwayland:force_zero_scaling
+// option. With it on, XWayland gives X11 clients a 1x screen and each app
+// scales itself, which is what Omarchy pins GDK_SCALE for. With it off,
+// XWayland hands them the monitor's own resolution and the compositor does the
+// scaling, so a global GDK_SCALE is applied a second time and those apps come
+// up magnified.
+//
+// The second result is false when Hyprland does not answer, so callers keep
+// their previous behaviour rather than failing an apply over a preference.
+func (c *Client) XWaylandForcedZeroScaling(ctx context.Context) (bool, bool) {
+	ctx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
+	defer cancel()
+	cmd, err := c.commandContext(ctx, "getoption", "xwayland:force_zero_scaling")
+	if err != nil {
+		return false, false
+	}
+	cmd.WaitDelay = 100 * time.Millisecond
+	out, err := cmd.Output()
+	if err != nil {
+		return false, false
+	}
+	return optionBool(out)
+}
+
+// optionBool reads the value out of hyprctl getoption, which prints lines such
+// as "bool: false" and "set: true" for a value Hyprland has not overridden.
+func optionBool(out []byte) (bool, bool) {
+	for _, line := range strings.Split(string(out), "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), ":")
+		if !found || !strings.EqualFold(strings.TrimSpace(key), "bool") {
+			continue
+		}
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return false, false
+		}
+		return parsed, true
+	}
+	return false, false
+}
+
 // fallbackConnectorName is what Hyprland calls the placeholder head it invents
 // when no real output is driving anything, so the compositor has somewhere to
 // draw rather than falling over.

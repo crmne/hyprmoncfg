@@ -112,7 +112,9 @@ jobs:
       - name: Install shared packaging tools
         run: |
           gem install native-packages --version 0.10.0 --no-document
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+          # nfpm needs a newer Go than go.mod's minimum, and setup-go from v6
+          # pins GOTOOLCHAIN=local, so let this one install fetch its toolchain.
+          GOTOOLCHAIN=auto go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
           sudo apt-get update
           sudo apt-get install -y libarchive-tools binutils rpm
       - uses: goreleaser/goreleaser-action@v6

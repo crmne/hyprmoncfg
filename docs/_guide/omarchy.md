@@ -100,7 +100,9 @@ toggle](https://github.com/omacom/omarchy/pull/16213) is tracked upstream;
 it is not part of Omarchy 4.5.0rc2.
 
 hyprmoncfg 1.26.0 and newer make an enabled workspace planner own global
-numbering. The existing generated Lua file disables Omarchy's workspace
+numbering once its plan places a numbered workspace. A plan of only named or
+special workspaces, such as `special:qconsole`, leaves Omarchy's per-monitor
+workspaces and shortcuts alone. The existing generated Lua file disables Omarchy's workspace
 reassignment and restores global shortcuts, without another include or changes
 to packaged Omarchy files. This applies through the shared engine used by the
 daemon, TUI and panel. **Off** continues to delegate workspace management.

@@ -19,6 +19,10 @@ func fieldOptionLabel(field int, value string) string {
 			return "On"
 		case "fullscreen":
 			return "Fullscreen"
+		case "games":
+			return "Fullscreen (games)"
+		case "global":
+			return "Follow global"
 		}
 	case 6:
 		switch value {

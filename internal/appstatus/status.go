@@ -186,15 +186,18 @@ type MonitorFallback struct {
 // anything changes; mode lists and a complete profile-shaped draft are only
 // fetched when an editor is actually open.
 type EditorDocument struct {
-	MonitorSetHash                string                     `json:"monitor_set_hash,omitempty"`
-	WorkspacePersistenceSupported bool                       `json:"workspace_persistence_supported"`
-	Profile                       profile.Profile            `json:"profile"`
-	Profiles                      []profile.Profile          `json:"profiles"`
-	Displays                      []EditorDisplay            `json:"displays"`
-	WorkspacePlan                 []WorkspacePlan            `json:"workspace_plan"`
-	ProfileWorkspacePlans         map[string][]WorkspacePlan `json:"profile_workspace_plans"`
-	SourceProfile                 string                     `json:"source_profile,omitempty"`
-	SuggestedProfile              string                     `json:"suggested_profile,omitempty"`
+	MonitorSetHash                string `json:"monitor_set_hash,omitempty"`
+	WorkspacePersistenceSupported bool   `json:"workspace_persistence_supported"`
+	// VRRModes lists the VRR values edit_profile accepts, so an editor offers
+	// only modes this daemon can save.
+	VRRModes              []int                      `json:"vrr_modes"`
+	Profile               profile.Profile            `json:"profile"`
+	Profiles              []profile.Profile          `json:"profiles"`
+	Displays              []EditorDisplay            `json:"displays"`
+	WorkspacePlan         []WorkspacePlan            `json:"workspace_plan"`
+	ProfileWorkspacePlans map[string][]WorkspacePlan `json:"profile_workspace_plans"`
+	SourceProfile         string                     `json:"source_profile,omitempty"`
+	SuggestedProfile      string                     `json:"suggested_profile,omitempty"`
 }
 
 type EditorDraft struct {
@@ -246,6 +249,7 @@ func BuildEditorWith(profiles []profile.Profile, monitors []hypr.Monitor, rules 
 	document := EditorDocument{
 		MonitorSetHash:                HardwareSnapshotHash(monitors),
 		WorkspacePersistenceSupported: true,
+		VRRModes:                      profile.VRRModes(),
 		Profile:                       draft,
 		Profiles:                      append([]profile.Profile{}, profiles...),
 		Displays:                      make([]EditorDisplay, 0, len(monitors)),

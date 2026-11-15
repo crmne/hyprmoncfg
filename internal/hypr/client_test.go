@@ -175,6 +175,51 @@ exit "$HYPRMONCFG_TEST_EVAL_STATUS"
 	})
 }
 
+func TestXWaylandForcedZeroScalingReadsGetOption(t *testing.T) {
+	tmp := t.TempDir()
+	hyprctlPath := filepath.Join(tmp, "hyprctl")
+	script := `#!/usr/bin/env bash
+set -eu
+if [ "${1-}" = "--instance" ]; then
+  shift 2
+fi
+if [ "${1-}" != "getoption" ] || [ "${2-}" != "xwayland:force_zero_scaling" ]; then
+  echo "unexpected args: $*" >&2
+  exit 1
+fi
+printf '%s' "$HYPRMONCFG_TEST_OPTION_REPLY"
+exit "$HYPRMONCFG_TEST_OPTION_STATUS"
+`
+	if err := os.WriteFile(hyprctlPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake hyprctl: %v", err)
+	}
+	t.Setenv("HYPRLAND_INSTANCE_SIGNATURE", "sig-test")
+	client := &Client{hyprctl: hyprctlPath}
+
+	cases := []struct {
+		name   string
+		reply  string
+		status string
+		want   bool
+		wantOK bool
+	}{
+		{name: "forced to zero scaling", reply: "bool: true\nset: true\ndescription: force the XWayland scale to 0", status: "0", want: true, wantOK: true},
+		{name: "compositor scales X11 clients", reply: "bool: false\nset: true", status: "0", want: false, wantOK: true},
+		{name: "older Hyprland without the option", reply: "", status: "0", want: false, wantOK: false},
+		{name: "hyprctl fails", reply: "error: no such option", status: "1", want: false, wantOK: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HYPRMONCFG_TEST_OPTION_REPLY", tc.reply)
+			t.Setenv("HYPRMONCFG_TEST_OPTION_STATUS", tc.status)
+			got, ok := client.XWaylandForcedZeroScaling(context.Background())
+			if got != tc.want || ok != tc.wantOK {
+				t.Fatalf("XWaylandForcedZeroScaling() = %v, %v; want %v, %v", got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
 func TestMonitorOutputKeyUsesStableMSTPathForDuplicateMonitors(t *testing.T) {
 	monitors := []Monitor{
 		{Name: "DP-10", Make: "Sceptre Tech Inc", Model: "Sceptre Z27", ConnectorPath: "mst:532-3"},

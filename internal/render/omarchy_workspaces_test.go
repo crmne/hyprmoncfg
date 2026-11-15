@@ -30,6 +30,33 @@ func TestOmarchyWorkspaceOwnershipFollowsPlanner(t *testing.T) {
 	}
 }
 
+// A plan that places no numbered workspace leaves Omarchy's per-monitor
+// workspaces and shortcuts alone (#113).
+func TestOmarchyWorkspaceTakeoverNeedsANumberedWorkspace(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "DP-1", Description: "Test display", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1}}
+	p := profile.FromMonitors("Desk", monitors)
+	key := p.Outputs[0].Key
+	for _, tc := range []struct {
+		name  string
+		rules []profile.WorkspaceRule
+		want  bool
+	}{
+		{"no rules", nil, false},
+		{"only a special workspace", []profile.WorkspaceRule{{Workspace: "special:qconsole"}}, false},
+		{"only a named workspace", []profile.WorkspaceRule{{Workspace: "name:chat", OutputKey: key}}, false},
+		{"a numbered workspace", []profile.WorkspaceRule{{Workspace: "special:qconsole"}, {Workspace: "3", OutputKey: key}}, true},
+	} {
+		p.Workspaces = profile.WorkspaceSettings{Enabled: true, Strategy: profile.WorkspaceStrategyManual, Rules: tc.rules}
+		got, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLua, UseMonitorV2: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(got, "o.workspaces.reconcile = function() end") != tc.want {
+			t.Fatalf("%s: takeover=%v, want %v\n%s", tc.name, !tc.want, tc.want, got)
+		}
+	}
+}
+
 func TestOmarchyMonitorPanelHandoffIsLuaOnly(t *testing.T) {
 	monitors := []hypr.Monitor{{Name: "DP-1", Description: "Test display", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1}}
 	p := profile.FromMonitors("Desk", monitors)
@@ -63,12 +90,58 @@ func TestOmarchyGDKScaleFollowsLowestActiveScale(t *testing.T) {
 		}, `hl.env("GDK_SCALE", "2")`},
 	}
 	for _, tc := range cases {
-		if got := omarchyGDKScaleSection(tc.outs); !strings.Contains(got, tc.want) {
+		if got := omarchyGDKScaleSection(tc.outs, false); !strings.Contains(got, tc.want) {
 			t.Fatalf("%s: got %q", tc.name, got)
 		}
 	}
-	if got := omarchyGDKScaleSection(nil); got != "" {
+	if got := omarchyGDKScaleSection(nil, false); got != "" {
 		t.Fatalf("no outputs: %q", got)
+	}
+	if got := omarchyGDKScaleSection(cases[0].outs, true); got != "" {
+		t.Fatalf("XWayland scales X11 clients itself, GDK_SCALE must stay untouched: %q", got)
+	}
+}
+
+func TestOmarchyGDKScaleYieldsToXWaylandScaling(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "eDP-1", Description: "Laptop panel", Width: 2880, Height: 1920, RefreshRate: 120, Scale: 2}}
+	p := profile.FromMonitors("Laptop", monitors)
+	for _, xwaylandScalesX11 := range []bool{false, true} {
+		got, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLua, UseMonitorV2: true, XWaylandScalesX11: xwaylandScalesX11})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(got, `hl.env("GDK_SCALE"`) == xwaylandScalesX11 {
+			t.Fatalf("xwaylandScalesX11=%v\n%s", xwaylandScalesX11, got)
+		}
+	}
+}
+
+// A profile switch after login must reach apps started through systemd or
+// D-Bus activation, which keep the GDK_SCALE uwsm exported at login (#124).
+func TestOmarchyGDKScaleReachesTheSessionEnvironment(t *testing.T) {
+	lua, err := exec.LookPath("lua")
+	if err != nil {
+		t.Skip("Lua interpreter is required for the generated-config runtime check")
+	}
+	section := omarchyGDKScaleSection([]matchedOutput{{config: profile.OutputConfig{Enabled: true, Scale: 1}}}, false)
+	path := filepath.Join(t.TempDir(), "gdk.lua")
+	script := `
+local env, commands = {}, {}
+hl = { env = function(k, v) env[k] = v end, exec_cmd = function(cmd) commands[#commands + 1] = cmd end }
+o = {}
+` + section + `
+assert(env.GDK_SCALE == "1", "Hyprland environment not set")
+assert(#commands == 1 and commands[1] == "dbus-update-activation-environment --systemd GDK_SCALE=1", "session environment not updated: " .. tostring(commands[1]))
+-- Plain Hyprland without Omarchy leaves both alone.
+env, commands, o = {}, {}, nil
+` + section + `
+assert(env.GDK_SCALE == nil and #commands == 0)
+`
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(lua, path).CombinedOutput(); err != nil {
+		t.Fatalf("generated GDK_SCALE section failed: %v\n%s", err, output)
 	}
 }
 
@@ -88,7 +161,8 @@ end
 local function dispatch(kind)
   return function(spec) return function() calls[#calls + 1] = { kind = kind, spec = spec } end end
 end
-hl = { dispatch = function(fn) fn() end, dsp = { focus = dispatch("focus"), window = { move = dispatch("window") }, workspace = { move = dispatch("workspace") } } }
+local monitors = { u = { name = "DP-2" } }
+hl = { get_monitor = function(selector) return monitors[selector] end, dispatch = function(fn) fn() end, dsp = { focus = dispatch("focus"), window = { move = dispatch("window") }, workspace = { move = dispatch("workspace") } } }
 ` + omarchyGlobalWorkspaces + `
 assert(o.workspaces == original and original.enabled == false)
 for _, fn in pairs(events) do fn() end
@@ -108,7 +182,9 @@ run("SUPER + TAB", "focus", "e+1")
 run("SUPER + SHIFT + TAB", "focus", "e-1")
 run("SUPER + CTRL + TAB", "focus", "previous")
 bindings["SUPER + SHIFT + ALT + UP"]()
-assert(calls[#calls].kind == "workspace" and calls[#calls].spec.monitor == "u")
+assert(calls[#calls].kind == "workspace" and calls[#calls].spec.monitor == "DP-2", "workspace.move needs the monitor, not the direction")
+-- No monitor that way: nothing to move, and no error on screen.
+bindings["SUPER + SHIFT + ALT + DOWN"]()
 assert(#calls == 7, "unexpected monitor reassignment or workspace renumbering")
 -- The same generated file must remain portable to plain Hyprland and older Omarchy.
 o, hl = nil, nil

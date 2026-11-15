@@ -41,7 +41,15 @@ end`
 // omarchyGDKScaleSection takes over GDK_SCALE, which Omarchy's panel settings set
 // and leave to this file once they stand down. As there, it follows the lowest
 // scale, rounded because GTK only honors integers.
-func omarchyGDKScaleSection(matched []matchedOutput) string {
+//
+// Only for XWayland under force_zero_scaling, where apps see a 1x screen and
+// must scale themselves. With that off, XWayland hands X11 clients the
+// monitor's own resolution and the compositor scales them, so pinning
+// GDK_SCALE as well applies the scale twice and magnifies those apps.
+func omarchyGDKScaleSection(matched []matchedOutput, xwaylandScalesX11 bool) string {
+	if xwaylandScalesX11 {
+		return ""
+	}
 	lowest := 0.0
 	for _, item := range matched {
 		if !item.config.Enabled || item.config.MirrorOf != "" || item.config.Scale <= 0 {
@@ -54,8 +62,13 @@ func omarchyGDKScaleSection(matched []matchedOutput) string {
 	if lowest == 0 {
 		return ""
 	}
-	gdkScale := int(math.Max(1, math.Floor(lowest+0.5)))
-	return fmt.Sprintf("-- Omarchy leaves GDK_SCALE to this file.\nif type(o) == \"table\" then hl.env(\"GDK_SCALE\", %q) end", strconv.Itoa(gdkScale))
+	gdkScale := strconv.Itoa(int(math.Max(1, math.Floor(lowest+0.5))))
+	// hl.env only changes Hyprland's own environment. Apps started through
+	// systemd or D-Bus activation (uwsm-app, Omarchy's launcher) keep the
+	// value uwsm exported at login, so every evaluation of this file also
+	// pushes it there: a profile switch, a revert and a plain reload alike.
+	return fmt.Sprintf("-- Omarchy leaves GDK_SCALE to this file.\nif type(o) == \"table\" then\n  hl.env(\"GDK_SCALE\", %q)\n  hl.exec_cmd(%q)\nend",
+		gdkScale, "dbus-update-activation-environment --systemd GDK_SCALE="+gdkScale)
 }
 
 type Options struct {
@@ -63,6 +76,10 @@ type Options struct {
 	UseMonitorV2 bool
 	// PrepareDisconnected permits wake rules when every output is absent.
 	PrepareDisconnected bool
+	// XWaylandScalesX11 means XWayland gives X11 clients their monitor's own
+	// resolution and the compositor scales them, so GDK_SCALE must be left
+	// alone instead of pinning a second scale on top.
+	XWaylandScalesX11 bool
 }
 
 func RenderHyprlandConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool) (string, error) {
@@ -71,7 +88,7 @@ func RenderHyprlandConfig(p profile.Profile, monitors []hypr.Monitor, useV2 bool
 
 func RenderConfig(p profile.Profile, monitors []hypr.Monitor, opts Options) (string, error) {
 	if opts.Format == config.HyprConfigLua {
-		return renderLuaConfig(p, monitors, opts.UseMonitorV2, opts.PrepareDisconnected)
+		return renderLuaConfig(p, monitors, opts.UseMonitorV2, opts.PrepareDisconnected, opts.XWaylandScalesX11)
 	}
 	return renderLegacyConfig(p, monitors, opts.UseMonitorV2, opts.PrepareDisconnected)
 }
@@ -158,7 +175,7 @@ func CommandForOutput(name string, out profile.OutputConfig, mirrorTarget string
 	}
 
 	vrr := out.VRR
-	if vrr < 0 || vrr > 2 {
+	if !profile.ValidVRRMode(vrr) {
 		vrr = 0
 	}
 
@@ -284,7 +301,7 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepa
 	return strings.Join(sections, "\n\n") + "\n", nil
 }
 
-func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareDisconnected bool) (string, error) {
+func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareDisconnected, xwaylandScalesX11 bool) (string, error) {
 	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
 	resolver := profile.NewMonitorResolver(monitors)
@@ -345,13 +362,13 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 	}
 
 	sections := []string{config.GeneratedHeader(config.HyprConfigLua), omarchyMonitorPanelHandoff, strings.Join(monitorBlocks, "\n\n")}
-	if p.Workspaces.Enabled {
+	if p.Workspaces.Enabled && assignsNumberedWorkspace(rules) {
 		sections = append(sections, strings.TrimSpace(omarchyGlobalWorkspaces))
 	}
 	if len(workspaceLines) > 0 {
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
 	}
-	if section := omarchyGDKScaleSection(matched); section != "" {
+	if section := omarchyGDKScaleSection(matched, xwaylandScalesX11); section != "" {
 		sections = append(sections, section)
 	}
 	sections = append(sections, omarchyMirrorToggle)
@@ -665,4 +682,17 @@ func panelTouchTransform(matched []matchedOutput) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// assignsNumberedWorkspace reports whether a plan places any numbered
+// workspace. Only such a plan takes Omarchy's number keys and cycling over to
+// global IDs; a plan of named or special workspaces alone leaves Omarchy's
+// per-monitor workspaces and shortcuts as they are.
+func assignsNumberedWorkspace(rules []profile.WorkspaceRule) bool {
+	for _, rule := range rules {
+		if id, err := strconv.Atoi(strings.TrimSpace(rule.Workspace)); err == nil && id > 0 {
+			return true
+		}
+	}
+	return false
 }

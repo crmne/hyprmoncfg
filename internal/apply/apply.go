@@ -42,6 +42,12 @@ const (
 // window is an unanswered question, not a failed apply.
 var applyValidationTimeout = 3 * time.Second
 
+// applyValidationGrace extends the check once when the compositor answers
+// with a mismatch and then stops answering. That is Hyprland part-way through
+// a modeset: a panel it is still connecting can report its preferred mode
+// before the requested one takes (#118).
+var applyValidationGrace = 3 * time.Second
+
 // ErrVerificationFailed means the compositor answered but did not apply the
 // requested layout. It is distinct from an unanswered compositor query.
 var ErrVerificationFailed = errors.New("display configuration verification failed")
@@ -257,12 +263,19 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		return RevertState{}, err
 	}
 	luaDispatch := resolvedConfig.Format == config.HyprConfigLua
+	// Only ask for XWayland's scale handling when a GDK_SCALE export could
+	// ride on top of it. An older Hyprland that cannot answer keeps the
+	// previous behaviour.
+	xwaylandScalesX11 := false
+	if forcedZero, ok := e.Client.XWaylandForcedZeroScaling(ctx); ok {
+		xwaylandScalesX11 = !forcedZero
+	}
 	revertState := RevertState{
 		MonitorsConf: backup,
 		Commands:     snapshotState(monitors, currentRules, currentWorkspaces, luaDispatch),
 	}
 
-	rendered, err := render.RenderConfig(p, monitors, render.Options{Format: resolvedConfig.Format, UseMonitorV2: supportsV2, PrepareDisconnected: e.PrepareDisconnected})
+	rendered, err := render.RenderConfig(p, monitors, render.Options{Format: resolvedConfig.Format, UseMonitorV2: supportsV2, PrepareDisconnected: e.PrepareDisconnected, XWaylandScalesX11: xwaylandScalesX11})
 	if err != nil {
 		return RevertState{}, err
 	}
@@ -502,8 +515,11 @@ func (e Engine) lightPanels(p profile.Profile, before []hypr.Monitor, opts rende
 }
 
 func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, before []hypr.Monitor, rescue func(context.Context, []hypr.Monitor), checkWake func(context.Context, []hypr.Monitor) error) ([]hypr.Monitor, error) {
-	ctx, cancel := context.WithTimeout(ctx, applyValidationTimeout)
+	ctx, cancel := context.WithTimeout(ctx, applyValidationTimeout+applyValidationGrace)
 	defer cancel()
+	window := time.Now().Add(applyValidationTimeout)
+	graced := false
+	closed := func() bool { return ctx.Err() != nil || !time.Now().Before(window) }
 
 	ticker := time.NewTicker(applyValidationPollInterval)
 	defer ticker.Stop()
@@ -511,13 +527,26 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 	var lastErr error
 
 	for {
-		applied, err := query(ctx, e, "monitors", e.Client.Monitors)
+		// No read outlasts the window, so the grace never delays an apply
+		// that saw no mismatch.
+		readCtx, cancelRead := context.WithDeadline(ctx, window)
+		applied, err := query(readCtx, e, "monitors", e.Client.Monitors)
+		cancelRead()
 		if errors.Is(err, context.Canceled) {
 			return nil, err
 		}
-		if errors.Is(err, ErrQueryTimeout) && ctx.Err() != nil {
+		if errors.Is(err, ErrQueryTimeout) && errors.Is(lastErr, ErrVerificationFailed) && !graced && !closed() {
+			// The compositor stopped answering after a mismatch, so it is
+			// still busy with the change. Wait once for it to finish. A read
+			// cut off by the window itself is not such a stall.
+			graced = true
+			if extended := time.Now().Add(applyValidationGrace); extended.After(window) {
+				window = extended
+			}
+		}
+		if errors.Is(err, ErrQueryTimeout) && closed() {
 			if errors.Is(lastErr, ErrVerificationFailed) {
-				return nil, fmt.Errorf("%w: %w", ctx.Err(), lastErr)
+				return nil, fmt.Errorf("%w: %w", context.DeadlineExceeded, lastErr)
 			}
 			// The window closed without an answer. Keep the timeout visible so
 			// the daemon treats it as a busy compositor and retries later.
@@ -542,6 +571,12 @@ func (e Engine) waitForAppliedProfile(ctx context.Context, p profile.Profile, be
 			}
 		}
 
+		if closed() {
+			if lastErr != nil {
+				return nil, fmt.Errorf("%w: %w", context.DeadlineExceeded, lastErr)
+			}
+			return nil, context.DeadlineExceeded
+		}
 		select {
 		case <-ctx.Done():
 			if lastErr != nil {

@@ -274,3 +274,21 @@ func TestEditorScaleOptionsPreserveValidCurrentScaleOutsideGrid(t *testing.T) {
 		t.Fatalf("scale options = %v, want %v", got, want)
 	}
 }
+
+// Editors offer VRR modes from the document, so the list must be exactly the
+// values edit_profile accepts.
+func TestEditorAdvertisesTheVRRModesItAccepts(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "DP-1", Make: "Example", Model: "Panel", Serial: "unit-a", Width: 1920, Height: 1080, Scale: 1}}
+	editor := BuildEditor(nil, monitors, nil)
+	encoded, err := json.Marshal(editor)
+	if err != nil || !strings.Contains(string(encoded), `"vrr_modes":[-1,0,1,2,3]`) {
+		t.Fatalf("vrr_modes not advertised: %s %v", encoded, err)
+	}
+	for _, mode := range append(editor.VRRModes, -2, 4) {
+		vrr := mode
+		_, err := profile.ApplyEditorEdit(editor.Profile, profile.EditorEdit{OutputKey: editor.Profile.Outputs[0].Key, VRR: &vrr})
+		if accepted := err == nil; accepted != profile.ValidVRRMode(mode) {
+			t.Fatalf("VRR %d: accepted=%v, advertised=%v (%v)", mode, accepted, profile.ValidVRRMode(mode), err)
+		}
+	}
+}

@@ -10,7 +10,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/scaling"
 )
 
-// Closed sets of two or three values read better as a choice row than as a
+// Small closed sets of values read better as a choice row than as a
 // picker: every option stays visible and the selection is one keypress or
 // one click away. Larger sets (mode, rotation, color space, mirror) keep
 // their pickers. The wire values are the ones layoutFieldValue reports.
@@ -21,7 +21,7 @@ func inspectorChoiceValues(field int) []string {
 	case 3:
 		return []string{"8", "10"}
 	case 5:
-		return []string{"off", "on", "fullscreen"}
+		return []string{"global", "off", "on", "fullscreen", "games"}
 	case 14:
 		return []string{"default", "gamma22", "srgb"}
 	case 18, 19:
@@ -79,6 +79,28 @@ func (m Model) renderChoiceRow(field int, current string, width int, focused boo
 		cursor += lipgloss.Width(label)
 	}
 	return strings.Join(parts, ""), spans, true
+}
+
+// renderVRRRow draws VRR's choice row as pills, since its five options need
+// more than one line in the inspector: wide inspectors wrap them and compact
+// ones slide, like the Refresh row.
+func (m Model) renderVRRRow(current string, width int, focused, wrap bool) ([]string, []choiceSpan) {
+	values := inspectorChoiceValues(5)
+	if width < 8 {
+		return nil, nil
+	}
+	pills := make([]rowPill, len(values))
+	selected := 0
+	for idx, value := range values {
+		label := " " + fieldOptionLabel(5, value) + " "
+		style := m.styles.subtle
+		if value == current {
+			selected = idx
+			style = m.selectedPillStyle(focused, false)
+		}
+		pills[idx] = rowPill{label, style.Render(label), value}
+	}
+	return m.layoutPillRow(pills, selected, width, wrap)
 }
 
 // setInspectorChoice applies one option of a choice row to the selected

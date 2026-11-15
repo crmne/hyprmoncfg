@@ -161,6 +161,11 @@ built-in panel when a sensor is available; only then may an editor offer the
 clients that don't know the field drop it when they save, so upgrade both
 clients together.
 
+Editor documents list `vrr_modes`, the VRR values `edit_profile` accepts (`-1`
+follows the global `misc:vrr`, `0` off, `1` on, `2` fullscreen, `3` fullscreen
+games and video). An editor offers only these; when the field is missing the
+daemon accepts `0`, `1` and `2`.
+
 Editor documents add `workspace_persistence_supported`. Only when true may an
 editor offer `workspaces.persist_all`. Missing capability means unavailable, not
 false user intent. The typed client rejects sending this setting to older

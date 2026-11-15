@@ -31,7 +31,7 @@ hyprmoncfgd --config-dir /path/to/profiles
 
 Each profile stores:
 
-- **Monitor outputs**: hardware identity (make, model, serial), resolution, refresh rate, scale, position, transform, VRR mode, and `rotation_auto` for a built-in panel that turns with the device, whose `transform` is then its upright rotation
+- **Monitor outputs**: hardware identity (make, model, serial), resolution, refresh rate, scale, position, transform, VRR mode (`-1` follows the global `misc:vrr`, `0` off, `1` on, `2` fullscreen only, `3` fullscreen games and video), and `rotation_auto` for a built-in panel that turns with the device, whose `transform` is then its upright rotation
 - **Workspace settings**: strategy, max workspaces, group size, monitor order, explicit rules
 
 Generated workspace plans support `workspaces.persist_all: true` to keep every
@@ -158,9 +158,13 @@ Per-profile `*.conf` and `*.lua` files in `~/.config/hyprmoncfg/profiles/` are d
 
 When a connected built-in panel rotates automatically, the file also sets `input:touchdevice:transform` and `input:tablet:transform` to the panel's current rotation, so the touchscreen and pen turn with it.
 
-hyprmoncfg 1.26.0 and newer also include an Omarchy workspace handoff when the workspace planner is enabled. In the same generated Lua file, it disables Omarchy's per-monitor reassignment and restores global number, move, history, and cycling shortcuts. There is no additional include. The block detects Omarchy's workspace module at runtime and does nothing on plain Hyprland or older Omarchy installations without that module. Planner **Off** omits it, so the next reload restores the distribution's workspace behaviour. Use a global workspace bar widget with this mode; Omarchy 4.5 RC2's stock widget still labels workspaces per monitor. Existing windows retain their IDs until explicitly moved.
+hyprmoncfg 1.26.0 and newer also include an Omarchy workspace handoff when the workspace planner is enabled and places at least one numbered workspace. In the same generated Lua file, it disables Omarchy's per-monitor reassignment and restores global number, move, history, and cycling shortcuts. There is no additional include. The block detects Omarchy's workspace module at runtime and does nothing on plain Hyprland or older Omarchy installations without that module. Planner **Off**, or a plan of only named or special workspaces, omits it, so the next reload restores the distribution's workspace behaviour. Use a global workspace bar widget with this mode; Omarchy 4.5 RC2's stock widget still labels workspaces per monitor. Existing windows retain their IDs until explicitly moved.
 
 The generated Lua file also sets `omarchy_monitor_panel_settings = false`, so settings saved in Omarchy's display panel do not override your profile when a monitor is plugged in or Hyprland starts. Edits made in that panel are not lost: while hyprmoncfg manages your monitors, the daemon folds them into the active profile. On Omarchy it also sets `GDK_SCALE` from the lowest active scale and honours Omarchy's Mirror Display toggle while it is on.
+
+`GDK_SCALE` is only written while Hyprland runs with `xwayland:force_zero_scaling` on, which is the state Omarchy's panel scaling sets up: X11 clients then get a 1x screen and scale themselves. With that option off, XWayland gives X11 clients the monitor's own resolution and the compositor scales them, so a global `GDK_SCALE` would be applied a second time and apps that honour it, JavaFX wallets and GTK apps among them, come up magnified on a scaled display. hyprmoncfg leaves the variable alone there, and on an older Hyprland that cannot report the option it keeps writing it as before.
+
+When the file sets `GDK_SCALE`, it also runs `dbus-update-activation-environment --systemd GDK_SCALE=<value>` each time Hyprland loads it. Apps started through systemd or D-Bus activation, such as Omarchy's launcher and `uwsm-app`, then get the new value after a profile switch instead of the one exported at login. Running apps keep the scale they started with until they are restarted.
 
 Do not put unrelated Hyprland settings in that file. Keep blocks like `render`, `cursor`, `misc`, and `env` in other sourced config files.
 

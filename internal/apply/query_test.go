@@ -104,9 +104,67 @@ fi
 
 func shortenApplyValidation(t *testing.T, timeout time.Duration) {
 	t.Helper()
-	previous := applyValidationTimeout
-	applyValidationTimeout = timeout
-	t.Cleanup(func() { applyValidationTimeout = previous })
+	previous, previousGrace := applyValidationTimeout, applyValidationGrace
+	applyValidationTimeout, applyValidationGrace = timeout, timeout
+	t.Cleanup(func() { applyValidationTimeout, applyValidationGrace = previous, previousGrace })
+}
+
+// A panel Hyprland is still connecting can report its preferred mode, then
+// stall reads while it switches to the requested one (#118). The apply must
+// wait for the answer instead of rolling back a change that is about to land.
+func TestMismatchThenStallWaitsForTheModeset(t *testing.T) {
+	shortenApplyValidation(t, 400*time.Millisecond)
+	applyValidationGrace = time.Second
+	initial := []byte("-- previous generated layout\n")
+	engine, target, logPath := initLuaProbeTestEngine(t, "ok", initial)
+	engine.QueryTimeout = 40 * time.Millisecond
+	dir := filepath.Dir(logPath)
+	helper := filepath.Join(dir, "hyprctl")
+	source, err := os.ReadFile(helper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded := filepath.Join(dir, "reloaded")
+	counter := filepath.Join(dir, "reads")
+	reloadBranch := `if [ "$cmd1" = "reload" ]; then` + "\n"
+	monitorsBranch := `if [ "$cmd1" = "-j" ] && [ "$cmd2" = "monitors" ] && [ "$cmd3" = "all" ]; then` + "\n"
+	// After the reload: the panel at its preferred 240 Hz, then reads stall
+	// until after the 400 ms window, then the requested 120 Hz.
+	transient := fmt.Sprintf(`if [ -e %[1]q ]; then
+  n=$(cat %[2]q 2>/dev/null || echo 0)
+  echo $((n + 1)) > %[2]q
+  if [ "$n" -eq 0 ]; then
+    printf '%%s' '[{"id":1,"name":"DP-1","description":"Microstep MPG321UR-QD","make":"Microstep","model":"MPG321UR-QD","serial":"A1","width":3840,"height":2160,"refreshRate":143.99,"x":0,"y":0,"scale":1,"transform":0,"focused":true,"dpmsStatus":true,"vrr":true,"disabled":false,"mirrorOf":"","activeWorkspace":{"id":1,"name":"1"}},{"id":2,"name":"eDP-1","description":"Samsung Display Corp. ATNA60CL10-0","make":"Samsung Display Corp.","model":"ATNA60CL10-0","serial":"B2","width":2880,"height":1800,"refreshRate":240,"x":3840,"y":0,"scale":1,"transform":0,"focused":false,"dpmsStatus":true,"vrr":false,"disabled":false,"mirrorOf":"","activeWorkspace":{"id":2,"name":"2"}}]'
+    exit 0
+  fi
+  if [ "$n" -le 4 ]; then
+    exec sleep 20
+  fi
+fi
+`, reloaded, counter)
+	script := string(source)
+	if !strings.Contains(script, reloadBranch) || !strings.Contains(script, monitorsBranch) {
+		t.Fatalf("fake hyprctl no longer has the expected branches:\n%s", script)
+	}
+	script = strings.Replace(script, reloadBranch, reloadBranch+fmt.Sprintf("  touch %q\n", reloaded), 1)
+	script = strings.Replace(script, monitorsBranch, monitorsBranch+transient, 1)
+	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := engine.Apply(context.Background(), newTestProfile(), monitors, ApplyModeNonInteractive); err != nil {
+		t.Fatalf("a mismatch read mid-modeset failed the apply: %v", err)
+	}
+	if written, err := os.ReadFile(target); err != nil || string(written) == string(initial) {
+		t.Fatalf("the apply was rolled back: %s (%v)", written, err)
+	}
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloads := strings.Count(string(logBytes), "\nreload\n"); reloads != 1 {
+		t.Fatalf("expected one reload and no rollback, got %d:\n%s", reloads, logBytes)
+	}
 }
 
 // stallAfterReload makes the fake hyprctl hang on the first stalls calls of

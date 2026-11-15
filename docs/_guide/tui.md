@@ -189,7 +189,7 @@ including Interleaved; this default does not migrate existing profiles.
 
 | Strategy | What it does | When to use it |
 |----------|-------------|----------------|
-| Off | Writes no workspace rules. The profile keeps its plan, so choosing a strategy again brings it back | Another tool manages workspaces, such as [virtual-desktops](virtual-desktops.md) or hyprsplit |
+| Off | Writes no workspace rules. The profile keeps its plan, so choosing a strategy again brings it back | Another tool manages workspaces, such as [virtual-desktops](../virtual-desktops/) or hyprsplit |
 | `sequential` | Groups workspaces in chunks (e.g., 1-3 on monitor A, 4-6 on monitor B) | You think of each monitor as having "its own" workspaces |
 | `interleave` | Round-robins workspaces across monitors (1 on A, 2 on B, 3 on A, ...) | You want next/previous workspace to alternate screens |
 | `manual` | Shows every workspace as an assignment you can move between monitors | You need full control over exactly which workspace lives where |
