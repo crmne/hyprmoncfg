@@ -10,8 +10,8 @@ import (
 // DP-2. The displays have since swapped connectors, so every rule still says
 // DP-2 although its output key names the display that is now on DP-1.
 func staleConnectorProfile() (Profile, hypr.Monitor, hypr.Monitor) {
-	ultrawide := hypr.Monitor{Name: "DP-1", Make: "LG Electronics", Model: "LG ULTRAWIDE", Serial: "605PMXY023762"}
-	side := hypr.Monitor{Name: "DP-2", Make: "Acer Technologies", Model: "VG240Y P", Serial: "0x94319E1D"}
+	ultrawide := hypr.Monitor{Name: "DP-1", Make: "LG Electronics", Model: "LG ULTRAWIDE", Serial: "UW0001"}
+	side := hypr.Monitor{Name: "DP-2", Make: "Acer Technologies", Model: "VG240Y P", Serial: "SD0002"}
 	prof := New("2 Monitor Setup", []OutputConfig{
 		{Key: ultrawide.HardwareKey(), Name: ultrawide.Name, Make: ultrawide.Make, Model: ultrawide.Model, Serial: ultrawide.Serial, Enabled: true, Scale: 1, Mode: "3440x1440@160.00Hz"},
 		{Key: side.HardwareKey(), Name: side.Name, Make: side.Make, Model: side.Model, Serial: side.Serial, Enabled: true, Scale: 1, Mode: "1920x1080@144.00Hz"},
