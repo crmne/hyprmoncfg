@@ -177,7 +177,7 @@ func (p Profile) Validate() error {
 				return fmt.Errorf("output %d has invalid resolution", i)
 			}
 		}
-		if out.VRR < -1 || out.VRR > 3 {
+		if !ValidVRRMode(out.VRR) {
 			return fmt.Errorf("output %d has invalid VRR mode", i)
 		}
 		if out.Bitdepth != 0 && out.Bitdepth != 8 && out.Bitdepth != 10 {
@@ -247,3 +247,11 @@ func (o *OutputConfig) NormalizeScale() {
 	}
 	o.Scale = scaling.Round(o.Scale)
 }
+
+// VRRModes lists the per-monitor VRR values Hyprland accepts, in order:
+// -1 follows the global misc:vrr, 0 off, 1 on, 2 fullscreen only and 3
+// fullscreen with game or video content.
+func VRRModes() []int { return []int{-1, 0, 1, 2, 3} }
+
+// ValidVRRMode reports whether mode is one of VRRModes.
+func ValidVRRMode(mode int) bool { return mode >= -1 && mode <= 3 }

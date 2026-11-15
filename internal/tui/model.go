@@ -3782,7 +3782,7 @@ func (m Model) layoutFieldIssue(output editableOutput, field int) (string, bool)
 			return "invalid", true
 		}
 	case 5:
-		if output.VRR < -1 || output.VRR > 3 {
+		if !profile.ValidVRRMode(output.VRR) {
 			return "invalid", true
 		}
 	case 6:
