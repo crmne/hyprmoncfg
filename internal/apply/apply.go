@@ -257,12 +257,19 @@ func (e Engine) Apply(ctx context.Context, p profile.Profile, monitors []hypr.Mo
 		return RevertState{}, err
 	}
 	luaDispatch := resolvedConfig.Format == config.HyprConfigLua
+	// Only ask for XWayland's scale handling when a GDK_SCALE export could
+	// ride on top of it. An older Hyprland that cannot answer keeps the
+	// previous behaviour.
+	xwaylandScalesX11 := false
+	if forcedZero, ok := e.Client.XWaylandForcedZeroScaling(ctx); ok {
+		xwaylandScalesX11 = !forcedZero
+	}
 	revertState := RevertState{
 		MonitorsConf: backup,
 		Commands:     snapshotState(monitors, currentRules, currentWorkspaces, luaDispatch),
 	}
 
-	rendered, err := render.RenderConfig(p, monitors, render.Options{Format: resolvedConfig.Format, UseMonitorV2: supportsV2, PrepareDisconnected: e.PrepareDisconnected})
+	rendered, err := render.RenderConfig(p, monitors, render.Options{Format: resolvedConfig.Format, UseMonitorV2: supportsV2, PrepareDisconnected: e.PrepareDisconnected, XWaylandScalesX11: xwaylandScalesX11})
 	if err != nil {
 		return RevertState{}, err
 	}
