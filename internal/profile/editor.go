@@ -215,7 +215,7 @@ func ApplyEditorEdit(draft Profile, edit EditorEdit) (Profile, error) {
 			}
 		}
 		if edit.VRR != nil {
-			if *edit.VRR < 0 || *edit.VRR > 2 {
+			if *edit.VRR < -1 || *edit.VRR > 3 {
 				return Profile{}, fmt.Errorf("invalid VRR mode %d", *edit.VRR)
 			}
 			output.VRR = *edit.VRR

@@ -1481,11 +1481,13 @@ func (m Model) buildInspectorLayout(output editableOutput, innerWidth int, compa
 		fieldRows[idx] = len(lines)
 		fieldLines[idx] = 1
 
-		if idx == 2 || idx == fieldRefresh {
+		if idx == 2 || idx == fieldRefresh || (idx == 5 && !hasIssue) {
 			var rows []string
 			var spans []choiceSpan
 			if idx == 2 {
 				rows, spans = m.renderScaleRow(output, innerWidth-labelWidth-1, focused, !compact)
+			} else if idx == 5 {
+				rows, spans = m.renderVRRRow(raw, innerWidth-labelWidth-1, focused, !compact)
 			} else {
 				rows, spans = m.renderRefreshRow(output, innerWidth-labelWidth-1, focused, !compact)
 			}
@@ -2736,7 +2738,7 @@ func (m *Model) adjustInspectorFieldUnguarded(delta int) {
 		}
 		output.CM = presets[wrapIndex(current+delta, len(presets))]
 	case 5:
-		output.VRR = wrapValue(output.VRR+delta, 0, 2)
+		output.VRR = wrapValue(output.VRR+delta, -1, 3)
 	case 6:
 		output.Transform = wrapValue(output.Transform+delta, 0, 7)
 	case 9:
@@ -3780,7 +3782,7 @@ func (m Model) layoutFieldIssue(output editableOutput, field int) (string, bool)
 			return "invalid", true
 		}
 	case 5:
-		if output.VRR < 0 || output.VRR > 2 {
+		if output.VRR < -1 || output.VRR > 3 {
 			return "invalid", true
 		}
 	case 6:
@@ -4858,10 +4860,14 @@ func boolText(v bool) string {
 
 func vrrLabel(v int) string {
 	switch v {
+	case -1:
+		return "global"
 	case 1:
 		return "on"
 	case 2:
 		return "fullscreen"
+	case 3:
+		return "games"
 	default:
 		return "off"
 	}
