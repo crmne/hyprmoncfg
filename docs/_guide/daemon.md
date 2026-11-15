@@ -72,6 +72,11 @@ Existing workspace assignments are imported. Only modeless or disabled displays
 need an automatic extended layout; an overlapping initial arrangement is rebuilt
 rather than preserved. Hyprland's synthetic `FALLBACK` output is never part of it.
 
+When Hyprland reports a display at another mode and then stops answering, it
+is usually still switching that display, for example a built-in panel it is
+turning on. Verification then waits up to three more seconds for the requested
+mode before it rejects the layout.
+
 If verification rejects a layout and rollback restores the previous configuration
 and leaves every intended display usable, the daemon pauses automatic attempts for that same request and restored
 state. This prevents repeatedly switching between a rejected mode and a working
