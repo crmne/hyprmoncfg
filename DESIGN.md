@@ -140,6 +140,15 @@ not a second workspace manager. Omarchy's stock per-monitor widget is not
 compatible with this global mode in 4.5 RC2. Existing windows are never
 automatically renumbered merely to fit a newly selected mode.
 
+Decision, 2026-11-15 (#123): the handoff's "Move workspace to … monitor"
+works on workspaces the plan makes persistent, under both persistence
+policies and including each display's default workspace. Hyprland keeps a
+persistent workspace on its rule's monitor, so the binding first adds a
+runtime rule pinning that workspace, still persistent and not default, to the
+target monitor, then moves it. The move is session state only: it never edits
+the saved profile, and the next reload of the generated file, such as a
+profile switch or an apply that rewrites it, restores the plan.
+
 ### Omarchy display panel
 
 Omarchy's display panel reapplies its saved settings on `monitor.added` and
@@ -300,7 +309,8 @@ calibration are device settings offered through the CLI (`hyprmoncfg rotation
 direction` and `hyprmoncfg rotation calibrate`) and IPC; both clients also offer
 calibration directly. Leaving Auto keeps the upright rotation in
 `rotation_upright`; returning from Normal restores it, and any other fixed
-rotation replaces it, because Normal carries no claim about which way is up. Both clients
+rotation replaces it, because Normal carries no claim about which way is up.
+Both clients
 offer **Auto** only for a built-in panel when the daemon reports a sensor, and
 both expose the lock (`L` in the TUI, a toggle beside **Auto** in the panel),
 as does `hyprmoncfg rotation`. Only built-in panels rotate; touch and pen

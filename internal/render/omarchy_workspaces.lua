@@ -6,6 +6,10 @@ if type(o) == "table" and type(o.workspaces) == "table" and type(o.workspaces.re
   o.workspaces.enabled = false
   o.workspaces.reconcile = function() end
 
+  -- The plan's persistent workspaces. Hyprland keeps one on the monitor its
+  -- rule names and moves it back after a move (#123).
+  local persistent = {} -- hyprmoncfg:persistent
+
   local function action(expression, fn)
     o.bind_expressions[fn] = expression
     return fn
@@ -28,9 +32,17 @@ if type(o) == "table" and type(o.workspaces) == "table" and type(o.workspaces.re
       -- workspace.move takes a monitor, not a direction. Resolve it first;
       -- with no monitor that way, Hyprland would report an error on screen.
       local target = hl.get_monitor(direction)
-      if target then
-        hl.dispatch(hl.dsp.workspace.move({ monitor = target.name }))
+      if not target then
+        return
       end
+      -- Pin a persistent planned workspace to its new monitor first, so it
+      -- stays there. The rule lives until the next reload, which restores
+      -- the plan; the saved profile is unchanged.
+      local workspace = hl.get_active_workspace()
+      if workspace and persistent[tostring(workspace.id)] then
+        hl.workspace_rule({ workspace = tostring(workspace.id), monitor = target.name, persistent = true, default = false })
+      end
+      hl.dispatch(hl.dsp.workspace.move({ monitor = target.name }))
     end)
   end
 

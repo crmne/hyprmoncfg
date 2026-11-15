@@ -40,6 +40,11 @@ display default. Each display still has only one default workspace. Manual plans
 use each rule's `persistent` flag instead. Both editors expose this as Persistence
 on the Workspaces page; no edits to generated files are needed.
 
+On Omarchy, **Move workspace to … monitor** (Super+Shift+Alt+arrow) also moves a
+persistent planned workspace, pinning it to its new monitor for the rest of the
+session. It does not change the saved profile: the next reload of the generated
+file, for example a profile switch, puts the workspace back where the plan says.
+
 Monitors are identified by hardware key (`make|model|serial`), not connector name. This means your profiles survive connector swaps between boots.
 
 ### Commands after applying a profile

@@ -162,8 +162,11 @@ local function dispatch(kind)
   return function(spec) return function() calls[#calls + 1] = { kind = kind, spec = spec } end end
 end
 local monitors = { u = { name = "DP-2" } }
-hl = { get_monitor = function(selector) return monitors[selector] end, dispatch = function(fn) fn() end, dsp = { focus = dispatch("focus"), window = { move = dispatch("window") }, workspace = { move = dispatch("workspace") } } }
-` + omarchyGlobalWorkspaces + `
+local active, rules = { id = 6 }, {}
+hl = { get_monitor = function(selector) return monitors[selector] end, get_active_workspace = function() return active end,
+  workspace_rule = function(spec) rules[#rules + 1] = { spec = spec, before = #calls } end,
+  dispatch = function(fn) fn() end, dsp = { focus = dispatch("focus"), window = { move = dispatch("window") }, workspace = { move = dispatch("workspace") } } }
+` + omarchyGlobalWorkspacesSection([]profile.WorkspaceRule{{Workspace: "1", Persistent: true, Default: true}, {Workspace: "6", Persistent: true, Default: true}, {Workspace: "7"}}) + `
 assert(o.workspaces == original and original.enabled == false)
 for _, fn in pairs(events) do fn() end
 local function run(key, kind, workspace, follow)
@@ -183,9 +186,19 @@ run("SUPER + SHIFT + TAB", "focus", "e-1")
 run("SUPER + CTRL + TAB", "focus", "previous")
 bindings["SUPER + SHIFT + ALT + UP"]()
 assert(calls[#calls].kind == "workspace" and calls[#calls].spec.monitor == "DP-2", "workspace.move needs the monitor, not the direction")
+-- A persistent planned workspace, here a monitor's default, is pinned to its
+-- new monitor before it moves, so Hyprland does not move it back (#123).
+assert(#rules == 1, "the persistent workspace was not pinned to its new monitor")
+local pin = rules[1]
+assert(pin.spec.workspace == "6" and pin.spec.monitor == "DP-2" and pin.spec.persistent == true and pin.spec.default == false, "wrong runtime rule")
+assert(pin.before == #calls - 1, "the rule must come before the move")
+-- A workspace the plan does not make persistent just moves.
+active = { id = 7 }
+bindings["SUPER + SHIFT + ALT + UP"]()
+assert(#rules == 1 and calls[#calls].kind == "workspace", "a non-persistent workspace got a rule")
 -- No monitor that way: nothing to move, and no error on screen.
 bindings["SUPER + SHIFT + ALT + DOWN"]()
-assert(#calls == 7, "unexpected monitor reassignment or workspace renumbering")
+assert(#calls == 8, "unexpected monitor reassignment or workspace renumbering")
 -- The same generated file must remain portable to plain Hyprland and older Omarchy.
 o, hl = nil, nil
 ` + omarchyGlobalWorkspaces + `
@@ -196,5 +209,31 @@ o = { rebind = function() error("older Omarchy bindings changed") end }
 	}
 	if output, err := exec.Command(lua, path).CombinedOutput(); err != nil {
 		t.Fatalf("generated handoff failed: %v\n%s", err, output)
+	}
+}
+
+// Both persistence policies let the move binding pin what they make
+// persistent: every assigned workspace, or only each display's default (#123).
+func TestOmarchyHandoffListsThePlansPersistentWorkspaces(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "eDP-1", Description: "Laptop panel", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1},
+		{Name: "DP-1", Description: "Desk display", Width: 2560, Height: 1440, RefreshRate: 60, Scale: 1, X: 1920},
+	}
+	for _, tc := range []struct {
+		persistAll bool
+		want       string
+	}{
+		{true, `local persistent = { ["1"] = true, ["2"] = true, ["3"] = true, ["4"] = true, ["5"] = true,`},
+		{false, `local persistent = { ["1"] = true, ["3"] = true }`},
+	} {
+		p := profile.FromMonitors("Desk", monitors)
+		p.Workspaces = profile.WorkspaceSettings{Enabled: true, Strategy: profile.WorkspaceStrategySequential, GroupSize: 2, PersistAll: tc.persistAll}
+		got, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLua, UseMonitorV2: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(got, tc.want) || strings.Contains(got, "hyprmoncfg:persistent") {
+			t.Fatalf("persistAll=%v: want %s\n%s", tc.persistAll, tc.want, got)
+		}
 	}
 }

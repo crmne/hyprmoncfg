@@ -363,7 +363,7 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 
 	sections := []string{config.GeneratedHeader(config.HyprConfigLua), omarchyMonitorPanelHandoff, strings.Join(monitorBlocks, "\n\n")}
 	if p.Workspaces.Enabled && assignsNumberedWorkspace(rules) {
-		sections = append(sections, strings.TrimSpace(omarchyGlobalWorkspaces))
+		sections = append(sections, omarchyGlobalWorkspacesSection(rules))
 	}
 	if len(workspaceLines) > 0 {
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
@@ -695,4 +695,25 @@ func assignsNumberedWorkspace(rules []profile.WorkspaceRule) bool {
 		}
 	}
 	return false
+}
+
+// omarchyGlobalWorkspacesSection is the Omarchy workspace handoff, carrying the
+// plan's persistent workspaces so moving one to another monitor can pin it
+// there for the session.
+func omarchyGlobalWorkspacesSection(rules []profile.WorkspaceRule) string {
+	ids := make([]string, 0, len(rules))
+	seen := make(map[string]bool, len(rules))
+	for _, rule := range rules {
+		id := strings.TrimSpace(rule.Workspace)
+		if !rule.Persistent || id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, "["+luaQuote(id)+"] = true")
+	}
+	table := "{}"
+	if len(ids) > 0 {
+		table = "{ " + strings.Join(ids, ", ") + " }"
+	}
+	return strings.Replace(strings.TrimSpace(omarchyGlobalWorkspaces), "local persistent = {} -- hyprmoncfg:persistent", "local persistent = "+table, 1)
 }
