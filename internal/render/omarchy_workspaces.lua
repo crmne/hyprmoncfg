@@ -25,7 +25,12 @@ if type(o) == "table" and type(o.workspaces) == "table" and type(o.workspaces.re
 
   function o.workspaces.move_to_monitor(direction)
     return action("o.workspaces.move_to_monitor(" .. string.format("%q", direction) .. ")", function()
-      hl.dispatch(hl.dsp.workspace.move({ monitor = direction }))
+      -- workspace.move takes a monitor, not a direction. Resolve it first;
+      -- with no monitor that way, Hyprland would report an error on screen.
+      local target = hl.get_monitor(direction)
+      if target then
+        hl.dispatch(hl.dsp.workspace.move({ monitor = target.name }))
+      end
     end)
   end
 

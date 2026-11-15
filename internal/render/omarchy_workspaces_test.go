@@ -134,7 +134,8 @@ end
 local function dispatch(kind)
   return function(spec) return function() calls[#calls + 1] = { kind = kind, spec = spec } end end
 end
-hl = { dispatch = function(fn) fn() end, dsp = { focus = dispatch("focus"), window = { move = dispatch("window") }, workspace = { move = dispatch("workspace") } } }
+local monitors = { u = { name = "DP-2" } }
+hl = { get_monitor = function(selector) return monitors[selector] end, dispatch = function(fn) fn() end, dsp = { focus = dispatch("focus"), window = { move = dispatch("window") }, workspace = { move = dispatch("workspace") } } }
 ` + omarchyGlobalWorkspaces + `
 assert(o.workspaces == original and original.enabled == false)
 for _, fn in pairs(events) do fn() end
@@ -154,7 +155,9 @@ run("SUPER + TAB", "focus", "e+1")
 run("SUPER + SHIFT + TAB", "focus", "e-1")
 run("SUPER + CTRL + TAB", "focus", "previous")
 bindings["SUPER + SHIFT + ALT + UP"]()
-assert(calls[#calls].kind == "workspace" and calls[#calls].spec.monitor == "u")
+assert(calls[#calls].kind == "workspace" and calls[#calls].spec.monitor == "DP-2", "workspace.move needs the monitor, not the direction")
+-- No monitor that way: nothing to move, and no error on screen.
+bindings["SUPER + SHIFT + ALT + DOWN"]()
 assert(#calls == 7, "unexpected monitor reassignment or workspace renumbering")
 -- The same generated file must remain portable to plain Hyprland and older Omarchy.
 o, hl = nil, nil
