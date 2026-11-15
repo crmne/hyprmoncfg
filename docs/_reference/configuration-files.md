@@ -164,6 +164,8 @@ The generated Lua file also sets `omarchy_monitor_panel_settings = false`, so se
 
 `GDK_SCALE` is only written while Hyprland runs with `xwayland:force_zero_scaling` on, which is the state Omarchy's panel scaling sets up: X11 clients then get a 1x screen and scale themselves. With that option off, XWayland gives X11 clients the monitor's own resolution and the compositor scales them, so a global `GDK_SCALE` would be applied a second time and apps that honour it, JavaFX wallets and GTK apps among them, come up magnified on a scaled display. hyprmoncfg leaves the variable alone there, and on an older Hyprland that cannot report the option it keeps writing it as before.
 
+When the file sets `GDK_SCALE`, it also runs `dbus-update-activation-environment --systemd GDK_SCALE=<value>` each time Hyprland loads it. Apps started through systemd or D-Bus activation, such as Omarchy's launcher and `uwsm-app`, then get the new value after a profile switch instead of the one exported at login. Running apps keep the scale they started with until they are restarted.
+
 Do not put unrelated Hyprland settings in that file. Keep blocks like `render`, `cursor`, `misc`, and `env` in other sourced config files.
 
 The file is written atomically (temp file + rename) to prevent partial writes from corrupting your config. Interactive applies keep an in-memory snapshot and restore it on rejection, timeout, interruption, or quit unless you explicitly keep the new configuration.

@@ -62,8 +62,13 @@ func omarchyGDKScaleSection(matched []matchedOutput, xwaylandScalesX11 bool) str
 	if lowest == 0 {
 		return ""
 	}
-	gdkScale := int(math.Max(1, math.Floor(lowest+0.5)))
-	return fmt.Sprintf("-- Omarchy leaves GDK_SCALE to this file.\nif type(o) == \"table\" then hl.env(\"GDK_SCALE\", %q) end", strconv.Itoa(gdkScale))
+	gdkScale := strconv.Itoa(int(math.Max(1, math.Floor(lowest+0.5))))
+	// hl.env only changes Hyprland's own environment. Apps started through
+	// systemd or D-Bus activation (uwsm-app, Omarchy's launcher) keep the
+	// value uwsm exported at login, so every evaluation of this file also
+	// pushes it there: a profile switch, a revert and a plain reload alike.
+	return fmt.Sprintf("-- Omarchy leaves GDK_SCALE to this file.\nif type(o) == \"table\" then\n  hl.env(\"GDK_SCALE\", %q)\n  hl.exec_cmd(%q)\nend",
+		gdkScale, "dbus-update-activation-environment --systemd GDK_SCALE="+gdkScale)
 }
 
 type Options struct {

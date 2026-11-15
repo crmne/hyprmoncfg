@@ -89,6 +89,35 @@ func TestOmarchyGDKScaleYieldsToXWaylandScaling(t *testing.T) {
 	}
 }
 
+// A profile switch after login must reach apps started through systemd or
+// D-Bus activation, which keep the GDK_SCALE uwsm exported at login (#124).
+func TestOmarchyGDKScaleReachesTheSessionEnvironment(t *testing.T) {
+	lua, err := exec.LookPath("lua")
+	if err != nil {
+		t.Skip("Lua interpreter is required for the generated-config runtime check")
+	}
+	section := omarchyGDKScaleSection([]matchedOutput{{config: profile.OutputConfig{Enabled: true, Scale: 1}}}, false)
+	path := filepath.Join(t.TempDir(), "gdk.lua")
+	script := `
+local env, commands = {}, {}
+hl = { env = function(k, v) env[k] = v end, exec_cmd = function(cmd) commands[#commands + 1] = cmd end }
+o = {}
+` + section + `
+assert(env.GDK_SCALE == "1", "Hyprland environment not set")
+assert(#commands == 1 and commands[1] == "dbus-update-activation-environment --systemd GDK_SCALE=1", "session environment not updated: " .. tostring(commands[1]))
+-- Plain Hyprland without Omarchy leaves both alone.
+env, commands, o = {}, {}, nil
+` + section + `
+assert(env.GDK_SCALE == nil and #commands == 0)
+`
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(lua, path).CombinedOutput(); err != nil {
+		t.Fatalf("generated GDK_SCALE section failed: %v\n%s", err, output)
+	}
+}
+
 func TestOmarchyWorkspaceHandoffRuntime(t *testing.T) {
 	lua, err := exec.LookPath("lua")
 	if err != nil {
