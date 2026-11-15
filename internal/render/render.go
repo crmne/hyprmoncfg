@@ -362,7 +362,7 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 	}
 
 	sections := []string{config.GeneratedHeader(config.HyprConfigLua), omarchyMonitorPanelHandoff, strings.Join(monitorBlocks, "\n\n")}
-	if p.Workspaces.Enabled {
+	if p.Workspaces.Enabled && assignsNumberedWorkspace(rules) {
 		sections = append(sections, strings.TrimSpace(omarchyGlobalWorkspaces))
 	}
 	if len(workspaceLines) > 0 {
@@ -682,4 +682,17 @@ func panelTouchTransform(matched []matchedOutput) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// assignsNumberedWorkspace reports whether a plan places any numbered
+// workspace. Only such a plan takes Omarchy's number keys and cycling over to
+// global IDs; a plan of named or special workspaces alone leaves Omarchy's
+// per-monitor workspaces and shortcuts as they are.
+func assignsNumberedWorkspace(rules []profile.WorkspaceRule) bool {
+	for _, rule := range rules {
+		if id, err := strconv.Atoi(strings.TrimSpace(rule.Workspace)); err == nil && id > 0 {
+			return true
+		}
+	}
+	return false
 }

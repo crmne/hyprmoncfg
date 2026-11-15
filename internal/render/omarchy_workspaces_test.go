@@ -30,6 +30,33 @@ func TestOmarchyWorkspaceOwnershipFollowsPlanner(t *testing.T) {
 	}
 }
 
+// A plan that places no numbered workspace leaves Omarchy's per-monitor
+// workspaces and shortcuts alone (#113).
+func TestOmarchyWorkspaceTakeoverNeedsANumberedWorkspace(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "DP-1", Description: "Test display", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1}}
+	p := profile.FromMonitors("Desk", monitors)
+	key := p.Outputs[0].Key
+	for _, tc := range []struct {
+		name  string
+		rules []profile.WorkspaceRule
+		want  bool
+	}{
+		{"no rules", nil, false},
+		{"only a special workspace", []profile.WorkspaceRule{{Workspace: "special:qconsole"}}, false},
+		{"only a named workspace", []profile.WorkspaceRule{{Workspace: "name:chat", OutputKey: key}}, false},
+		{"a numbered workspace", []profile.WorkspaceRule{{Workspace: "special:qconsole"}, {Workspace: "3", OutputKey: key}}, true},
+	} {
+		p.Workspaces = profile.WorkspaceSettings{Enabled: true, Strategy: profile.WorkspaceStrategyManual, Rules: tc.rules}
+		got, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLua, UseMonitorV2: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(got, "o.workspaces.reconcile = function() end") != tc.want {
+			t.Fatalf("%s: takeover=%v, want %v\n%s", tc.name, !tc.want, tc.want, got)
+		}
+	}
+}
+
 func TestOmarchyMonitorPanelHandoffIsLuaOnly(t *testing.T) {
 	monitors := []hypr.Monitor{{Name: "DP-1", Description: "Test display", Width: 1920, Height: 1080, RefreshRate: 60, Scale: 1}}
 	p := profile.FromMonitors("Desk", monitors)
