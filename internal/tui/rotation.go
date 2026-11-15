@@ -80,6 +80,26 @@ func (m *Model) toggleRotationLockCmd() tea.Cmd {
 	)
 }
 
+// calibrateForAutoCmd records the device's current position as upright after
+// a panel went from a fixed rotation to Auto, as the daemon does for the
+// Omarchy panel. It is best-effort and silent: without a daemon, a sensor
+// reading or calibration support, the existing calibration stays.
+func (m Model) calibrateForAutoCmd() tea.Cmd {
+	if m.ipc == nil || m.rotation == nil || !m.rotation.Available || !m.rotation.CalibrationSupported {
+		return nil
+	}
+	client := m.ipc
+	return tea.Sequence(
+		func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			_ = client.SetRotation(ctx, ipc.RotationParams{Calibrate: true})
+			return nil
+		},
+		m.refreshCmd(true),
+	)
+}
+
 // calibrateRotationCmd makes the device's current position its upright one.
 func (m *Model) calibrateRotationCmd() tea.Cmd {
 	if m.ipc == nil || m.rotation == nil {

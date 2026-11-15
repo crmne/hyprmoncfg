@@ -43,6 +43,15 @@ func (o *OutputConfig) RememberRotationUpright(wasAuto bool, previousTransform i
 	}
 }
 
+// TakesPositionAsUpright reports whether choosing Auto kept the rotation the
+// panel had. The device's current position is then its upright one, and the
+// clients record that as a calibration (#90). Normal back to Auto restores a
+// remembered upright rotation instead, and Normal says nothing about which
+// way is up, so that choice keeps the existing calibration.
+func TakesPositionAsUpright(wasAuto bool, previousTransform int, o OutputConfig) bool {
+	return !wasAuto && o.RotationAuto && o.Transform == previousTransform
+}
+
 var errRotationAutoExternal = errors.New("only a built-in panel can rotate with the device")
 
 // Oriented returns the layout an upright profile has when the device is

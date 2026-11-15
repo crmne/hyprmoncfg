@@ -116,3 +116,23 @@ func TestEditorDraftOfATurnedDeviceIsUpright(t *testing.T) {
 		t.Fatalf("custom draft = %q %+v / %+v", source, panel, external)
 	}
 }
+
+func TestChoosingAutoTakesThePositionAsUprightOnlyWhenTheRotationStays(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		wasAuto  bool
+		previous int
+		after    OutputConfig
+		want     bool
+	}{
+		{"fixed 270° to Auto", false, 3, OutputConfig{RotationAuto: true, Transform: 3}, true},
+		{"Normal to Auto without a remembered upright", false, 0, OutputConfig{RotationAuto: true}, true},
+		{"Normal to Auto restoring 270°", false, 0, OutputConfig{RotationAuto: true, Transform: 3}, false},
+		{"already Auto", true, 3, OutputConfig{RotationAuto: true, Transform: 3}, false},
+		{"to a fixed rotation", false, 0, OutputConfig{Transform: 3}, false},
+	} {
+		if got := TakesPositionAsUpright(tc.wasAuto, tc.previous, tc.after); got != tc.want {
+			t.Fatalf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

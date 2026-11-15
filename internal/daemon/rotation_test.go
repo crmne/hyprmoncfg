@@ -292,3 +292,52 @@ func TestARefusedSensorClaimIsReportedAndLoggedOnce(t *testing.T) {
 		t.Fatal("still pending after the claim")
 	}
 }
+
+// The reporter's Chuwi (#90): its sensor reads right-up while the laptop is
+// upright, and the panel looks right at a fixed 270°. Choosing Auto from
+// there must keep 270°, not add the sensor's 270° on top and show 180°.
+func TestChoosingAutoFromAFixedRotationTakesThePositionAsUpright(t *testing.T) {
+	panel := hypr.Monitor{Name: "DSI-1", Description: "Chuwi panel", Make: "Chuwi", Model: "Panel",
+		Width: 1200, Height: 1920, RefreshRate: 60, Scale: 1, DPMSStatus: true, Transform: 3}
+	env := newRunTestEnvConfigured(t, []hypr.Monitor{panel}, func(cfg *Config) {
+		cfg.WatchOrientation = func(context.Context) <-chan orientation.Reading { return nil }
+	}, func(s *Service) {
+		s.rotation.observe(orientation.Reading{Available: true, Orientation: "right-up"})
+	})
+	defer env.stop()
+	if env.svc.rotation.turn() != 3 {
+		t.Fatalf("uncalibrated turn = %d, want the sensor's 3", env.svc.rotation.turn())
+	}
+	draft := profile.FromMonitors("Tablet", []hypr.Monitor{panel})
+	draft.Outputs[0].RotationAuto, draft.Outputs[0].Transform = false, 3 // fixed 270°
+	key := draft.Outputs[0].Key
+	edited, err := env.svc.EditProfile(ipc.EditParams{Profile: draft, Edit: profile.EditorEdit{OutputKey: key, RotationAuto: boolPtr(true)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := edited.Profile.Outputs[0]
+	if !output.RotationAuto || output.Transform != 3 {
+		t.Fatalf("draft = %+v, want Auto with upright 270°", output)
+	}
+	if got := profile.RotateTransform(output.Transform, env.svc.rotation.turn()); got != 3 {
+		t.Fatalf("Auto shows transform %d, want 3 (270°)\n%v", got, env.logs.lines)
+	}
+	if !env.logs.contains("choosing Auto took the current position as upright") {
+		t.Fatal("the calibration was not logged")
+	}
+
+	// Normal back to Auto restores the remembered 270° and is no evidence of
+	// which way is up, so it keeps the calibration.
+	env.svc.rotation.observe(orientation.Reading{Available: true, Orientation: "normal"})
+	normal, err := env.svc.EditProfile(ipc.EditParams{Profile: edited.Profile, Edit: profile.EditorEdit{OutputKey: key, Transform: intPtr(0), RotationAuto: boolPtr(false)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.svc.EditProfile(ipc.EditParams{Profile: normal.Profile, Edit: profile.EditorEdit{OutputKey: key, RotationAuto: boolPtr(true)}}); err != nil {
+		t.Fatal(err)
+	}
+	if env.svc.rotation.status().SensorUpright != 3 {
+		t.Fatalf("Normal then Auto recalibrated: sensor upright = %d", env.svc.rotation.status().SensorUpright)
+	}
+}
+func intPtr(value int) *int { return &value }

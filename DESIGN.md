@@ -310,7 +310,13 @@ direction` and `hyprmoncfg rotation calibrate`) and IPC; both clients also offer
 calibration directly. Leaving Auto keeps the upright rotation in
 `rotation_upright`; returning from Normal restores it, and any other fixed
 rotation replaces it, because Normal carries no claim about which way is up.
-Both clients
+Choosing **Auto** while the panel keeps the rotation it showed (a fixed
+rotation, or Normal with no remembered upright) is a claim that the device is
+upright now: both clients then record the current sensor reading as calibrated,
+as explicit calibration does, so the visible rotation does not change (decided
+2026-11-15, #90). It is best-effort and silent without a usable reading or
+during a preview. Normal back to Auto, which restores a different remembered
+upright, keeps the existing calibration. Both clients
 offer **Auto** only for a built-in panel when the daemon reports a sensor, and
 both expose the lock (`L` in the TUI, a toggle beside **Auto** in the panel),
 as does `hyprmoncfg rotation`. Only built-in panels rotate; touch and pen

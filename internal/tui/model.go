@@ -347,7 +347,10 @@ type Model struct {
 	fallbacks             map[string]appstatus.MonitorFallback
 	// rotation is the daemon's automatic rotation, nil without a daemon
 	// that supports it.
-	rotation           *appstatus.Rotation
+	rotation *appstatus.Rotation
+	// calibrateOnAuto is set when an edit switched a panel from a fixed
+	// rotation to Auto; Update then records the position as upright.
+	calibrateOnAuto    bool
 	daemonRenames      bool
 	profileModePending bool
 	refreshInFlight    bool
@@ -414,7 +417,27 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.refreshCmd(false), tickCmd())
 }
 
+// Update handles a message, then records the device's position as upright
+// when the message switched a panel from a fixed rotation to Auto.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	var model *Model
+	switch value := next.(type) {
+	case Model:
+		model = &value
+	case *Model:
+		model = value
+	default:
+		return next, cmd
+	}
+	if !model.calibrateOnAuto {
+		return next, cmd
+	}
+	model.calibrateOnAuto = false
+	return *model, tea.Batch(cmd, model.calibrateForAutoCmd())
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

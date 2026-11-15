@@ -115,9 +115,15 @@ func (s *Service) queryHardwareSnapshot(ctx context.Context) ([]hypr.Monitor, []
 }
 
 func (s *Service) EditProfile(params ipc.EditParams) (appstatus.EditorDraft, error) {
+	// Read the output first: the edit can change the draft's outputs in place.
+	before, hadOutput := params.Profile.OutputByKey(params.Edit.OutputKey)
 	edited, err := profile.ApplyEditorEdit(params.Profile, params.Edit)
 	if err != nil {
 		return appstatus.EditorDraft{}, err
+	}
+	if after, ok := edited.OutputByKey(params.Edit.OutputKey); hadOutput && ok &&
+		profile.TakesPositionAsUpright(before.RotationAuto, before.Transform, after) {
+		s.calibrateForAuto()
 	}
 	return appstatus.BuildEditorDraft(edited), nil
 }

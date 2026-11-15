@@ -277,3 +277,18 @@ func (s *Service) SetRotation(params ipc.RotationParams) error {
 	s.signalChange()
 	return nil
 }
+
+// calibrateForAuto records the device's current position as upright when a
+// panel goes from a fixed rotation to Auto, so the rotation it had stays put.
+// It is best-effort: without a sensor reading, or during a preview, the
+// existing calibration stays.
+func (s *Service) calibrateForAuto() {
+	if s.cfg.WatchOrientation == nil {
+		return
+	}
+	if err := s.SetRotation(ipc.RotationParams{Calibrate: true}); err != nil {
+		s.cfg.Logf("choosing Auto kept the existing rotation calibration: %v", err)
+		return
+	}
+	s.cfg.Logf("choosing Auto took the current position as upright")
+}

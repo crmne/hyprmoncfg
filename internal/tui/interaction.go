@@ -1052,6 +1052,9 @@ func (m *Model) applyFieldPickerValue(output *editableOutput, field int, value s
 		remembered := profile.OutputConfig{Transform: output.Transform, RotationAuto: output.RotationAuto, RotationUpright: output.RotationUpright}
 		remembered.RememberRotationUpright(wasAuto, previousTransform)
 		output.Transform, output.RotationUpright = remembered.Transform, remembered.RotationUpright
+		if profile.TakesPositionAsUpright(wasAuto, previousTransform, remembered) {
+			m.calibrateOnAuto = true
+		}
 	case 9:
 		if value == "None" {
 			output.MirrorOf = ""

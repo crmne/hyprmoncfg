@@ -54,6 +54,13 @@ portrait: set the rotation that looks right with the device upright first,
 then choose **Auto**. The inspector then shows, for example,
 **Auto, upright 270°**, and the sensor's turns add to that.
 
+Choosing **Auto** also takes the device's current position as upright, as
+**Calibrate** does, so the panel keeps the rotation it had. Hold the device
+the way that rotation looks right when you choose it. Normal back to **Auto**
+restores the remembered upright rotation instead and leaves the calibration
+alone. Without a sensor reading, for example while the device lies flat, or
+during a preview, the calibration stays as it was.
+
 Leaving Auto remembers that upright rotation. Choosing **Normal** and then
 **Auto** again restores it, because Normal says nothing about which way is up.
 To replace it, choose the new rotation and then **Auto**. To make Normal the

@@ -49,3 +49,27 @@ func TestChoosingARotationTurnsAutoOff(t *testing.T) {
 		t.Fatalf("90 = %+v, want a fixed rotation", output)
 	}
 }
+
+// Choosing Auto from the rotation the panel shows takes the device's position
+// as upright, as the daemon does for the Omarchy panel (#90). Normal back to
+// Auto restores the remembered upright rotation and keeps the calibration.
+func TestChoosingAutoFromAFixedRotationCalibrates(t *testing.T) {
+	m := Model{}
+	output := editableOutput{IsInternal: true, Transform: 3}
+	m.applyFieldPickerValue(&output, 6, rotationAutoValue)
+	if !m.calibrateOnAuto {
+		t.Fatal("fixed 270° to Auto did not ask for a calibration")
+	}
+	m.calibrateOnAuto = false
+	m.applyFieldPickerValue(&output, 6, "normal")
+	m.applyFieldPickerValue(&output, 6, rotationAutoValue)
+	if m.calibrateOnAuto || output.Transform != 3 {
+		t.Fatalf("Normal to Auto: calibrate=%v output=%+v, want 270° restored without calibrating", m.calibrateOnAuto, output)
+	}
+	// Without a daemon there is nothing to calibrate, and Update stays quiet.
+	m.calibrateOnAuto = true
+	next, _ := m.Update(nil)
+	if next.(Model).calibrateOnAuto {
+		t.Fatal("Update kept the calibration request")
+	}
+}
