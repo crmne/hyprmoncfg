@@ -119,7 +119,7 @@ jobs:
           sudo apt-get install -y libarchive-tools binutils rpm
       - uses: goreleaser/goreleaser-action@v6
         with:
-          version: v2.20.0
+          version: v2.20.2
           args: release --snapshot --clean --skip=publish
       - name: Package snapshot archives and AUR recipes with the shared CLI
         run: |
