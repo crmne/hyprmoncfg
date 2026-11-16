@@ -85,12 +85,12 @@ jobs:
           test -n "$version"
           ruby scripts/package_sources.rb prepare "$version" --output dist/packaging
           ruby scripts/package_sources.rb artifacts dist/packaging
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: packaging
           path: dist/packaging/
           include-hidden-files: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-assets
           path: dist/package-assets/
@@ -144,7 +144,7 @@ jobs:
           for package in dist/snapshot-packages/packages/*/rpm/*.rpm; do
             rpm -qpl "$package"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binary-packages
           path: dist/snapshot-packages/
