@@ -237,3 +237,43 @@ func TestOmarchyHandoffListsThePlansPersistentWorkspaces(t *testing.T) {
 		}
 	}
 }
+
+// Omarchy's scale keys write monitors.lua, which the generated file
+// overrides, so they go to hyprmoncfg scale instead (#131).
+func TestOmarchyScaleKeysChangeTheProfile(t *testing.T) {
+	monitors := []hypr.Monitor{{Name: "eDP-1", Description: "Panel", Width: 2880, Height: 1800, RefreshRate: 60, Scale: 2}}
+	p := profile.FromMonitors("Laptop", monitors)
+	got, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLua, UseMonitorV2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, omarchyScaleKeys) {
+		t.Fatalf("scale keys not taken over\n%s", got)
+	}
+	legacy, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLegacy, UseMonitorV2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(legacy, "hyprmoncfg scale") {
+		t.Fatal("hyprlang configs are not Omarchy's and keep their keys")
+	}
+
+	lua, err := exec.LookPath("lua")
+	if err != nil {
+		t.Skip("Lua interpreter is required for the generated-config runtime check")
+	}
+	path := filepath.Join(t.TempDir(), "scale.lua")
+	script := `
+local bound = {}
+o = { rebind = function(key, description, command) bound[key] = command end }
+` + omarchyScaleKeys + `
+assert(bound["SUPER + SLASH"] == "hyprmoncfg scale up" and bound["SUPER + ALT + SLASH"] == "hyprmoncfg scale down")
+o = nil
+` + omarchyScaleKeys
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(lua, path).CombinedOutput(); err != nil {
+		t.Fatalf("scale key section failed: %v\n%s", err, output)
+	}
+}

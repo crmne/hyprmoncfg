@@ -48,6 +48,7 @@ Omarchy also changes monitor state from its watcher, clamshell, startup, and wak
 
 - hyprmoncfg writes its own `~/.config/hypr/hyprmoncfg-monitors.lua` and adds one line at the end of `hyprland.lua` to load it. This gives its generated rules precedence over earlier configuration during a reload. Scripts that send later monitor commands can still change the live layout
 - the daemon stops Omarchy's monitor watcher while it owns your displays
+- Omarchy's scale keys, `Super + /` and `Super + Alt + /`, run `hyprmoncfg scale up` and `down`, which apply the new scale and save it to the profile in use. Omarchy's own command would write `monitors.lua`, which hyprmoncfg's file overrides on the next reload, so the scale would snap back. A scale picked in Omarchy's display panel is saved to the profile too: on Omarchy 4.5 the daemon reads it from Omarchy's scaling log, and on later releases from the panel's settings file
 - each apply shares the internal panel's position and scale through a marked block at the start of an existing `monitors.lua`, because Omarchy's clamshell script reads that file rather than following generated includes. The rest of your file is preserved, and the block is removed when management is handed back. The scale is also recorded in Omarchy's state file
 
 The daemon also shares Omarchy's native **Laptop Display** toggle. When a profile

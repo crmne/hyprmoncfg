@@ -59,6 +59,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newTUICmd(&configDir, &monitorsConf, &hyprConfig))
 	root.AddCommand(newMonitorsCmd(&configDir))
 	root.AddCommand(newWorkspaceCmd())
+	root.AddCommand(newScaleCmd())
 	root.AddCommand(newProfilesCmd(&configDir))
 	root.AddCommand(newStatusCmd(&configDir))
 	root.AddCommand(newSaveCmd(&configDir))

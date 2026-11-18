@@ -1,8 +1,10 @@
 package omarchywatch
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -30,6 +32,13 @@ type PanelSettings struct {
 	path  string
 	known bool
 	last  map[string]PanelEdit
+	// scaleLog is the log Omarchy 4.5's omarchy-hyprland-monitor-scaling
+	// appends to on every change. 4.5 has no settings file: its display
+	// panel's scale buttons write monitors.lua, which the generated file
+	// overrides, so the log is the only record of the choice (#131).
+	scaleLog       string
+	scaleLogKnown  bool
+	scaleLogOffset int64
 	// held keeps edits for monitors that are unplugged, until they return.
 	held map[string]PanelEdit
 }
@@ -47,7 +56,10 @@ func NewPanelSettings() *PanelSettings {
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	return &PanelSettings{path: filepath.Join(state, "omarchy", "monitors", "settings")}
+	return &PanelSettings{
+		path:     filepath.Join(state, "omarchy", "monitors", "settings"),
+		scaleLog: filepath.Join(state, "omarchy", "monitor-scaling.log"),
+	}
 }
 
 // Changes reports the fields that differ from the previous read, by monitor
@@ -61,6 +73,10 @@ func (p *PanelSettings) Changes() (map[string]PanelEdit, error) {
 	if err != nil {
 		return nil, err
 	}
+	scales, err := p.readScaleLog()
+	if err != nil {
+		return nil, err
+	}
 	if !p.known {
 		p.known, p.last = true, current
 		return nil, nil
@@ -69,6 +85,9 @@ func (p *PanelSettings) Changes() (map[string]PanelEdit, error) {
 	p.held = nil
 	if changes == nil {
 		changes = map[string]PanelEdit{}
+	}
+	for connector, scale := range scales {
+		changes[connector] = mergePanelEdit(changes[connector], PanelEdit{Scale: scale})
 	}
 	for identity, now := range current {
 		was := p.last[identity]
@@ -91,6 +110,59 @@ func (p *PanelSettings) Changes() (map[string]PanelEdit, error) {
 	}
 	p.last = current
 	return changes, nil
+}
+
+// readScaleLog returns the scale last set on each connector by lines added to
+// Omarchy 4.5's scaling log since the previous read. The first read only
+// records where the log ends: changes from before the daemon started are not
+// fresh edits.
+func (p *PanelSettings) readScaleLog() (map[string]string, error) {
+	if p.scaleLog == "" {
+		return nil, nil
+	}
+	file, err := os.Open(p.scaleLog)
+	if errors.Is(err, os.ErrNotExist) {
+		p.scaleLogKnown, p.scaleLogOffset = true, 0
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !p.scaleLogKnown || info.Size() < p.scaleLogOffset {
+		// First read, or the log was replaced: start from its end.
+		p.scaleLogKnown, p.scaleLogOffset = true, info.Size()
+		return nil, nil
+	}
+	if _, err := file.Seek(p.scaleLogOffset, io.SeekStart); err != nil {
+		return nil, err
+	}
+	added, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	// Only whole lines; a line still being written is read next time.
+	complete := bytes.LastIndexByte(added, '\n') + 1
+	p.scaleLogOffset += int64(complete)
+	scales := map[string]string{}
+	for _, line := range strings.Split(string(added[:complete]), "\n") {
+		var monitor, scale string
+		for _, field := range strings.Split(line, "\t") {
+			if value, ok := strings.CutPrefix(field, "monitor="); ok {
+				monitor = value
+			} else if value, ok := strings.CutPrefix(field, "new="); ok {
+				scale = value
+			}
+		}
+		if monitor != "" && scale != "" {
+			scales[monitor] = scale
+		}
+	}
+	return scales, nil
 }
 
 // Hold keeps an edit for the next read, for a monitor that is not connected now.

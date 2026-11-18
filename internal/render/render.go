@@ -22,6 +22,17 @@ var omarchyGlobalWorkspaces string
 const omarchyMonitorPanelHandoff = `-- hyprmoncfg owns monitor configuration, so Omarchy's display panel settings stand down.
 omarchy_monitor_panel_settings = false`
 
+// omarchyScaleKeys points Omarchy's monitor scaling keys at hyprmoncfg. Its
+// own command writes monitors.lua and reloads, and this file, loaded last,
+// puts the profile's scale straight back (#131). hyprmoncfg scale saves the
+// new scale to the profile instead.
+const omarchyScaleKeys = `-- Omarchy's scale keys would write monitors.lua, which this file overrides.
+-- hyprmoncfg saves the new scale to the profile in use instead.
+if type(o) == "table" and type(o.rebind) == "function" then
+  o.rebind("SUPER + SLASH", "Monitor scaling up", "hyprmoncfg scale up")
+  o.rebind("SUPER + ALT + SLASH", "Monitor scaling down", "hyprmoncfg scale down")
+end`
+
 // omarchyMirrorToggle keeps Omarchy's Mirror Display action working. Its toggle
 // is a Lua file loaded before this one, so its rules would otherwise be replaced
 // by the profile's.
@@ -366,7 +377,7 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 		perDisplay.add(rule, selector)
 	}
 
-	sections := []string{config.GeneratedHeader(config.HyprConfigLua), omarchyMonitorPanelHandoff, strings.Join(monitorBlocks, "\n\n")}
+	sections := []string{config.GeneratedHeader(config.HyprConfigLua), omarchyMonitorPanelHandoff, omarchyScaleKeys, strings.Join(monitorBlocks, "\n\n")}
 	switch {
 	case p.Workspaces.Enabled && p.Workspaces.Strategy == profile.WorkspaceStrategyPerDisplay:
 		sections = append(sections, luaPerDisplaySection(perDisplay, workspaceLines))

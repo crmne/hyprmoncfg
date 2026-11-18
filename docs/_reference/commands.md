@@ -27,6 +27,7 @@ Running `hyprmoncfg` with no arguments opens the TUI.
 | `hyprmoncfg rotation calibrate` | Treat the current sensor reading as upright and unlock rotation. Hold the device upright first; requires daemon calibration support and no active preview. Also `C` in the TUI |
 | `hyprmoncfg rotation direction normal\|reversed` | Turn panels the other way, for a device whose sensor reports the opposite direction. Needs hyprmoncfgd |
 | `hyprmoncfg workspace focus\|move\|move-silent <1-10>` | Go to, move the focused window to, or send it without following to that workspace of the focused display, for the Per display workspace strategy. hyprmoncfg binds `Super` and `Super + Shift` with a number to the first two itself |
+| `hyprmoncfg scale up\|down\|<scale>` | Step the focused display through 1x, 1.25x, 1.6x, 2x, 3x and 4x, or set the scale given, snapped to a sharp one. Applies at once and saves to the profile in use; a layout no profile matches is only applied. On Omarchy, `Super + /` and `Super + Alt + /` run it. Needs hyprmoncfgd |
 | `hyprmoncfg doctor` | Check that Hyprland loads hyprmoncfg's monitor config last |
 | `hyprmoncfg doctor --fix` | Add or move that include to the end of the Hyprland config |
 | `hyprmoncfg version` | Print build metadata |

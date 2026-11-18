@@ -126,3 +126,54 @@ func TestHeldEditsWaitForTheirMonitor(t *testing.T) {
 		t.Fatalf("an edit is delivered once: %#v", changes)
 	}
 }
+
+// Omarchy 4.5's display panel and scale keys record each change only in the
+// scaling log; its monitors.lua edit is overridden by the generated file
+// (#131).
+func TestScaleLogReportsNewScalesByConnector(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "monitor-scaling.log")
+	line := func(monitor, scale string) string {
+		return "at=2026-11-18T12:00:00-08:00\trequested=up\tcurrent=1\tnew=" + scale + "\tmonitor=" + monitor + "\tpid=1\tppid=1\tparent=bash\tgppid=1\tgrandparent=quickshell\n"
+	}
+	if err := os.WriteFile(log, []byte(line("eDP-1", "1.25")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings := &PanelSettings{path: filepath.Join(dir, "settings"), scaleLog: log}
+	if changes, err := settings.Changes(); err != nil || len(changes) != 0 {
+		t.Fatalf("a change from before the daemon started is not an edit: %v %v", changes, err)
+	}
+
+	appendLog := func(text string) {
+		file, err := os.OpenFile(log, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		if _, err := file.WriteString(text); err != nil {
+			t.Fatal(err)
+		}
+	}
+	appendLog(line("eDP-1", "1.6") + line("DP-1", "2") + line("eDP-1", "2") + "at=x\tnew=3\tmoni")
+	changes, err := settings.Changes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 2 || changes["eDP-1"].Scale != "2" || changes["DP-1"].Scale != "2" {
+		t.Fatalf("changes = %+v, want the last scale per connector", changes)
+	}
+	appendLog("tor=eDP-1\n")
+	if changes, _ := settings.Changes(); changes["eDP-1"].Scale != "3" {
+		t.Fatalf("a line finished later must still count: %+v", changes)
+	}
+	if changes, _ := settings.Changes(); len(changes) != 0 {
+		t.Fatalf("a line must count once: %+v", changes)
+	}
+
+	monitors := []hypr.Monitor{{Name: "eDP-1", Description: "Panel", Width: 2880, Height: 1800, RefreshRate: 60, Scale: 1.6}}
+	p := profile.FromMonitors("Laptop", monitors)
+	updated, imported, _, _ := ImportPanelEdits(p, monitors, map[string]PanelEdit{"eDP-1": {Scale: "2"}})
+	if len(imported) != 1 || updated.Outputs[0].Scale != 2 {
+		t.Fatalf("connector-keyed scale not imported: %v %+v", imported, updated.Outputs)
+	}
+}

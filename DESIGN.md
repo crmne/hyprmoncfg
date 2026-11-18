@@ -175,6 +175,15 @@ bindings that run `hyprmoncfg workspace`. The generated Lua checks for
 Omarchy's module at load time and falls back to its own branch, so a profile
 works on both. Max workspaces and Group size are inert under Per display.
 
+Decision, 2026-11-18 (#131): while hyprmoncfg manages displays on Omarchy,
+the generated Lua binds Super + / and Super + Alt + / to `hyprmoncfg scale up`
+and `down`, which change the focused display's scale through the daemon and
+save it to the profile the live layout comes from. Omarchy 4.5's display
+panel runs its scaling command directly, so the daemon also imports the scale
+each new line of Omarchy's `monitor-scaling.log` records, as it imports the
+panel settings file of later releases. Handing management back removes the
+generated file and with it the key bindings.
+
 ### Omarchy display panel
 
 Omarchy's display panel reapplies its saved settings on `monitor.added` and
