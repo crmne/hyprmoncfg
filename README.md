@@ -54,7 +54,7 @@ both themes, workspace planning, and profiles.
 - **Named profiles** -- save setups like `desk`, `conference`, or `home-office`
 - **Hardware-identity matching** -- profiles follow monitor make, model, and serial instead of unstable connector names
 - **Hotplug and lid-aware daemon** -- apply the right profile automatically when monitors change or the laptop lid closes
-- **Workspace planner** -- assign workspaces across monitors with sequential, interleave, or manual strategies
+- **Workspace planner** -- assign workspaces across monitors with sequential, interleave, or manual strategies, or give every monitor workspaces 1-10 of its own with Per display, as Omarchy does, on any distribution
 - **Omarchy global workspaces**: hyprmoncfg 1.26.0 and newer keep enabled workspace plans in control of numbering and shortcuts through the existing generated Lua file. Pair with the optional [Global Workspaces widget](https://github.com/crmne/omarchy-global-workspaces); see [compatibility and delegation](docs/_guide/omarchy.md#omarchy-45-per-monitor-workspaces)
 - **Spatial workspace navigation (development)**: [hyprmoncfg Workspaces](https://github.com/crmne/omarchy-hyprmoncfg-workspaces) groups workspaces by display and opens a spatial overview. The daemon supplies the plan; the widget switches directly through Hyprland, including while the daemon reconnects.
 - **Safe apply with revert** -- reload Hyprland, verify the result, and revert unless you confirm

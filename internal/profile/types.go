@@ -57,7 +57,16 @@ const (
 	WorkspaceStrategyManual     WorkspaceStrategy = "manual"
 	WorkspaceStrategySequential WorkspaceStrategy = "sequential"
 	WorkspaceStrategyInterleave WorkspaceStrategy = "interleave"
+	// WorkspaceStrategyPerDisplay gives each display workspaces 1-10 of its
+	// own, numbered in blocks of ten as Omarchy does: the first display in the
+	// order 1-10, the next 11-20. Super + number goes to that slot on the
+	// focused display.
+	WorkspaceStrategyPerDisplay WorkspaceStrategy = "per_display"
 )
+
+// PerDisplaySlots is how many workspaces each display owns under the
+// per-display strategy.
+const PerDisplaySlots = 10
 
 type WorkspaceRule struct {
 	Workspace  string `json:"workspace"`

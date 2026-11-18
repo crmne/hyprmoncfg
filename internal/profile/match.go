@@ -292,8 +292,8 @@ func profilesShareEffectiveState(a, b Profile, monitors []hypr.Monitor) bool {
 		return false
 	}
 
-	aRules := ResolveWorkspaceRules(a, monitors)
-	bRules := ResolveWorkspaceRules(b, monitors)
+	aRules := effectiveWorkspaceRules(a, monitors)
+	bRules := effectiveWorkspaceRules(b, monitors)
 	if len(aRules) != len(bRules) {
 		return false
 	}
@@ -488,4 +488,14 @@ func ScaleMatchesRoundedReadback(width, height int, savedScale, reportedScale fl
 
 func roundScaleForHyprlandReadback(scale float64) float64 {
 	return math.Round(scale*100) / 100
+}
+
+// effectiveWorkspaceRules are the rules a profile leaves loaded in Hyprland.
+// One whose per-display workspaces Omarchy runs loads none, so the live
+// state, which has none either, still matches it exactly.
+func effectiveWorkspaceRules(p Profile, monitors []hypr.Monitor) []WorkspaceRule {
+	if DelegatesWorkspaces(p) {
+		return nil
+	}
+	return ResolveWorkspaceRules(p, monitors)
 }

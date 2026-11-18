@@ -26,6 +26,7 @@ import (
 )
 
 func main() {
+	omarchywatch.UsePerMonitorWorkspaces()
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)

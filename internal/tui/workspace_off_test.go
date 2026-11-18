@@ -52,7 +52,7 @@ func TestWorkspaceStrategyCycleOrder(t *testing.T) {
 		m.adjustWorkspaceField(1)
 		seen = append(seen, m.workspaceFieldValue(0))
 	}
-	if got := strings.Join(seen, ","); got != "Off,Manual,Sequential,Interleaved" {
+	if got := strings.Join(seen, ","); got != "Per display,Off,Manual,Sequential,Interleaved" {
 		t.Fatalf("strategy cycle = %s", got)
 	}
 }

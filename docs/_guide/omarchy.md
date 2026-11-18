@@ -35,7 +35,7 @@ If it is missing, open the panel and choose **Install hyprmoncfg**. The panel us
 - **Managed by hyprmoncfg** enables or disables the user daemon
 - **Expand** opens the native graphical editor
 - **Layout** provides drag-and-drop arrangement with snapping, resolution, refresh rate, scale, rotation, mirroring, and colour settings
-- **Workspaces** provides manual, sequential, or interleaved plans, plus **Off** to leave workspace rules to another manager
+- **Workspaces** provides manual, sequential, interleaved, or per-display plans, plus **Off** to leave workspace rules to another manager
 - **Profiles** manages saved arrangements and automatic selection
 - **Preview & save** lets you try a layout before confirming and saving it; unconfirmed changes revert automatically after the preview deadline
 - **TUI** opens the optional terminal editor
@@ -78,41 +78,35 @@ changes may require adapting this integration.
 
 ### Omarchy 4.5 per-monitor workspaces
 
-Omarchy 4.5 release candidates introduce separate workspace slots 1 through 10
-on each monitor. Number-key bindings and bar labels use those local slots,
-while Hyprland still uses global workspace IDs underneath. Omarchy also moves
-and renumbers workspaces to keep them in each monitor's block.
+Omarchy 4.5 gives every monitor workspaces 1 through 10 of its own. Number keys
+and bar labels use those local slots, while Hyprland still numbers workspaces
+globally underneath: the laptop screen 1-10, the next monitor 11-20. Omarchy
+keeps each monitor's block, moves workspaces home when a monitor returns, and
+renumbers ones that land elsewhere.
 
-This can conflict with a hyprmoncfg profile that assigns global workspaces
-across displays, such as 1–3 on one screen and 4–6 on another. The monitor
-compatibility measures in hyprmoncfg 1.25.1 and earlier do not disable Omarchy's
-workspace manager. Loading workspace rules last is not sufficient to prevent
-later reconciliation from changing them.
+A profile's workspace strategy decides who is in charge:
 
-If you want Omarchy to own workspace placement, choose **Off** for the profile's
-workspace strategy. hyprmoncfg then writes no workspace rules for that profile
-and retains its saved plan for later use. This does not restore global
-number-key behaviour or undo workspace IDs Omarchy has already changed.
+- **Per display** keeps Omarchy's per-monitor workspaces. hyprmoncfg writes no
+  workspace rules or key bindings and moves no workspaces, so Omarchy's keys,
+  hotplug handling and stock bar widget work as shipped. The Workspaces page
+  shows the block Omarchy gives each display, read from Omarchy's own state, so
+  you can see which numbers to use in window rules. Omarchy chooses the blocks,
+  so Monitor order and Persistence are marked as set by Omarchy. The same
+  profile carries to a machine without Omarchy, where hyprmoncfg gives each
+  display its own workspaces itself.
+- **Manual**, **Sequential** and **Interleaved** plan global workspaces, such as
+  1-3 on one screen and 4-6 on another. Once a plan places a numbered workspace,
+  the generated Lua file turns Omarchy's workspace reassignment off and points
+  the number keys back at global workspaces, without another include or changes
+  to packaged Omarchy files. A plan of only named or special workspaces, such as
+  `special:qconsole`, leaves Omarchy alone. Pair global plans with the optional
+  [Global Workspaces widget](https://github.com/crmne/omarchy-global-workspaces),
+  which shows the real workspace IDs on every bar; Omarchy's stock widget
+  assumes per-monitor numbering.
+- **Off** writes no workspace rules and leaves workspaces to Omarchy or another
+  tool, keeping the saved plan for later.
 
-Keeping global workspace assignments requires Omarchy's per-monitor behaviour
-to stand down as well. The proposed [per-monitor workspace
-toggle](https://github.com/omacom/omarchy/pull/16213) is tracked upstream;
-it is not part of Omarchy 4.5.0rc2.
-
-hyprmoncfg 1.26.0 and newer make an enabled workspace planner own global
-numbering once its plan places a numbered workspace. A plan of only named or
-special workspaces, such as `special:qconsole`, leaves Omarchy's per-monitor
-workspaces and shortcuts alone. The existing generated Lua file disables Omarchy's workspace
-reassignment and restores global shortcuts, without another include or changes
-to packaged Omarchy files. This applies through the shared engine used by the
-daemon, TUI and panel. **Off** continues to delegate workspace management.
-
-Pair global mode with the optional [Global Workspaces
-widget](https://github.com/crmne/omarchy-global-workspaces). It displays the real
-workspace IDs and highlights the globally focused workspace on every bar,
-matching Omarchy's original widget. Omarchy's stock RC2 widget still assumes
-per-monitor numbering. Switching ownership does not
-automatically move or renumber existing windows.
+Switching between them never renumbers windows that are already open.
 
 ### Check the configuration load order
 

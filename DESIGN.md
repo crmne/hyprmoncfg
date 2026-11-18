@@ -149,6 +149,21 @@ target monitor, then moves it. The move is session state only: it never edits
 the saved profile, and the next reload of the generated file, such as a
 profile switch or an apply that rewrites it, restores the plan.
 
+Decision, 2026-11-18: the Per display strategy (`per_display`) gives each
+display workspaces 1-10 of its own, numbered in blocks of ten as Omarchy 4.5
+does: the first display in the order gets 1-10, the next 11-20, the first of
+each block being the display's default and persistent. Where Omarchy's
+`monitor-workspaces.lua` is installed, Omarchy runs it: the generated file adds
+no workspace rules, bindings or handoff, apply moves no workspaces, the daemon
+restores none after hotplug, and the editors show Omarchy's blocks, read from
+its state file and never written, with Monitor order and Persistence marked as
+set by Omarchy. Everywhere else hyprmoncfg runs it: blocks follow the planner's
+monitor order, and Super + number and Super + Shift + number go to the focused
+display's slot, through Lua bindings in the generated file or, for hyprlang,
+bindings that run `hyprmoncfg workspace`. The generated Lua checks for
+Omarchy's module at load time and falls back to its own branch, so a profile
+works on both. Max workspaces and Group size are inert under Per display.
+
 ### Omarchy display panel
 
 Omarchy's display panel reapplies its saved settings on `monitor.added` and
@@ -188,7 +203,7 @@ introduce a backward-compatible representation before implementing that distinct
 Do not guess intent from `enabled: false` in existing files.
 
 Both clients show turning planning off as the **Off** choice of the Strategy
-control, first in the order Off, Manual, Sequential, Interleaved. Off stores
+control, first in the order Off, Manual, Sequential, Interleaved, Per display. Off stores
 `enabled: false` and keeps the saved strategy and plan, so choosing a strategy
 again restores it; the other planner rows are inert while Off. This is for setups
 where another tool owns workspace placement (#70). It does not add the

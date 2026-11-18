@@ -173,6 +173,14 @@ daemons rather than silently losing it. Older clients retain their existing
 first-per-display default; upgrade both clients before editing profiles that use
 the new policy, since old clients cannot preserve an unknown field.
 
+Editor documents also list `workspace_strategies`, the strategies the daemon can
+save. Offer Per display (`per_display`) only when it is listed; an older daemon
+rejects it as an invalid strategy. `workspace_per_display_delegate` is
+`"omarchy"` when Omarchy's per-monitor workspaces run the Per display strategy,
+and is absent when hyprmoncfg runs it. With a delegate, the per-display plans in
+`workspace_plan` and `profile_workspace_plans` show the blocks Omarchy gives each
+display, and monitor order and persistence have no effect.
+
 After `subscribe`, the daemon pushes a fresh status document whenever monitor or profile state changes:
 
 ```json

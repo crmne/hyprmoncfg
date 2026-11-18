@@ -145,6 +145,11 @@ func WorkspaceCommandsForProfile(p profile.Profile, monitors []hypr.Monitor) []s
 func workspaceCommandsForProfile(p profile.Profile, monitors []hypr.Monitor, luaDispatch bool) []string {
 	p = profile.ExtendConnected(p, monitors)
 	p.Normalize()
+	// Omarchy places per-display workspaces itself and reconciles them on
+	// every reload and hotplug. Moving them here as well would fight it.
+	if profile.DelegatesWorkspaces(p) {
+		return nil
+	}
 	rules := profile.ResolveWorkspaceRules(p, monitors)
 	if len(rules) == 0 {
 		return nil

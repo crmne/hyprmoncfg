@@ -188,6 +188,13 @@ type MonitorFallback struct {
 type EditorDocument struct {
 	MonitorSetHash                string `json:"monitor_set_hash,omitempty"`
 	WorkspacePersistenceSupported bool   `json:"workspace_persistence_supported"`
+	// WorkspaceStrategies lists the strategies this daemon can save, so an
+	// editor offers Per display only when the daemon understands it.
+	WorkspaceStrategies []profile.WorkspaceStrategy `json:"workspace_strategies"`
+	// WorkspacePerDisplayDelegate names what runs per-display workspaces in
+	// place of hyprmoncfg ("omarchy"), or is empty when hyprmoncfg runs them.
+	// The per-display plans in this document then show the delegate's blocks.
+	WorkspacePerDisplayDelegate string `json:"workspace_per_display_delegate,omitempty"`
 	// VRRModes lists the VRR values edit_profile accepts, so an editor offers
 	// only modes this daemon can save.
 	VRRModes              []int                      `json:"vrr_modes"`
@@ -249,6 +256,8 @@ func BuildEditorWith(profiles []profile.Profile, monitors []hypr.Monitor, rules 
 	document := EditorDocument{
 		MonitorSetHash:                HardwareSnapshotHash(monitors),
 		WorkspacePersistenceSupported: true,
+		WorkspaceStrategies:           profile.WorkspaceStrategies(),
+		WorkspacePerDisplayDelegate:   profile.PerDisplayDelegate(),
 		VRRModes:                      profile.VRRModes(),
 		Profile:                       draft,
 		Profiles:                      append([]profile.Profile{}, profiles...),

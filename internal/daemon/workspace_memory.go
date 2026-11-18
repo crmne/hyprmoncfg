@@ -208,7 +208,8 @@ func (s *Service) restoreWorkspaces(ctx context.Context, p profile.Profile, moni
 	restores := s.workspaces.due(p, monitors)
 	// With workspace planning off, workspaces belong to the user or to a
 	// plugin such as hyprland-virtual-desktops, which restores its own.
-	if !p.Workspaces.Enabled || len(restores) == 0 {
+	// Omarchy's per-monitor workspaces bring a returning display's own back.
+	if !p.Workspaces.Enabled || profile.DelegatesWorkspaces(p) || len(restores) == 0 {
 		return
 	}
 	workspaces, err := s.client.Workspaces(ctx)

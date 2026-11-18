@@ -15,7 +15,7 @@ func (w WorkspaceSettings) Validate() error {
 	}
 
 	switch w.Strategy {
-	case "", WorkspaceStrategyManual, WorkspaceStrategySequential, WorkspaceStrategyInterleave:
+	case "", WorkspaceStrategyManual, WorkspaceStrategySequential, WorkspaceStrategyInterleave, WorkspaceStrategyPerDisplay:
 	default:
 		return fmt.Errorf("invalid workspace strategy %q", w.Strategy)
 	}
@@ -84,6 +84,8 @@ func ResolveWorkspaceRules(p Profile, monitors []hypr.Monitor) []WorkspaceRule {
 		return generatedWorkspaceRules(p, monitors, false)
 	case WorkspaceStrategyInterleave:
 		return generatedWorkspaceRules(p, monitors, true)
+	case WorkspaceStrategyPerDisplay:
+		return perDisplayWorkspaceRules(p, monitors)
 	default:
 		return nil
 	}

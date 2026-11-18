@@ -1078,6 +1078,9 @@ func (m Model) updateWorkspaceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !inItems && m.workspaceEdit.Enabled {
 			switch m.workspaceEdit.SelectedField {
 			case 1:
+				if m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
+					return m, nil
+				}
 				return m, m.openNumericInput(
 					numericInputWorkspaceCount,
 					-1,
@@ -1959,6 +1962,9 @@ func (m Model) workspaceSettingsLine(line int) string {
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
 			return m.styles.label.Render("Workspace → display") + "  " + m.styles.subtle.Render("←/→ assigns")
 		}
+		if m.perDisplayDelegated() {
+			return m.styles.label.Render("Monitor order") + "  " + m.styles.subtle.Render("Omarchy numbers displays")
+		}
 		return m.styles.label.Render("Monitor order") + "  " + m.styles.subtle.Render("←/→ reorders")
 	}
 
@@ -2838,6 +2844,7 @@ var workspaceStrategyChoices = []profile.WorkspaceStrategy{
 	profile.WorkspaceStrategyManual,
 	profile.WorkspaceStrategySequential,
 	profile.WorkspaceStrategyInterleave,
+	profile.WorkspaceStrategyPerDisplay,
 }
 
 const workspaceStrategyOff profile.WorkspaceStrategy = "off"
@@ -2857,6 +2864,8 @@ func workspaceStrategyLabel(strategy profile.WorkspaceStrategy) string {
 		return "Manual"
 	case profile.WorkspaceStrategyInterleave:
 		return "Interleaved"
+	case profile.WorkspaceStrategyPerDisplay:
+		return "Per display"
 	default:
 		return "Sequential"
 	}
@@ -2893,7 +2902,7 @@ func (m *Model) adjustWorkspaceField(delta int) {
 		}
 		m.workspaceEdit.Strategy = next
 	case 1:
-		if !m.workspaceEdit.Enabled {
+		if !m.workspaceEdit.Enabled || m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
 			return
 		}
 		next := adjustPositiveInt(m.workspaceEdit.MaxWorkspaces, delta)
@@ -2908,7 +2917,7 @@ func (m *Model) adjustWorkspaceField(delta int) {
 		m.workspaceEdit.GroupSize = adjustPositiveInt(m.workspaceEdit.GroupSize, delta)
 		m.workspaceEdit.LastSequentialGroupSize = m.workspaceEdit.GroupSize
 	case 3:
-		if m.workspaceEdit.Enabled && m.workspaceEdit.Strategy != profile.WorkspaceStrategyManual {
+		if m.workspaceEdit.Enabled && m.workspaceEdit.Strategy != profile.WorkspaceStrategyManual && !m.perDisplayDelegated() {
 			m.workspaceEdit.PersistAll = !m.workspaceEdit.PersistAll
 		}
 	}
@@ -3107,7 +3116,17 @@ func normalizeManualWorkspaceDefaults(rules []profile.WorkspaceRule) []profile.W
 	return normalized
 }
 
+// perDisplayDelegated reports whether Omarchy, not hyprmoncfg, runs the
+// per-display workspaces being edited. Omarchy then picks each display's
+// block and which workspaces stay open, so those controls are inert.
+func (m Model) perDisplayDelegated() bool {
+	return m.workspaceEdit.Enabled && m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay && profile.PerDisplayDelegate() != ""
+}
+
 func (m *Model) moveWorkspaceOrder(delta int) {
+	if m.perDisplayDelegated() {
+		return
+	}
 	idx := m.workspaceEdit.SelectedOrder
 	next := idx + delta
 	if idx < 0 || idx >= len(m.workspaceEdit.MonitorOrder) || next < 0 || next >= len(m.workspaceEdit.MonitorOrder) {
@@ -3898,6 +3917,9 @@ func (m Model) workspaceFieldValue(field int) string {
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
 			return "Custom (per rule)"
 		}
+		if m.perDisplayDelegated() {
+			return "Set by Omarchy"
+		}
 		if m.workspaceEdit.PersistAll {
 			return "All assigned"
 		}
@@ -3905,6 +3927,9 @@ func (m Model) workspaceFieldValue(field int) string {
 	case 0:
 		return workspaceStrategyLabel(m.workspaceStrategyChoice())
 	case 1:
+		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
+			return fmt.Sprintf("%d per display", profile.PerDisplaySlots)
+		}
 		return fmt.Sprintf("%d", m.workspaceEdit.MaxWorkspaces)
 	case 2:
 		if m.workspaceEdit.Strategy != profile.WorkspaceStrategySequential {

@@ -271,7 +271,7 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepa
 	}
 
 	workspaceLines := make([]string, 0)
-	rules := profile.ResolveWorkspaceRules(p, monitors)
+	rules := profile.ResolveOwnWorkspaceRules(p, monitors)
 	for _, rule := range rules {
 		output, ok := p.OutputByKey(rule.OutputKey)
 		if !ok {
@@ -294,6 +294,9 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepa
 	sections := []string{config.GeneratedHeader(config.HyprConfigLegacy), strings.Join(monitorBlocks, "\n\n")}
 	if len(workspaceLines) > 0 {
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
+	}
+	if p.Workspaces.Enabled && p.Workspaces.Strategy == profile.WorkspaceStrategyPerDisplay && len(workspaceLines) > 0 {
+		sections = append(sections, hyprlangPerDisplayBindings())
 	}
 	if transform, ok := panelTouchTransform(matched); ok {
 		sections = append(sections, fmt.Sprintf("input {\n  touchdevice {\n    transform = %d\n  }\n  tablet {\n    transform = %d\n  }\n}", transform, transform))
@@ -344,7 +347,8 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 	}
 
 	workspaceLines := make([]string, 0)
-	rules := profile.ResolveWorkspaceRules(p, monitors)
+	perDisplay := perDisplayBlocks{}
+	rules := profile.ResolveOwnWorkspaceRules(p, monitors)
 	for _, rule := range rules {
 		output, ok := p.OutputByKey(rule.OutputKey)
 		if !ok {
@@ -359,13 +363,19 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 		}
 		selector := resolver.SelectorForOutput(output, monitor)
 		workspaceLines = append(workspaceLines, renderLuaWorkspaceRule(rule.Workspace, selector, rule.Default, rule.Persistent))
+		perDisplay.add(rule, selector)
 	}
 
 	sections := []string{config.GeneratedHeader(config.HyprConfigLua), omarchyMonitorPanelHandoff, strings.Join(monitorBlocks, "\n\n")}
-	if p.Workspaces.Enabled && assignsNumberedWorkspace(rules) {
+	switch {
+	case p.Workspaces.Enabled && p.Workspaces.Strategy == profile.WorkspaceStrategyPerDisplay:
+		sections = append(sections, luaPerDisplaySection(perDisplay, workspaceLines))
+	case p.Workspaces.Enabled && assignsNumberedWorkspace(rules):
 		sections = append(sections, omarchyGlobalWorkspacesSection(rules))
-	}
-	if len(workspaceLines) > 0 {
+		if len(workspaceLines) > 0 {
+			sections = append(sections, strings.Join(workspaceLines, "\n"))
+		}
+	case len(workspaceLines) > 0:
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
 	}
 	if section := omarchyGDKScaleSection(matched, xwaylandScalesX11); section != "" {

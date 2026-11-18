@@ -32,6 +32,7 @@ import (
 )
 
 func main() {
+	omarchywatch.UsePerMonitorWorkspaces()
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
@@ -57,6 +58,7 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(newTUICmd(&configDir, &monitorsConf, &hyprConfig))
 	root.AddCommand(newMonitorsCmd(&configDir))
+	root.AddCommand(newWorkspaceCmd())
 	root.AddCommand(newProfilesCmd(&configDir))
 	root.AddCommand(newStatusCmd(&configDir))
 	root.AddCommand(newSaveCmd(&configDir))

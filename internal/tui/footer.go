@@ -59,7 +59,7 @@ func (m Model) footerHelpText() string {
 		}
 		return join("`↑↓` browse", "`Enter` preview", "`l` edit", "`e` post-apply command", "`d` delete", "`?` keys")
 	case tabWorkspaces:
-		if !m.workspaceEdit.Enabled {
+		if !m.workspaceEdit.Enabled || m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
 			return join("`↑↓` select", "`←→` adjust", "`a` preview", "`s` save", "`?` keys")
 		}
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
