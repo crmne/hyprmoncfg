@@ -82,6 +82,17 @@ Unknown means absent from the chosen layout, not necessarily never seen anywhere
 on this machine. Hardware identity remains make/model/serial with existing
 duplicate-device handling. Do not choose by connector name alone.
 
+Decision, 2026-11-18 (#126): another unit of a saved model (same make and model,
+different serial) stands in for the saved display when no saved profile names
+that unit exactly. It scores +60, strictly below an exact match, and only pairs
+one leftover enabled external display with one leftover unit of its model; two
+identical displays or units, built-in panels, kept-off displays, and strict
+profiles never match by model. The applied layout is bound to the live unit, so
+`desc:` selectors, verification, and active-profile detection follow it. The
+stand-in keeps layout and signal settings and drops the saved unit's ICC and HDR
+luminance overrides. Matching explains it as `connected_same_model`; it is never
+an exact display match. The saved profile changes only on an explicit save.
+
 Explicit `enabled: false` for a recognized display remains intentional. Existing
 `disable_unknown_outputs: true` remains a supported strict per-profile policy;
 show it as `Keep other displays off` in both UIs and explain its effect when it

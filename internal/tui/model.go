@@ -3472,6 +3472,7 @@ func (m Model) applyCmd(p profile.Profile, allowUnmanagedOverwrite ...bool) tea.
 
 	client := m.client
 	engine := m.engine
+	saved := m.profiles
 	guard := m.revertGuard
 	if guard != nil {
 		guard.begin()
@@ -3487,9 +3488,11 @@ func (m Model) applyCmd(p profile.Profile, allowUnmanagedOverwrite ...bool) tea.
 		if err != nil {
 			return applyMsg{profile: p, err: err}
 		}
-		applyProfile := p
+		// Like the daemon, place saved displays on another unit of the same
+		// model; the daemon does this itself for a remote preview.
+		applyProfile, _ := profile.BindModelMatches(p, monitors, saved)
 		if state, err := lid.ReadState(ctx); err == nil && state == lid.Closed {
-			applyProfile, _ = profile.ApplyClosedLidPolicy(p, monitors)
+			applyProfile, _ = profile.ApplyClosedLidPolicy(applyProfile, monitors)
 		}
 		snapshot, err := engine.Apply(ctx, applyProfile, monitors, apply.ApplyModeInteractive)
 		if err != nil {

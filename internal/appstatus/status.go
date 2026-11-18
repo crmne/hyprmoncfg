@@ -375,6 +375,7 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 		document.RecommendedProfile = &ProfileMatch{Name: recommended.Name, Score: score}
 	}
 
+	opts = opts.WithProfiles(profiles)
 	for _, saved := range profiles {
 		match := profile.EvaluateMatchWith(saved, monitors, opts)
 		enabledOutputs := 0
@@ -387,7 +388,7 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 			Name:                    saved.Name,
 			OutputCount:             len(saved.Outputs),
 			EnabledOutputs:          enabledOutputs,
-			ConnectedOutputs:        match.EnabledMatched + match.DisabledMatched,
+			ConnectedOutputs:        match.EnabledMatched + match.DisabledMatched + match.ModelMatched,
 			ConnectedEnabledOutputs: match.ConnectedEnabledOutputs,
 			ExactDisplayMatch:       match.ExactDisplayMatch(),
 			MatchScore:              match.Score,

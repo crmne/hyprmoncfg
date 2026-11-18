@@ -135,7 +135,7 @@ func (m Model) profileMatchSummaries() []profileMatchSummary {
 		activeName = active.Name
 	}
 	recommendedName := ""
-	opts := profile.MatchOptions{LidClosed: m.lidState == lid.Closed}
+	opts := profile.MatchOptions{LidClosed: m.lidState == lid.Closed}.WithProfiles(m.profiles)
 	if best, _, ok := profile.BestMatchWith(m.profiles, m.monitors, opts); ok {
 		recommendedName = best.Name
 	}
@@ -377,6 +377,8 @@ func matchReasonLabel(kind profile.MatchReasonKind) string {
 		return "not connected, kept off"
 	case profile.MatchReasonConnectedUnknown:
 		return "connected, not in profile"
+	case profile.MatchReasonConnectedSameModel:
+		return "connected, same model, different unit"
 	case profile.MatchReasonLidClosedKeptOff:
 		return "built-in, kept off with the lid closed"
 	case profile.MatchReasonLidClosedOn:

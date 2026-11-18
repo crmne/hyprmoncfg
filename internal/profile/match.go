@@ -22,6 +22,10 @@ type MatchResult struct {
 	MissingOutputs    int // profile outputs enabled here but not connected
 	MissingOffOutputs int // profile outputs kept off here and not connected either
 	UnknownOutputs    int // connected outputs this profile says nothing about
+	// ModelMatched counts saved displays this profile places on a connected
+	// unit of the same make and model but a different serial, because no
+	// saved profile knows that unit exactly. See modelMatches.
+	ModelMatched int
 	// With the lid closed and an external connected, built-in panels are
 	// counted apart: the closed-lid policy turns them off either way, so a
 	// profile that already keeps them off describes the setup better.
@@ -33,8 +37,10 @@ type MatchResult struct {
 // displays connected right now. A connected display may deliberately be kept
 // off; that is still an exact setup match as long as the profile knows about
 // it. Layout, mode, and workspace differences are intentionally irrelevant.
+// A display matched only by model is a different unit, so it is not exact.
 func (r MatchResult) ExactDisplayMatch() bool {
 	return r.ConnectedEnabledOutputs > 0 &&
+		r.ModelMatched == 0 &&
 		r.MissingOutputs == 0 &&
 		r.MissingOffOutputs == 0 &&
 		r.UnknownOutputs == 0
@@ -48,6 +54,7 @@ const (
 	MatchReasonNotConnected        MatchReasonKind = "not_connected"
 	MatchReasonNotConnectedKeptOff MatchReasonKind = "not_connected_kept_off"
 	MatchReasonConnectedUnknown    MatchReasonKind = "connected_unknown"
+	MatchReasonConnectedSameModel  MatchReasonKind = "connected_same_model"
 	MatchReasonLidClosedKeptOff    MatchReasonKind = "lid_closed_kept_off"
 	MatchReasonLidClosedOn         MatchReasonKind = "lid_closed_on"
 )
@@ -75,6 +82,7 @@ const (
 func ExplainMatch(result MatchResult) []MatchReason {
 	candidates := []MatchReason{
 		{Kind: MatchReasonConnected, Count: result.EnabledMatched, Points: result.EnabledMatched * ScoreEnabledMatch},
+		{Kind: MatchReasonConnectedSameModel, Count: result.ModelMatched, Points: result.ModelMatched * ScoreModelMatch},
 		{Kind: MatchReasonConnectedKeptOff, Count: result.DisabledMatched, Points: result.DisabledMatched * ScoreDisabledMatch},
 		{Kind: MatchReasonNotConnected, Count: result.MissingOutputs, Points: result.MissingOutputs * ScoreMissingOutput},
 		{Kind: MatchReasonNotConnectedKeptOff, Count: result.MissingOffOutputs, Points: result.MissingOffOutputs * ScoreMissingOffOutput},
@@ -102,6 +110,11 @@ type MatchOptions struct {
 	// panels that rotate automatically. Live state matches a profile when it
 	// is that profile turned this far.
 	OrientationQuarters int
+
+	// knownHardware holds every display identity the saved profiles name
+	// exactly; see WithProfiles. Nil means only the evaluated profile is
+	// known, which is what a lone EvaluateMatch can see.
+	knownHardware map[string]struct{}
 }
 
 func EvaluateMatch(p Profile, monitors []hypr.Monitor) MatchResult {
@@ -179,18 +192,25 @@ func EvaluateMatchWith(p Profile, monitors []hypr.Monitor, opts MatchOptions) Ma
 		unknownCurrent += max(0, connectedCount-profileKnown[key])
 	}
 
+	// A saved display matched only by model was counted as missing, and the
+	// unit standing in for it as unknown. It is neither.
+	modelMatched := len(modelMatches(p, monitors, opts.knownHardware))
+	missingFromCurrent -= modelMatched
+	unknownCurrent -= modelMatched
+
 	result := MatchResult{
 		EnabledMatched:    enabledMatch,
 		DisabledMatched:   disabledMatch,
 		MissingOutputs:    missingFromCurrent,
 		MissingOffOutputs: missingOffFromCurrent,
 		UnknownOutputs:    unknownCurrent,
+		ModelMatched:      modelMatched,
 		LidClosedKeptOff:  lidKeptOff,
 		LidClosedOn:       lidOn,
 	}
 	// A profile that would leave every connected output off is not a
 	// candidate at all, so it keeps a zero score and no partial credit.
-	if enabledMatch+lidOn == 0 {
+	if enabledMatch+lidOn+modelMatched == 0 {
 		return result
 	}
 
@@ -199,9 +219,10 @@ func EvaluateMatchWith(p Profile, monitors []hypr.Monitor, opts MatchOptions) Ma
 	// kept off counts like a match and one turned on like a kept-off one.
 	result.Score = enabledMatch*ScoreEnabledMatch + disabledMatch*ScoreDisabledMatch +
 		lidKeptOff*ScoreEnabledMatch + lidOn*ScoreDisabledMatch +
+		modelMatched*ScoreModelMatch +
 		missingFromCurrent*ScoreMissingOutput + missingOffFromCurrent*ScoreMissingOffOutput +
 		unknownCurrent*ScoreUnknownOutput
-	result.ConnectedEnabledOutputs = enabledMatch + lidOn
+	result.ConnectedEnabledOutputs = enabledMatch + lidOn + modelMatched
 	return result
 }
 
@@ -214,6 +235,9 @@ func BestMatch(profiles []Profile, monitors []hypr.Monitor) (Profile, int, bool)
 }
 
 func BestMatchWith(profiles []Profile, monitors []hypr.Monitor, opts MatchOptions) (Profile, int, bool) {
+	if opts.knownHardware == nil {
+		opts = opts.WithProfiles(profiles)
+	}
 	type candidate struct {
 		profile Profile
 		score   int
@@ -263,9 +287,13 @@ func exactStateMatchIndex(profiles []Profile, monitors []hypr.Monitor, rules []h
 	}
 
 	current := FromState("", monitors, rules)
+	known := knownHardware(profiles)
 	match := 0
 	matches := 0
 	for index, candidate := range profiles {
+		// A profile applied to another unit of the same model is on screen
+		// when its layout is, on that unit.
+		candidate, _ = bindModelMatches(candidate, monitors, known)
 		// An automatically extended layout is a draft, even if its known
 		// displays still have exactly their saved settings.
 		if !candidate.DisableUnknownOutputs && len(OmittedMonitors(candidate, monitors)) > 0 {

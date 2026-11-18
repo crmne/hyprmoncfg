@@ -154,7 +154,7 @@ alongside the list, or below it in narrow terminals.
 - **active** marks the profile your screens are already showing
 - **best** marks the highest scoring profile -- the one the daemon would apply on the next hotplug
 
-Selecting a profile fills the right side: its monitor arrangement on top, its details below. The details spell out the score as the arithmetic that produced it, so a surprising number is never a mystery, and they list what the canvas cannot draw -- displays the profile keeps off and displays that mirror another one. On the canvas, a display the profile expects but cannot find is outlined and labelled `not connected`.
+Selecting a profile fills the right side: its monitor arrangement on top, its details below. The details spell out the score as the arithmetic that produced it, so a surprising number is never a mystery (a saved monitor standing in for another unit of the same model shows as `connected, same model, different unit`), and they list what the canvas cannot draw -- displays the profile keeps off and displays that mirror another one. On the canvas, a display the profile expects but cannot find is outlined and labelled `not connected`.
 
 ![Profiles tab]({{ '/assets/images/screenshots/profiles-dark.png' | relative_url }})
 {: .screenshot }

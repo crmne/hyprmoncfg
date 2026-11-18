@@ -87,7 +87,10 @@ func EditorProfileFromOrientedState(profiles []Profile, monitors []hypr.Monitor,
 	var source *Profile
 	var exact *Profile
 	if index, ok := exactStateMatchIndex(OrientedProfiles(profiles, quarters), monitors, rules); ok {
-		active := profiles[index]
+		// On another unit of the saved model, edit the layout as it is
+		// applied there: keyed to that unit, without the saved unit's
+		// calibration.
+		active, _ := bindModelMatches(profiles[index], monitors, knownHardware(profiles))
 		exact = &active
 		sourceName = active.Name
 		suggestedName = active.Name

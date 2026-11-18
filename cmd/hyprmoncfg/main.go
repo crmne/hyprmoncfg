@@ -297,8 +297,11 @@ func newApplyCmd(configDir *string, monitorsConf *string, hyprConfig *string) *c
 				return err
 			}
 			applyProfile := p
+			if saved, err := store.List(); err == nil {
+				applyProfile, _ = profile.BindModelMatches(p, monitors, saved)
+			}
 			if state, err := lid.ReadState(ctx); err == nil && state == lid.Closed {
-				applyProfile, _ = profile.ApplyClosedLidPolicy(p, monitors)
+				applyProfile, _ = profile.ApplyClosedLidPolicy(applyProfile, monitors)
 			}
 
 			isInteractive := confirmTimeout > 0

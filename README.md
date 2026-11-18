@@ -167,7 +167,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now hyprmoncfgd
 ```
 
-The daemon scores profiles in `~/.config/hyprmoncfg/profiles/` against the connected displays. A partial match can provide the base for a temporary extended layout without changing the saved profile. Unfamiliar displays are added unless the profile explicitly sets `disable_unknown_outputs: true`; deliberately disabled known displays remain off. Missing saved displays are allowed for undocking. Delete throwaway profiles before relying on automatic switching.
+The daemon scores profiles in `~/.config/hyprmoncfg/profiles/` against the connected displays. A partial match can provide the base for a temporary extended layout without changing the saved profile. Unfamiliar displays are added unless the profile explicitly sets `disable_unknown_outputs: true`; deliberately disabled known displays remain off. Another unit of a saved monitor model (a hot desk) takes the saved monitor's place when no profile knows it by serial, without the saved unit's ICC or HDR calibration. Missing saved displays are allowed for undocking. Delete throwaway profiles before relying on automatic switching.
 
 When no profile matches, automatic setup retains a usable existing layout,
 including portrait rotation and the current resolution. A rejected automatic

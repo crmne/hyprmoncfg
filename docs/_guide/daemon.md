@@ -224,6 +224,7 @@ Profiles are matched by hardware identity (make, model, serial) -- not connector
 |---|---|
 | Monitor enabled in profile and connected | +100 |
 | Monitor disabled in profile but connected | +50 |
+| Another unit of a monitor in the profile (same make and model, different serial) | +60 |
 | Connected monitor not in the profile | −20 |
 | Monitor enabled in profile but not connected | −30 |
 | Monitor disabled in profile and not connected | −10 |
@@ -241,7 +242,17 @@ For automatic switching, a profile must enable at least one connected display an
 
 Among eligible profiles, the highest score wins. Ties break alphabetically by profile name. A profile that mentions a monitor which is not plugged in pays for it either way, so the profile that describes exactly the connected displays beats a larger profile that happens to include them. The profiles tab shows every score, along with this breakdown for the selected profile.
 
-Another physical unit of the same model may have a different serial number and therefore a different identity. Extension treats it as a new display without copying another unit's calibration.
+### Another unit of the same model
+
+Hot desks and shared offices hand you a different physical unit of the monitor you saved: same make and model, different serial. When no saved profile knows that unit by its serial, a profile that has a monitor of the same make and model, enabled and not connected, uses the new unit in its place. Your saved layout, mode, scale, rotation, workspaces, and color preset land on the unit you plugged in, instead of the unit being extended to the right.
+
+An exact match always wins. A unit that any saved profile names by its serial is never matched to another profile by model, and a model match scores +60, below the +100 of the unit the profile was saved with. Save a profile at the office desk and that profile owns its unit from then on.
+
+hyprmoncfg only pairs a saved monitor with a new unit when the choice is unambiguous: one saved monitor of that model left without its unit, and one connected unit of that model that no profile knows. With two identical monitors, which saved position goes to which new unit would be a guess, so new units are extended as before. Built-in laptop panels, monitors a profile keeps off, and profiles with `disable_unknown_outputs: true` (Keep other displays off) never match by model.
+
+The new unit gets the layout, not the calibration. The ICC profile and the HDR luminance overrides (`min_luminance`, `max_luminance`, `max_avg_luminance`) were measured on the saved unit and would mis-calibrate a different panel, so they are left out and Hyprland uses the new unit's own EDID values. The generated config targets the new unit by its own description (`desc:`), so the rule applies to the monitor actually plugged in. The saved profile is not changed. If you save that profile while the other unit is connected, the profile records the unit you are using, without the calibration it never had.
+
+The profiles tab lists the match as `connected, same model, different unit`, the status document reports it as `connected_same_model`, and the daemon log names the connector that takes the saved monitor's place.
 
 On laptops, the daemon also reads lid state. UPower is optional, but recommended: with UPower available, lid changes arrive as D-Bus events and the daemon can react immediately. Without UPower, the daemon falls back to polling `/proc/acpi/button/lid/*/state` at `--lid-poll-interval`, which defaults to `1s` and is not available on every system. If neither source exists, lid-aware switching is disabled and monitor hotplug still works.
 

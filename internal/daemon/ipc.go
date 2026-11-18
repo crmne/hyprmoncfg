@@ -268,7 +268,7 @@ func (s *Service) SetProfileAuto(params ipc.ProfileAutoParams) error {
 		return errors.New("save or select a profile before turning automatic selection off")
 	}
 	s.setManualOverride(profile.MonitorSetHash(monitors), active)
-	s.applied = rememberApplied(active, monitors)
+	s.applied = rememberApplied(s.bindModelMatches(active, monitors, profiles), monitors)
 	s.lastProfile, s.lastMonitorSet = active, profile.MonitorSetHash(monitors)
 	s.lastLidState = s.lidState
 	s.cfg.Logf("automatic profile selection off; pinned %q for this monitor set", active.Name)
@@ -306,9 +306,11 @@ func (s *Service) Preview(owner string, params ipc.PreviewParams) (ipc.Transacti
 	if err != nil {
 		return ipc.Transaction{}, err
 	}
-	effective := target
+	// The request stays as asked, so saving it on commit never records the
+	// stand-in unit; only the applied layout moves onto it.
+	effective := s.bindModelMatches(target, monitors, nil)
 	if state, stateErr := lid.ReadState(ctx); stateErr == nil && state == lid.Closed {
-		effective, _ = profile.ApplyClosedLidPolicy(target, monitors)
+		effective, _ = profile.ApplyClosedLidPolicy(effective, monitors)
 	}
 	// A preview of an upright layout on a turned device keeps the turn.
 	effective = profile.Oriented(effective, s.rotation.turn())

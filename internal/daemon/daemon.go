@@ -1008,6 +1008,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 	rulesReady := false
 
 	var target profile.Profile
+	var profiles []profile.Profile
 	manualHold := false
 	if s.cfg.ForcedProfile != "" {
 		target, err = s.store.Load(s.cfg.ForcedProfile)
@@ -1021,7 +1022,7 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		target = manual
 		manualHold = true
 	} else {
-		profiles, err := s.store.List()
+		profiles, err = s.store.List()
 		if err != nil {
 			return err
 		}
@@ -1099,7 +1100,8 @@ func (s *Service) applyBestLocked(ctx context.Context) (resultErr error) {
 		}
 	}
 
-	effective := profile.ExtendConnected(target, monitors)
+	effective := s.bindModelMatches(target, monitors, profiles)
+	effective = profile.ExtendConnected(effective, monitors)
 	defer func() {
 		if resultErr == nil || errors.Is(resultErr, errIncompleteWake) {
 			s.fallbacks.observeApplied()
@@ -1261,6 +1263,26 @@ func (s *Service) clearManualOverride() {
 	s.manualSet = ""
 	s.manualProfile = profile.Profile{}
 	s.manualMu.Unlock()
+}
+
+// bindModelMatches places the target's saved displays on connected units of
+// the same make and model that no saved profile knows exactly. Run it after
+// anything that saves target, which must stay the profile as saved.
+func (s *Service) bindModelMatches(target profile.Profile, monitors []hypr.Monitor, profiles []profile.Profile) profile.Profile {
+	if profiles == nil {
+		listed, err := s.store.List()
+		if err != nil {
+			s.cfg.Logf("list profiles for model matching: %v", err)
+			return target
+		}
+		profiles = listed
+	}
+	bound, matches := profile.BindModelMatches(target, monitors, profiles)
+	for _, match := range matches {
+		s.cfg.Logf("profile %q: %s takes the place of saved display %s (same model, different unit; saved calibration not applied)",
+			target.Name, match.Monitor.Name, match.OutputKey)
+	}
+	return bound
 }
 
 // manualOverride returns the profile a person chose by hand. The choice holds
