@@ -809,7 +809,9 @@ func (s *Service) ensureConfigInclude(ctx context.Context) {
 	cancel()
 
 	resolved, err := config.ResolveHyprlandConfig(version, s.cfg.MonitorsConf, s.cfg.HyprConfig)
-	if err == nil && version != "" {
+	// Lua is conclusive without a version: it only comes from a .lua root
+	// named explicitly. Legacy without a version is only the fallback guess.
+	if err == nil && (version != "" || resolved.Format == config.HyprConfigLua) {
 		s.luaDialect.Store(resolved.Format == config.HyprConfigLua)
 	}
 	if err != nil {
@@ -883,7 +885,16 @@ func (s *Service) wakeDisplays(ctx context.Context) {
 			s.luaDialect.Store(luaDispatch)
 		}
 	}
-	if err := s.client.WakeDisplays(wakeCtx, luaDispatch); err != nil {
+	err = s.client.WakeDisplays(wakeCtx, luaDispatch)
+	// With no dialect seen yet (Hyprland was too busy at startup and again
+	// now), the guess is legacy. Lua-mode Hyprland says so when it rejects
+	// that; resend the Lua form and remember it for the next wake.
+	if !luaDispatch && hypr.LuaDispatchRejected(err) {
+		s.cfg.Logf("Hyprland rejected the legacy wake command; retrying with Lua syntax")
+		s.luaDialect.Store(true)
+		err = s.client.WakeDisplays(wakeCtx, true)
+	}
+	if err != nil {
 		s.cfg.Logf("could not wake displays: %v", err)
 	}
 }

@@ -2,10 +2,28 @@ package hypr
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestLuaDispatchRejectedRecognizesOnlyTheLuaWrapperError(t *testing.T) {
+	lua := errors.New(`failed dispatch "dpms": exit status 7 (error: [string "return hl.dispatch(dpms on)"]:1: ')' expected near 'on'
+  → Note: dispatch in lua is a shorthand for hl.dispatch(...), your syntax might need to be updated.)`)
+	if !LuaDispatchRejected(lua) {
+		t.Fatal("the Hyprland 0.56 Lua wrapper error should be recognized")
+	}
+	for _, err := range []error{
+		nil,
+		errors.New(`failed dispatch "dpms": exit status 1 (Invalid dispatcher)`),
+		errors.New(`failed dispatch "dpms": context deadline exceeded ()`),
+	} {
+		if LuaDispatchRejected(err) {
+			t.Fatalf("%v should not be taken for a Lua rejection", err)
+		}
+	}
+}
 
 func TestParseEventAcceptsMonitorV2Events(t *testing.T) {
 	tests := []struct {

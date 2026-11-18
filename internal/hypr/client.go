@@ -330,6 +330,20 @@ func (c *Client) WakeDisplays(ctx context.Context, luaDispatch bool) error {
 	return c.Dispatch(ctx, "dpms", "on")
 }
 
+// LuaDispatchRejected reports whether a classic dispatch failed because
+// Hyprland reads a Lua config. Hyprland 0.56 wraps `hyprctl dispatch X` as
+// `hl.dispatch(X)`, which a classic dispatcher with arguments does not parse,
+// and adds a note pointing at the Lua syntax. Hyprland before 0.55 never says
+// either, so this cannot misfire there.
+func LuaDispatchRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "dispatch in lua is a shorthand") ||
+		strings.Contains(message, "return hl.dispatch(")
+}
+
 func (c *Client) BatchKeywordMonitor(ctx context.Context, values []string) error {
 	if len(values) == 0 {
 		return nil

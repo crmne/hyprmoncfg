@@ -109,7 +109,9 @@ built-in panel is off while the lid is open (it was switched off with the lid
 shut and the external stayed asleep), the daemon applies the profile anyway,
 so the panel comes back without waiting for the external. The wake command uses
 the Lua or legacy syntax Hyprland last reported, even when Hyprland is too busy
-to answer right after resume.
+to answer right after resume. If Hyprland has not answered once since the
+daemon started, the daemon sends the legacy command, and when a Lua-mode
+Hyprland rejects it, it sends the Lua one straight away and keeps using it.
 
 ### Workspaces when a display comes back
 
