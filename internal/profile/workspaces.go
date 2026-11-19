@@ -51,7 +51,10 @@ func WorkspaceSettingsFromHypr(monitors []hypr.Monitor, rules []hypr.WorkspaceRu
 	}
 
 	if len(rules) == 0 {
-		settings.Strategy = WorkspaceStrategySequential
+		// With no workspace rules, the system's own numbering is in charge.
+		// Where that is per display, say so, so a profile saved from it keeps it.
+		settings.Strategy = DefaultWorkspaceStrategy()
+		settings.Enabled = settings.Strategy == WorkspaceStrategyPerDisplay
 		return settings
 	}
 

@@ -154,6 +154,17 @@ func PerDisplayWorkspace(slot int, monitor hypr.Monitor, rules []hypr.WorkspaceR
 	return strconv.Itoa(slot)
 }
 
+// DefaultWorkspaceStrategy is the plan a profile starts with: Per display
+// where the system already gives each display its own workspaces, as
+// Omarchy 4.5 and later do, so hyprmoncfg never turns that off on its own,
+// and Sequential everywhere else.
+func DefaultWorkspaceStrategy() WorkspaceStrategy {
+	if PerDisplayDelegate() != "" {
+		return WorkspaceStrategyPerDisplay
+	}
+	return WorkspaceStrategySequential
+}
+
 // WorkspaceStrategies lists the strategies profiles can store, in the order
 // editors offer them.
 func WorkspaceStrategies() []WorkspaceStrategy {

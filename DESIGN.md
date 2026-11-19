@@ -175,6 +175,15 @@ bindings that run `hyprmoncfg workspace`. The generated Lua checks for
 Omarchy's module at load time and falls back to its own branch, so a profile
 works on both. Group size is inert under Per display.
 
+Decision, 2026-11-18: the default workspace strategy follows the system.
+Where Omarchy's per-monitor workspaces module is installed it is Per display,
+and everywhere else Sequential. It applies to new profiles, to the live state
+read back with no workspace rules (which under Omarchy means Omarchy's own
+numbering is running, so it reads as Per display rather than Off), and to a
+layout extended to an unknown display. Before this, extending a layout turned
+on Sequential everywhere, which on Omarchy 4.5 replaced Omarchy's per-monitor
+workspaces with global ones nobody chose. Saved profiles keep their strategy.
+
 Decision, 2026-11-18: Per display stores how many workspaces each display
 has, 1-10, as `slots_per_display` (absent means ten), and editors show it in
 the Max workspaces row as "N per display". It is not `max_workspaces`, which

@@ -398,7 +398,7 @@ func NewModel(client *hypr.Client, store *profile.Store, monitorsConfPath string
 		layoutFocus: layoutFocusCanvas,
 		status:      "Loading Hyprland state...",
 		workspaceEdit: workspaceEditor{
-			Strategy:                profile.WorkspaceStrategySequential,
+			Strategy:                profile.DefaultWorkspaceStrategy(),
 			MaxWorkspaces:           9,
 			GroupSize:               defaultWorkspaceGroupSize,
 			LastSequentialGroupSize: defaultWorkspaceGroupSize,
@@ -4128,7 +4128,7 @@ func workspaceEditorFromSettings(settings profile.WorkspaceSettings, outputs []e
 		if len(settings.Rules) > 0 {
 			strategy = profile.WorkspaceStrategyManual
 		} else {
-			strategy = profile.WorkspaceStrategySequential
+			strategy = profile.DefaultWorkspaceStrategy()
 		}
 	}
 
@@ -4979,7 +4979,7 @@ func transformLabel(v int) string {
 
 func blankStrategy(strategy profile.WorkspaceStrategy) profile.WorkspaceStrategy {
 	if strategy == "" {
-		return profile.WorkspaceStrategySequential
+		return profile.DefaultWorkspaceStrategy()
 	}
 	return strategy
 }

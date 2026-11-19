@@ -182,7 +182,7 @@ best match from the row currently selected for inspection.
 
 The second tab lets you distribute workspaces across monitors. **Strategy** is the first row: pick Off or one of four plans.
 
-Sequential is preferred for new plans. When importing consecutive rules from one
+New plans start as Sequential, or as Per display on Omarchy 4.5 and later, where Omarchy already gives each monitor its own workspaces. A display you plug in that no profile knows is added with the same default. When importing consecutive rules from one
 display, the editor uses Sequential with groups of three and keeps the existing
 workspace total and persistence. Saved profiles retain their explicit strategy,
 including Interleaved; this default does not migrate existing profiles.

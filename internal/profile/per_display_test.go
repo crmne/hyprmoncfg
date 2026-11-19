@@ -180,3 +180,36 @@ func TestPerDisplayCountMustBeOneToTen(t *testing.T) {
 		}
 	}
 }
+
+// Where Omarchy already gives each display its own workspaces, new and
+// extended profiles start there instead of turning it off for a global plan.
+func TestDefaultStrategyFollowsTheSystem(t *testing.T) {
+	monitors := []hypr.Monitor{
+		{Name: "eDP-1", Description: "Laptop panel", Width: 2880, Height: 1800, RefreshRate: 120, Scale: 2},
+		{Name: "DP-1", Description: "Desk display", X: 1440, Width: 2560, Height: 1440, RefreshRate: 60, Scale: 1},
+	}
+	if got := DefaultWorkspaceStrategy(); got != WorkspaceStrategySequential {
+		t.Fatalf("default without Omarchy = %q", got)
+	}
+	if got := WorkspaceSettingsFromHypr(monitors, nil); got.Enabled || got.Strategy != WorkspaceStrategySequential {
+		t.Fatalf("live state without rules or Omarchy = %+v, want Off with Sequential ready", got)
+	}
+	laptop := FromMonitors("Laptop", monitors[:1])
+	if got := ExtendConnected(laptop, monitors).Workspaces; !got.Enabled || got.Strategy != WorkspaceStrategySequential {
+		t.Fatalf("extended without Omarchy = %+v", got)
+	}
+
+	SetPerDisplayDelegate("omarchy", func([]OutputConfig) map[string]int { return nil })
+	t.Cleanup(func() { SetPerDisplayDelegate("", nil) })
+	if got := DefaultWorkspaceStrategy(); got != WorkspaceStrategyPerDisplay {
+		t.Fatalf("default with Omarchy = %q", got)
+	}
+	if got := WorkspaceSettingsFromHypr(monitors, nil); !got.Enabled || got.Strategy != WorkspaceStrategyPerDisplay {
+		t.Fatalf("live state under Omarchy = %+v, want Per display", got)
+	}
+	laptop = FromMonitors("Laptop", monitors[:1])
+	laptop.Workspaces = WorkspaceSettings{}
+	if got := ExtendConnected(laptop, monitors).Workspaces; !got.Enabled || got.Strategy != WorkspaceStrategyPerDisplay {
+		t.Fatalf("extended under Omarchy = %+v, want Per display", got)
+	}
+}

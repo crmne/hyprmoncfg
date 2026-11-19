@@ -85,7 +85,9 @@ globally underneath: the laptop screen 1-10, the next monitor 11-20. Omarchy
 keeps each monitor's block, moves workspaces home when a monitor returns, and
 renumbers ones that land elsewhere.
 
-A profile's workspace strategy decides who is in charge:
+A profile's workspace strategy decides who is in charge. New profiles, and
+layouts extended to a monitor no profile knows, start with Per display, so
+Omarchy's per-monitor workspaces stay on until you pick something else:
 
 - **Per display** keeps Omarchy's per-monitor workspaces. hyprmoncfg writes no
   workspace rules or key bindings and moves no workspaces, so Omarchy's keys,

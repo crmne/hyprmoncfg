@@ -308,8 +308,12 @@ func TestBuildDescribesPerDisplayWorkspacesOfTheActiveProfile(t *testing.T) {
 	monitor := hypr.Monitor{Name: "eDP-1", Description: "Laptop panel", Make: "Framework", Model: "Display", Serial: "123",
 		Width: 2256, Height: 1504, RefreshRate: 60, Scale: 1.5}
 	saved := profile.FromState("Laptop", []hypr.Monitor{monitor}, nil)
-	if document := Build("test", true, []profile.Profile{saved}, []hypr.Monitor{monitor}, nil, profile.MatchOptions{}); document.PerDisplayWorkspaces != nil {
-		t.Fatalf("per_display_workspaces = %+v without the strategy", document.PerDisplayWorkspaces)
+	if saved.Workspaces.Strategy != profile.WorkspaceStrategyPerDisplay || !saved.Workspaces.Enabled {
+		t.Fatalf("a profile saved under Omarchy's per-monitor workspaces starts as %+v, want Per display", saved.Workspaces)
+	}
+	saved.Workspaces = profile.WorkspaceSettings{}
+	if document := Build("test", true, []profile.Profile{saved}, []hypr.Monitor{monitor}, nil, profile.MatchOptions{}); document.PerDisplayWorkspaces != nil || document.ActiveProfile == nil {
+		t.Fatalf("an Off profile must stay active without per_display_workspaces: active %+v, %+v", document.ActiveProfile, document.PerDisplayWorkspaces)
 	}
 
 	saved.Workspaces = profile.WorkspaceSettings{Enabled: true, Strategy: profile.WorkspaceStrategyPerDisplay, SlotsPerDisplay: 6}

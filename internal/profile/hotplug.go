@@ -86,7 +86,7 @@ func ExtendConnected(p Profile, monitors []hypr.Monitor) Profile {
 	}
 	if !p.Workspaces.Enabled {
 		p.Workspaces.Enabled = true
-		p.Workspaces.Strategy = WorkspaceStrategySequential
+		p.Workspaces.Strategy = DefaultWorkspaceStrategy()
 		p.Workspaces.GroupSize = 3
 		p.Workspaces.MaxWorkspaces = 9
 	}
