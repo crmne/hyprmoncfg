@@ -1246,7 +1246,14 @@ func (m *Model) commitWorkspaceNumericInput() tea.Cmd {
 		return nil
 	}
 
-	if m.input.Kind == numericInputWorkspaceCount {
+	if m.input.Kind == numericInputWorkspaceCount && m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
+		if value > profile.PerDisplayBlockSize {
+			m.input.Input.Err = fmt.Errorf("must be 1-%d", profile.PerDisplayBlockSize)
+			return nil
+		}
+		m.workspaceEdit.SlotsPerDisplay = value
+		m.setStatusOK(fmt.Sprintf("Workspaces per display set to %d", value))
+	} else if m.input.Kind == numericInputWorkspaceCount {
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyManual {
 			m.resizeManualWorkspaceRules(value)
 		}

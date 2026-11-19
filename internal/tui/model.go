@@ -280,6 +280,7 @@ type workspaceEditor struct {
 	Enabled                 bool
 	Strategy                profile.WorkspaceStrategy
 	MaxWorkspaces           int
+	SlotsPerDisplay         int
 	GroupSize               int
 	LastSequentialGroupSize int
 	MonitorOrder            []string
@@ -1079,7 +1080,13 @@ func (m Model) updateWorkspaceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			switch m.workspaceEdit.SelectedField {
 			case 1:
 				if m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
-					return m, nil
+					return m, m.openNumericInput(
+						numericInputWorkspaceCount,
+						-1,
+						"Set Workspaces per Display",
+						fmt.Sprintf("Type 1-%d. Enter applies. Esc cancels.", profile.PerDisplayBlockSize),
+						strconv.Itoa(m.workspaceEdit.settings().PerDisplaySlots()),
+					)
 				}
 				return m, m.openNumericInput(
 					numericInputWorkspaceCount,
@@ -1427,7 +1434,8 @@ func (m Model) renderCanvas(width, height int) string {
 	canvasH := layout.height
 
 	grid := m.newCanvasCells(canvasW, canvasH)
-	workspaces := workspacePlanByConnector(profile.ResolveWorkspaceRules(m.currentProfile("draft"), nil))
+	draft := m.currentProfile("draft")
+	workspaces := workspacePlanByConnector(slotLabeledRules(draft.Workspaces, profile.ResolveWorkspaceRules(draft, nil)))
 
 	rects := append([]canvasRect(nil), layout.rects...)
 	sort.SliceStable(rects, func(i, j int) bool {
@@ -2031,6 +2039,7 @@ func (m Model) renderWorkspacePreviewPanes(width, height int) string {
 		if settings.Strategy != profile.WorkspaceStrategyManual && settings.Strategy != "" {
 			rules = m.workspacePlan(outputs, settings)
 		}
+		rules = slotLabeledRules(settings, rules)
 	}
 
 	planLines := make([]string, 0, len(outputs)+2)
@@ -2902,7 +2911,15 @@ func (m *Model) adjustWorkspaceField(delta int) {
 		}
 		m.workspaceEdit.Strategy = next
 	case 1:
-		if !m.workspaceEdit.Enabled || m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
+		if !m.workspaceEdit.Enabled {
+			return
+		}
+		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
+			next := m.workspaceEdit.settings().PerDisplaySlots() + delta
+			if next < 1 || next > profile.PerDisplayBlockSize {
+				return
+			}
+			m.workspaceEdit.SlotsPerDisplay = next
 			return
 		}
 		next := adjustPositiveInt(m.workspaceEdit.MaxWorkspaces, delta)
@@ -3931,7 +3948,7 @@ func (m Model) workspaceFieldValue(field int) string {
 		return workspaceStrategyLabel(m.workspaceStrategyChoice())
 	case 1:
 		if m.workspaceEdit.Strategy == profile.WorkspaceStrategyPerDisplay {
-			return fmt.Sprintf("%d per display", profile.PerDisplaySlots)
+			return fmt.Sprintf("%d per display", m.workspaceEdit.settings().PerDisplaySlots())
 		}
 		return fmt.Sprintf("%d", m.workspaceEdit.MaxWorkspaces)
 	case 2:
@@ -4138,6 +4155,7 @@ func workspaceEditorFromSettings(settings profile.WorkspaceSettings, outputs []e
 		Enabled:                 settings.Enabled,
 		Strategy:                strategy,
 		MaxWorkspaces:           maxWorkspaces,
+		SlotsPerDisplay:         settings.SlotsPerDisplay,
 		GroupSize:               groupSize,
 		LastSequentialGroupSize: lastSequentialGroupSize,
 		MonitorOrder:            normalized,
@@ -4191,13 +4209,14 @@ func workspaceOrderFromEditorRules(rules []profile.WorkspaceRule, outputs []edit
 
 func (w workspaceEditor) settings() profile.WorkspaceSettings {
 	return profile.WorkspaceSettings{
-		PersistAll:    w.PersistAll,
-		Enabled:       w.Enabled,
-		Strategy:      w.Strategy,
-		MaxWorkspaces: w.MaxWorkspaces,
-		GroupSize:     w.GroupSize,
-		MonitorOrder:  append([]string(nil), w.MonitorOrder...),
-		Rules:         append([]profile.WorkspaceRule(nil), w.Rules...),
+		PersistAll:      w.PersistAll,
+		Enabled:         w.Enabled,
+		Strategy:        w.Strategy,
+		MaxWorkspaces:   w.MaxWorkspaces,
+		SlotsPerDisplay: w.SlotsPerDisplay,
+		GroupSize:       w.GroupSize,
+		MonitorOrder:    append([]string(nil), w.MonitorOrder...),
+		Rules:           append([]profile.WorkspaceRule(nil), w.Rules...),
 	}
 }
 

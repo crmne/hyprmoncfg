@@ -26,7 +26,19 @@ func (w WorkspaceSettings) Validate() error {
 	if w.GroupSize < 0 {
 		return fmt.Errorf("workspace group size cannot be negative")
 	}
+	if w.SlotsPerDisplay < 0 || w.SlotsPerDisplay > PerDisplayBlockSize {
+		return fmt.Errorf("workspaces per display must be 1-%d", PerDisplayBlockSize)
+	}
 	return nil
+}
+
+// PerDisplaySlots is how many workspaces each display has under the
+// per-display strategy: SlotsPerDisplay, or ten when it is unset.
+func (w WorkspaceSettings) PerDisplaySlots() int {
+	if w.SlotsPerDisplay < 1 || w.SlotsPerDisplay > PerDisplayBlockSize {
+		return PerDisplayBlockSize
+	}
+	return w.SlotsPerDisplay
 }
 
 func WorkspaceSettingsFromHypr(monitors []hypr.Monitor, rules []hypr.WorkspaceRule) WorkspaceSettings {

@@ -307,7 +307,7 @@ func renderLegacyConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepa
 		sections = append(sections, strings.Join(workspaceLines, "\n"))
 	}
 	if p.Workspaces.Enabled && p.Workspaces.Strategy == profile.WorkspaceStrategyPerDisplay && len(workspaceLines) > 0 {
-		sections = append(sections, hyprlangPerDisplayBindings())
+		sections = append(sections, hyprlangPerDisplayBindings(p.Workspaces.PerDisplaySlots()))
 	}
 	if transform, ok := panelTouchTransform(matched); ok {
 		sections = append(sections, fmt.Sprintf("input {\n  touchdevice {\n    transform = %d\n  }\n  tablet {\n    transform = %d\n  }\n}", transform, transform))
@@ -380,7 +380,7 @@ func renderLuaConfig(p profile.Profile, monitors []hypr.Monitor, useV2, prepareD
 	sections := []string{config.GeneratedHeader(config.HyprConfigLua), omarchyMonitorPanelHandoff, omarchyScaleKeys, strings.Join(monitorBlocks, "\n\n")}
 	switch {
 	case p.Workspaces.Enabled && p.Workspaces.Strategy == profile.WorkspaceStrategyPerDisplay:
-		sections = append(sections, luaPerDisplaySection(perDisplay, workspaceLines))
+		sections = append(sections, luaPerDisplaySection(p.Workspaces.PerDisplaySlots(), perDisplay, workspaceLines))
 	case p.Workspaces.Enabled && assignsNumberedWorkspace(rules):
 		sections = append(sections, omarchyGlobalWorkspacesSection(rules))
 		if len(workspaceLines) > 0 {

@@ -92,7 +92,9 @@ A profile's workspace strategy decides who is in charge:
   hotplug handling and stock bar widget work as shipped. The Workspaces page
   shows the block Omarchy gives each display, read from Omarchy's own state, so
   you can see which numbers to use in window rules. Omarchy chooses the blocks,
-  so Monitor order and Persistence are marked as set by Omarchy. The same
+  so Monitor order and Persistence are marked as set by Omarchy. Choose fewer
+  than ten workspaces per display and hyprmoncfg unbinds Omarchy's number keys
+  past that count, and nothing else. The same
   profile carries to a machine without Omarchy, where hyprmoncfg gives each
   display its own workspaces itself.
 - **Manual**, **Sequential** and **Interleaved** plan global workspaces, such as

@@ -9,7 +9,7 @@ import (
 	"github.com/crmne/hyprmoncfg/internal/hypr"
 )
 
-// DisplayBlocks assigns each display a block of PerDisplaySlots workspaces.
+// DisplayBlocks assigns each display a block of PerDisplayBlockSize workspaces.
 // It receives the enabled, unmirrored outputs in planner order and returns
 // each output key's block, counting from zero: block 1 holds workspaces
 // 11-20. An output it leaves out has no workspaces of its own.
@@ -77,6 +77,14 @@ func OwnDisplayBlocks(p Profile, monitors []hypr.Monitor) map[string]int {
 }
 
 func perDisplayWorkspaceRules(p Profile, monitors []hypr.Monitor) []WorkspaceRule {
+	return perDisplayRules(p, PerDisplayBlocks(p, monitors))
+}
+
+// PerDisplayBlocks is each display's block under the per-display strategy,
+// by output key: the delegate's, such as Omarchy's, when there is one, and
+// otherwise the planner's order.
+func PerDisplayBlocks(p Profile, monitors []hypr.Monitor) map[string]int {
+	p.normalizeIdentityRefs()
 	if source := perDisplayDelegateBlocks(); source != nil {
 		order := orderedOutputKeys(p, monitors)
 		outputs := make([]OutputConfig, 0, len(order))
@@ -85,13 +93,14 @@ func perDisplayWorkspaceRules(p Profile, monitors []hypr.Monitor) []WorkspaceRul
 				outputs = append(outputs, output)
 			}
 		}
-		return perDisplayRules(p, source(outputs))
+		return source(outputs)
 	}
-	return perDisplayRules(p, OwnDisplayBlocks(p, monitors))
+	return OwnDisplayBlocks(p, monitors)
 }
 
-// perDisplayRules lays out each display's ten workspaces. The first is the
-// display's default and persistent, so every display shows its own on start.
+// perDisplayRules lays out each display's workspaces, the first slots of its
+// block. The first is the display's default and persistent, so every display
+// shows its own on start.
 func perDisplayRules(p Profile, blocks map[string]int) []WorkspaceRule {
 	type entry struct {
 		key   string
@@ -106,12 +115,13 @@ func perDisplayRules(p Profile, blocks map[string]int) []WorkspaceRule {
 	// Lowest block first, so rules come out in workspace order.
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].block < entries[j].block })
 
-	rules := make([]WorkspaceRule, 0, len(entries)*PerDisplaySlots)
+	slots := p.Workspaces.PerDisplaySlots()
+	rules := make([]WorkspaceRule, 0, len(entries)*slots)
 	for _, item := range entries {
 		output, _ := p.OutputByKey(item.key)
-		for slot := 1; slot <= PerDisplaySlots; slot++ {
+		for slot := 1; slot <= slots; slot++ {
 			rules = append(rules, WorkspaceRule{
-				Workspace:  strconv.Itoa(item.block*PerDisplaySlots + slot),
+				Workspace:  strconv.Itoa(item.block*PerDisplayBlockSize + slot),
 				OutputKey:  item.key,
 				OutputName: output.Name,
 				Default:    slot == 1,
@@ -136,7 +146,7 @@ func PerDisplayWorkspace(slot int, monitor hypr.Monitor, rules []hypr.WorkspaceR
 			continue
 		}
 		id, err := strconv.Atoi(strings.TrimSpace(rule.WorkspaceString))
-		if err != nil || id < 1 || (id-1)%PerDisplaySlots != 0 {
+		if err != nil || id < 1 || (id-1)%PerDisplayBlockSize != 0 {
 			continue
 		}
 		return strconv.Itoa(id - 1 + slot)

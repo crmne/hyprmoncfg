@@ -54,6 +54,10 @@ type Document struct {
 	// An absent field identifies an older daemon; an empty array is a known
 	// empty plan. This is not a declaration of workspace-management ownership.
 	WorkspacePlan []WorkspacePlan `json:"workspace_plan"`
+	// PerDisplayWorkspaces is set while the active profile gives each display
+	// workspaces of its own, so a bar can label them by slot: workspace 11 is
+	// the second display's 1. Absent otherwise, and from older daemons.
+	PerDisplayWorkspaces *PerDisplayWorkspaces `json:"per_display_workspaces,omitempty"`
 	// Rotation reports the orientation sensor that turns built-in panels set
 	// to rotate automatically. Absent means the daemon predates it or no
 	// daemon is running.
@@ -212,6 +216,25 @@ type EditorDraft struct {
 	WorkspacePlan []WorkspacePlan `json:"workspace_plan"`
 }
 
+// PerDisplayWorkspaces describes per-display numbering: each display owns a
+// block of BlockSize workspace numbers, and has the first Slots of them.
+type PerDisplayWorkspaces struct {
+	BlockSize int `json:"block_size"`
+	Slots     int `json:"slots"`
+	// Delegate names what runs the workspaces, "omarchy", and is absent
+	// when hyprmoncfg runs them itself.
+	Delegate string `json:"delegate,omitempty"`
+	// Blocks is each connected display's block, by connector.
+	Blocks []DisplayBlock `json:"blocks"`
+}
+
+// DisplayBlock is the block a connected display owns: block 1 holds
+// workspaces 11-20.
+type DisplayBlock struct {
+	OutputName string `json:"output_name"`
+	Block      int    `json:"block"`
+}
+
 type WorkspacePlan struct {
 	OutputKey  string   `json:"output_key"`
 	OutputName string   `json:"output_name"`
@@ -367,6 +390,9 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 	if active, ok := profile.OrientedExactStateMatch(profiles, monitors, rules, opts.OrientationQuarters); ok {
 		activeName = active.Name
 		document.ActiveProfile = &ProfileReference{Name: active.Name}
+		if active.Workspaces.Enabled && active.Workspaces.Strategy == profile.WorkspaceStrategyPerDisplay {
+			document.PerDisplayWorkspaces = perDisplayWorkspaces(active, monitors)
+		}
 	}
 
 	recommendedName := ""
@@ -430,4 +456,26 @@ func Build(version string, daemonRunning bool, profiles []profile.Profile, monit
 	}
 
 	return document
+}
+
+func perDisplayWorkspaces(active profile.Profile, monitors []hypr.Monitor) *PerDisplayWorkspaces {
+	connected := make(map[string]bool, len(monitors))
+	for _, monitor := range monitors {
+		if !monitor.Disabled && monitor.MirrorOf == "" {
+			connected[monitor.Name] = true
+		}
+	}
+	result := &PerDisplayWorkspaces{
+		BlockSize: profile.PerDisplayBlockSize,
+		Slots:     active.Workspaces.PerDisplaySlots(),
+		Delegate:  profile.PerDisplayDelegate(),
+		Blocks:    []DisplayBlock{},
+	}
+	for key, block := range profile.PerDisplayBlocks(active, monitors) {
+		if output, ok := active.OutputByKey(key); ok && connected[output.Name] && block >= 0 {
+			result.Blocks = append(result.Blocks, DisplayBlock{OutputName: output.Name, Block: block})
+		}
+	}
+	sort.Slice(result.Blocks, func(i, j int) bool { return result.Blocks[i].Block < result.Blocks[j].Block })
+	return result
 }

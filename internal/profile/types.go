@@ -57,16 +57,18 @@ const (
 	WorkspaceStrategyManual     WorkspaceStrategy = "manual"
 	WorkspaceStrategySequential WorkspaceStrategy = "sequential"
 	WorkspaceStrategyInterleave WorkspaceStrategy = "interleave"
-	// WorkspaceStrategyPerDisplay gives each display workspaces 1-10 of its
-	// own, numbered in blocks of ten as Omarchy does: the first display in the
-	// order 1-10, the next 11-20. Super + number goes to that slot on the
-	// focused display.
+	// WorkspaceStrategyPerDisplay gives each display workspaces of its own,
+	// up to ten, numbered in blocks of ten as Omarchy does: the first display
+	// in the order 1-10, the next 11-20. Super + number goes to that slot on
+	// the focused display.
 	WorkspaceStrategyPerDisplay WorkspaceStrategy = "per_display"
 )
 
-// PerDisplaySlots is how many workspaces each display owns under the
-// per-display strategy.
-const PerDisplaySlots = 10
+// PerDisplayBlockSize is how many workspace numbers each display owns under
+// the per-display strategy, and so the most workspaces it can have: one per
+// number key. Its blocks stay this size whatever SlotsPerDisplay is, so a
+// display keeps its numbers when the count changes, as Omarchy numbers them.
+const PerDisplayBlockSize = 10
 
 type WorkspaceRule struct {
 	Workspace  string `json:"workspace"`
@@ -82,8 +84,11 @@ type WorkspaceSettings struct {
 	MaxWorkspaces int               `json:"max_workspaces,omitempty"`
 	GroupSize     int               `json:"group_size,omitempty"`
 	PersistAll    bool              `json:"persist_all,omitempty"`
-	MonitorOrder  []string          `json:"monitor_order,omitempty"`
-	Rules         []WorkspaceRule   `json:"rules,omitempty"`
+	// SlotsPerDisplay is how many workspaces each display has under the
+	// per-display strategy, 1-10. Zero means ten.
+	SlotsPerDisplay int             `json:"slots_per_display,omitempty"`
+	MonitorOrder    []string        `json:"monitor_order,omitempty"`
+	Rules           []WorkspaceRule `json:"rules,omitempty"`
 }
 
 type Profile struct {

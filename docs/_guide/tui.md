@@ -193,7 +193,7 @@ including Interleaved; this default does not migrate existing profiles.
 | `sequential` | Groups workspaces in chunks (e.g., 1-3 on monitor A, 4-6 on monitor B) | You think of each monitor as having "its own" workspaces |
 | `interleave` | Round-robins workspaces across monitors (1 on A, 2 on B, 3 on A, ...) | You want next/previous workspace to alternate screens |
 | `manual` | Shows every workspace as an assignment you can move between monitors | You need full control over exactly which workspace lives where |
-| `per_display` (Per display) | Gives every monitor workspaces 1-10 of its own, and makes Super + number go to that workspace on the monitor you're on | You want each screen to have its own set of ten, as Omarchy and Niri do |
+| `per_display` (Per display) | Gives every monitor up to ten workspaces of its own, and makes Super + number go to that workspace on the monitor you're on | You want each screen to have its own set, as Omarchy and Niri do |
 
 You can also configure:
 
@@ -206,13 +206,13 @@ While the strategy is Off, the other rows show `—` and the workspace plan is e
 
 ### Per display
 
-Per display gives every monitor ten workspaces of its own. Behind the scenes Hyprland still numbers workspaces across all monitors, so the first monitor in **Monitor order** owns 1-10, the second 11-20, and so on. Write window rules for a specific monitor with those numbers: workspace 12 is the second workspace of the second monitor.
+Per display gives every monitor workspaces of its own, ten unless you choose fewer. Behind the scenes Hyprland still numbers workspaces across all monitors in blocks of ten, so the first monitor in **Monitor order** owns 1-10, the second 11-20, and so on. The plan and the canvas label each monitor's workspaces 1-10, as the keys and Omarchy's bar do. Write window rules for a specific monitor with Hyprland's numbers: workspace 12 is the second workspace of the second monitor.
 
-`Super + 1` through `Super + 0` go to that workspace on the monitor you're on, and `Super + Shift` with a number moves the focused window there. hyprmoncfg binds those keys itself while the profile uses Per display, replacing whatever they did before, and leaves every other key alone. `Super + arrow` already crosses to the next monitor in stock Hyprland. To bind more keys, call `hyprmoncfg workspace focus|move|move-silent <1-10>`.
+`Super + 1` through `Super + 0` go to that workspace on the monitor you're on, `Super + Shift` with a number moves the focused window there, and `Super + Shift + Alt` with a number sends it without following. hyprmoncfg binds those keys itself while the profile uses Per display, replacing whatever they did before, and leaves every other key alone. `Super + arrow` already crosses to the next monitor in stock Hyprland. To bind more keys, call `hyprmoncfg workspace focus|move|move-silent <1-10>`.
 
-**Max workspaces** is fixed at ten per monitor and **Group size** doesn't apply.
+**Max workspaces** becomes how many workspaces each monitor has, from 1 to 10, one per number key. With fewer than ten, the number keys past the count do nothing, and each monitor keeps its block of ten, so changing the count never renumbers a workspace. **Group size** doesn't apply.
 
-On Omarchy 4.5 and later, Omarchy already gives each monitor its own workspaces, binds the keys and shows each monitor's own in the bar. Per display hands workspaces to Omarchy rather than doing the same job twice: hyprmoncfg writes no workspace rules or bindings, and the planner shows the blocks Omarchy gives each monitor. Omarchy picks those blocks, laptop screen first, and keeps them for each monitor wherever it is plugged in, so **Monitor order** and **Persistence** read as set by Omarchy. The same profile works on a machine without Omarchy, where hyprmoncfg does the job itself.
+On Omarchy 4.5 and later, Omarchy already gives each monitor its own workspaces, binds the keys and shows each monitor's own in the bar. Per display hands workspaces to Omarchy rather than doing the same job twice: hyprmoncfg writes no workspace rules or bindings, and the planner shows the blocks Omarchy gives each monitor. Omarchy picks those blocks, laptop screen first, and keeps them for each monitor wherever it is plugged in, so **Monitor order** and **Persistence** read as set by Omarchy. A count below ten still applies: hyprmoncfg takes the number keys past it back from Omarchy. The same profile works on a machine without Omarchy, where hyprmoncfg does the job itself.
 
 There is no fixed workspace or group-size limit. Select **Max workspaces** or **Group size** and press `Enter` to type an exact count; `←` and `→` still make one-step adjustments.
 

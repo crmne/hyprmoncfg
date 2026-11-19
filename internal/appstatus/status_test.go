@@ -292,3 +292,47 @@ func TestEditorAdvertisesTheVRRModesItAccepts(t *testing.T) {
 		}
 	}
 }
+
+// A bar labels per-display workspaces by slot, so the status says when the
+// active profile numbers them that way, and how many each display has.
+func TestBuildDescribesPerDisplayWorkspacesOfTheActiveProfile(t *testing.T) {
+	profile.SetPerDisplayDelegate("omarchy", func(outputs []profile.OutputConfig) map[string]int {
+		blocks := map[string]int{}
+		for _, output := range outputs {
+			blocks[output.Key] = 2
+		}
+		return blocks
+	})
+	t.Cleanup(func() { profile.SetPerDisplayDelegate("", nil) })
+
+	monitor := hypr.Monitor{Name: "eDP-1", Description: "Laptop panel", Make: "Framework", Model: "Display", Serial: "123",
+		Width: 2256, Height: 1504, RefreshRate: 60, Scale: 1.5}
+	saved := profile.FromState("Laptop", []hypr.Monitor{monitor}, nil)
+	if document := Build("test", true, []profile.Profile{saved}, []hypr.Monitor{monitor}, nil, profile.MatchOptions{}); document.PerDisplayWorkspaces != nil {
+		t.Fatalf("per_display_workspaces = %+v without the strategy", document.PerDisplayWorkspaces)
+	}
+
+	saved.Workspaces = profile.WorkspaceSettings{Enabled: true, Strategy: profile.WorkspaceStrategyPerDisplay, SlotsPerDisplay: 6}
+	document := Build("test", true, []profile.Profile{saved}, []hypr.Monitor{monitor}, nil, profile.MatchOptions{})
+	if document.ActiveProfile == nil {
+		t.Fatal("per-display profile not recognised as active")
+	}
+	got := document.PerDisplayWorkspaces
+	if got == nil || got.BlockSize != 10 || got.Slots != 6 || got.Delegate != "omarchy" {
+		t.Fatalf("per_display_workspaces = %+v, want Omarchy's, block 10 with 6 slots", got)
+	}
+	if len(got.Blocks) != 1 || got.Blocks[0] != (DisplayBlock{OutputName: "eDP-1", Block: 2}) {
+		t.Fatalf("blocks = %+v, want eDP-1 in Omarchy's block 2", got.Blocks)
+	}
+
+	profile.SetPerDisplayDelegate("", nil)
+	document = Build("test", true, []profile.Profile{saved}, []hypr.Monitor{monitor}, []hypr.WorkspaceRule{
+		{WorkspaceString: "1", Monitor: "desc:Laptop panel", Default: true, Persistent: true},
+		{WorkspaceString: "2", Monitor: "desc:Laptop panel"}, {WorkspaceString: "3", Monitor: "desc:Laptop panel"},
+		{WorkspaceString: "4", Monitor: "desc:Laptop panel"}, {WorkspaceString: "5", Monitor: "desc:Laptop panel"},
+		{WorkspaceString: "6", Monitor: "desc:Laptop panel"},
+	}, profile.MatchOptions{})
+	if got := document.PerDisplayWorkspaces; got == nil || got.Delegate != "" || len(got.Blocks) != 1 || got.Blocks[0].Block != 0 {
+		t.Fatalf("own per_display_workspaces = %+v, want hyprmoncfg's block 0", got)
+	}
+}

@@ -146,3 +146,77 @@ func TestPerDisplayHyprlangBindsKeysToTheWorkspaceCommand(t *testing.T) {
 		t.Fatalf("only per-display binds the number keys\n%s", got)
 	}
 }
+
+// With fewer workspaces per display, Omarchy keeps running them but loses
+// the keys past the count, and the file's own branch binds only that many.
+func TestPerDisplayLuaHonoursTheWorkspaceCount(t *testing.T) {
+	p, monitors := perDisplayFixture()
+	p.Workspaces.SlotsPerDisplay = 4
+	got, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLua, UseMonitorV2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "local slots = 4\n") {
+		t.Fatalf("missing slot count\n%s", got)
+	}
+	if strings.Contains(got, `workspace = "15"`) || !strings.Contains(got, `workspace = "14"`) {
+		t.Fatalf("expected rules for slots 1-4 only\n%s", got)
+	}
+
+	lua, err := exec.LookPath("lua")
+	if err != nil {
+		t.Skip("Lua interpreter is required for the generated-config runtime check")
+	}
+	section := got[strings.Index(got, "-- hyprmoncfg gives each display"):]
+	section = section[:strings.Index(section, "\nend\n")+len("\nend\n")]
+	script := `
+local binds, unbinds, rules = {}, {}, {}
+hl = {
+  bind = function(key, fn, opts) binds[key] = fn end,
+  unbind = function(key) unbinds[key] = true end,
+  workspace_rule = function(spec) rules[#rules + 1] = spec end,
+  get_active_monitor = function() return { name = "DP-1", description = "Desk display" } end,
+  dispatch = function(fn) fn() end,
+  dsp = { focus = function() return function() end end, window = { move = function() return function() end end } },
+}
+o = { workspaces = { reconcile = function() end } }
+` + section + `
+assert(next(binds) == nil and #rules == 0, "Omarchy stays in charge")
+assert(not unbinds["SUPER + code:13"], "Super + 4 must stay Omarchy's")
+assert(unbinds["SUPER + code:14"] and unbinds["SUPER + SHIFT + code:19"] and unbinds["SUPER + SHIFT + ALT + code:16"], "keys past the count must go")
+assert(not unbinds["SUPER + 5"], "Omarchy binds by key code; key symbols stay")
+binds, unbinds, rules = {}, {}, {}
+o = nil
+` + section + `
+assert(#rules == 8, "expected four rules per display, got " .. #rules)
+assert(binds["SUPER + code:13"] and binds["SUPER + SHIFT + ALT + code:13"], "Super + 4 bound")
+assert(not binds["SUPER + code:14"] and unbinds["SUPER + code:14"] and unbinds["SUPER + 5"], "Super + 5 unbound and left free")
+`
+	path := filepath.Join(t.TempDir(), "per_display_count.lua")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(lua, path).CombinedOutput(); err != nil {
+		t.Fatalf("generated per-display section failed: %v\n%s", err, output)
+	}
+}
+
+func TestPerDisplayHyprlangHonoursTheWorkspaceCount(t *testing.T) {
+	p, monitors := perDisplayFixture()
+	p.Workspaces.SlotsPerDisplay = 3
+	got, err := RenderConfig(p, monitors, Options{Format: config.HyprConfigLegacy, UseMonitorV2: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"bind = SUPER SHIFT ALT, code:12, exec, hyprmoncfg workspace move-silent 3",
+		"unbind = SUPER, 4\nunbind = SUPER, code:13\nunbind = SUPER SHIFT, 4",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "workspace focus 4") || strings.Contains(got, "workspace = 14,") {
+		t.Fatalf("slots past the count must not be bound or placed\n%s", got)
+	}
+}

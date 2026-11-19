@@ -25,7 +25,7 @@ func (b perDisplayBlocks) add(rule profile.WorkspaceRule, selector string) {
 	if err != nil || id < 1 {
 		return
 	}
-	b[selector] = (id - 1) / profile.PerDisplaySlots
+	b[selector] = (id - 1) / profile.PerDisplayBlockSize
 }
 
 func (b perDisplayBlocks) lua() string {
@@ -52,7 +52,7 @@ func (b perDisplayBlocks) lua() string {
 // luaPerDisplaySection hands per-display workspaces to Omarchy when its
 // module is loaded, and otherwise runs them here: each display's block of
 // rules, and Super + number keys that go to the focused display's slot.
-func luaPerDisplaySection(blocks perDisplayBlocks, workspaceLines []string) string {
+func luaPerDisplaySection(slots int, blocks perDisplayBlocks, workspaceLines []string) string {
 	rules := "  -- No display is connected that the plan places."
 	if len(workspaceLines) > 0 {
 		indented := make([]string, len(workspaceLines))
@@ -62,6 +62,7 @@ func luaPerDisplaySection(blocks perDisplayBlocks, workspaceLines []string) stri
 		rules = strings.Join(indented, "\n")
 	}
 	section := strings.TrimSpace(luaPerDisplay)
+	section = strings.Replace(section, "10 -- hyprmoncfg:slots", strconv.Itoa(slots), 1)
 	section = strings.Replace(section, "{} -- hyprmoncfg:blocks", blocks.lua(), 1)
 	section = strings.Replace(section, "  -- hyprmoncfg:rules", rules, 1)
 	return section
@@ -71,24 +72,28 @@ func luaPerDisplaySection(blocks perDisplayBlocks, workspaceLines []string) stri
 // own workspaces. Hyprlang cannot work out the display itself, so the keys
 // run hyprmoncfg, which reads the loaded workspace rules. Both the key symbol
 // and the key code are unbound, so an existing binding of either does not
-// also fire.
-func hyprlangPerDisplayBindings() string {
+// also fire. Keys past the display's workspaces do nothing.
+func hyprlangPerDisplayBindings(slots int) string {
 	lines := []string{
-		"# hyprmoncfg gives each display workspaces 1-10 of its own. Super + number",
-		"# goes to that workspace on the focused display, and Super + Shift + number",
-		"# moves the focused window there.",
+		fmt.Sprintf("# hyprmoncfg gives each display workspaces 1-%d of its own. Super + number", slots),
+		"# goes to that workspace on the focused display, Super + Shift + number",
+		"# moves the focused window there, and Super + Shift + Alt + number moves",
+		"# it without following.",
 	}
-	for slot := 1; slot <= profile.PerDisplaySlots; slot++ {
+	actions := []struct{ mods, action string }{
+		{"SUPER", "focus"},
+		{"SUPER SHIFT", "move"},
+		{"SUPER SHIFT ALT", "move-silent"},
+	}
+	for slot := 1; slot <= profile.PerDisplayBlockSize; slot++ {
 		key := strconv.Itoa(slot % 10)
 		code := fmt.Sprintf("code:%d", slot+9)
-		lines = append(lines,
-			"unbind = SUPER, "+key,
-			"unbind = SUPER, "+code,
-			fmt.Sprintf("bind = SUPER, %s, exec, hyprmoncfg workspace focus %d", code, slot),
-			"unbind = SUPER SHIFT, "+key,
-			"unbind = SUPER SHIFT, "+code,
-			fmt.Sprintf("bind = SUPER SHIFT, %s, exec, hyprmoncfg workspace move %d", code, slot),
-		)
+		for _, item := range actions {
+			lines = append(lines, "unbind = "+item.mods+", "+key, "unbind = "+item.mods+", "+code)
+			if slot <= slots {
+				lines = append(lines, fmt.Sprintf("bind = %s, %s, exec, hyprmoncfg workspace %s %d", item.mods, code, item.action, slot))
+			}
+		}
 	}
 	return strings.Join(lines, "\n")
 }

@@ -142,3 +142,41 @@ func TestDelegatedPerDisplayProfileMatchesLiveStateWithoutRules(t *testing.T) {
 		t.Fatalf("live state read back as %q with strategy %q", source, draft.Workspaces.Strategy)
 	}
 }
+
+func TestPerDisplayCountKeepsBlocksOfTen(t *testing.T) {
+	p := perDisplayProfile()
+	p.Workspaces.SlotsPerDisplay = 3
+	rules := ResolveWorkspaceRules(p, nil)
+	var got []string
+	for _, rule := range rules {
+		got = append(got, rule.OutputKey+":"+rule.Workspace)
+	}
+	want := []string{"desk:1", "desk:2", "desk:3", "laptop:11", "laptop:12", "laptop:13"}
+	if len(got) != len(want) {
+		t.Fatalf("rules = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("rules = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestPerDisplayCountMustBeOneToTen(t *testing.T) {
+	settings := WorkspaceSettings{Enabled: true, Strategy: WorkspaceStrategyPerDisplay}
+	for _, count := range []int{-1, 11} {
+		settings.SlotsPerDisplay = count
+		if settings.Validate() == nil {
+			t.Fatalf("%d per display accepted", count)
+		}
+	}
+	for count, want := range map[int]int{0: 10, 1: 1, 10: 10} {
+		settings.SlotsPerDisplay = count
+		if err := settings.Validate(); err != nil {
+			t.Fatalf("%d per display: %v", count, err)
+		}
+		if got := settings.PerDisplaySlots(); got != want {
+			t.Fatalf("PerDisplaySlots() with %d = %d, want %d", count, got, want)
+		}
+	}
+}

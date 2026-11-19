@@ -45,8 +45,8 @@ func newWorkspaceCmd() *cobra.Command {
 
 func runWorkspace(ctx context.Context, client workspaceDispatcher, action, slotArg string) error {
 	slot, err := strconv.Atoi(slotArg)
-	if err != nil || slot < 1 || slot > profile.PerDisplaySlots {
-		return fmt.Errorf("workspace must be 1-%d, got %q", profile.PerDisplaySlots, slotArg)
+	if err != nil || slot < 1 || slot > profile.PerDisplayBlockSize {
+		return fmt.Errorf("workspace must be 1-%d, got %q", profile.PerDisplayBlockSize, slotArg)
 	}
 	legacy, lua := "", ""
 	switch action {

@@ -105,6 +105,18 @@ and mirrored outputs have no independent group. This is a read-only view of
 live rules, not a saved-profile preview or a declaration of workspace ownership.
 
 An absent field means an older daemon. An empty array means a known empty plan.
+
+While the active profile uses the Per display strategy, status also includes
+`per_display_workspaces`, `{block_size, slots, delegate, blocks}`: each display
+owns a block of `block_size` (10) workspace numbers and has the first `slots` of
+them. `blocks` lists each connected display's `{output_name, block}`, so a bar
+can show a display's own workspaces without reading Omarchy's state; block 1
+holds 11-20. `delegate` is `"omarchy"` while Omarchy's per-monitor workspaces
+run them, and absent when hyprmoncfg does. A bar labels workspace `id` by its
+slot, `(id - 1) % block_size + 1`, so the second display's workspace 11 reads as
+1. The field is absent for other strategies, when no profile is active, and
+from older daemons.
+
 Shell clients merge this with their live compositor workspace model: a workspace's
 actual location always wins over its assignment. Switching a workspace remains
 a direct compositor action; there is no workspace-switching IPC method. The
@@ -177,7 +189,9 @@ Editor documents also list `workspace_strategies`, the strategies the daemon can
 save. Offer Per display (`per_display`) only when it is listed; an older daemon
 rejects it as an invalid strategy. `workspace_per_display_delegate` is
 `"omarchy"` when Omarchy's per-monitor workspaces run the Per display strategy,
-and is absent when hyprmoncfg runs it. With a delegate, the per-display plans in
+and is absent when hyprmoncfg runs it. Under Per display,
+`workspaces.slots_per_display` is how many workspaces each display has, 1-10;
+absent or 0 means ten, and `max_workspaces` does not apply. With a delegate, the per-display plans in
 `workspace_plan` and `profile_workspace_plans` show the blocks Omarchy gives each
 display, and monitor order and persistence have no effect.
 

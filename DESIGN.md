@@ -173,7 +173,20 @@ monitor order, and Super + number and Super + Shift + number go to the focused
 display's slot, through Lua bindings in the generated file or, for hyprlang,
 bindings that run `hyprmoncfg workspace`. The generated Lua checks for
 Omarchy's module at load time and falls back to its own branch, so a profile
-works on both. Max workspaces and Group size are inert under Per display.
+works on both. Group size is inert under Per display.
+
+Decision, 2026-11-18: Per display stores how many workspaces each display
+has, 1-10, as `slots_per_display` (absent means ten), and editors show it in
+the Max workspaces row as "N per display". It is not `max_workspaces`, which
+the other strategies keep, so switching strategy loses neither. Blocks stay
+ten wide whatever the count, as Omarchy's are, so changing it never renumbers
+a workspace. Under Omarchy the generated Lua unbinds Omarchy's number keys
+(by key code, as Omarchy binds them) past the count and changes nothing else;
+hyprmoncfg's own branch writes rules for the first N slots and binds only
+those keys, leaving the rest unbound. Ten is the ceiling: there are ten number
+keys and Omarchy's blocks hold ten. Editors label per-display workspaces by
+slot (workspace 11 shows as 1 on the second display), and the status document's
+`per_display_workspaces` (`block_size`, `slots`) lets a bar do the same.
 
 Decision, 2026-11-18 (#131): while hyprmoncfg manages displays on Omarchy,
 the generated Lua binds Super + / and Super + Alt + / to `hyprmoncfg scale up`

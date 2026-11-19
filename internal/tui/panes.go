@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -429,7 +430,7 @@ func (m Model) profileDetailRows(p profile.Profile, summary profileMatchSummary,
 	rows = append(rows, m.listRows("Kept off", keptOff, valueWidth)...)
 	rows = append(rows, m.listRows("Mirrors", mirrors, valueWidth)...)
 
-	planRows := m.workspacePlanRows(m.workspacePlan(p.Outputs, p.Workspaces), p.Outputs, valueWidth)
+	planRows := m.workspacePlanRows(slotLabeledRules(p.Workspaces, m.workspacePlan(p.Outputs, p.Workspaces)), p.Outputs, valueWidth)
 	for idx, row := range planRows {
 		label := ""
 		if idx == 0 {
@@ -463,6 +464,24 @@ func (m Model) listRows(label string, values []string, width int) []detailRow {
 // would produce, which is what both the plan list and the canvas preview show.
 func (m Model) workspacePlan(outputs []profile.OutputConfig, settings profile.WorkspaceSettings) []profile.WorkspaceRule {
 	return profile.ResolveWorkspaceRules(profile.Profile{Outputs: outputs, Workspaces: settings}, m.monitors)
+}
+
+// slotLabeledRules names per-display workspaces by their slot on the display,
+// 1-10, as the keys and Omarchy's bar do, rather than by the block number
+// Hyprland uses: the second display's 11 shows as 1. Other plans keep their
+// numbers. The rules are only for showing; never apply them.
+func slotLabeledRules(settings profile.WorkspaceSettings, rules []profile.WorkspaceRule) []profile.WorkspaceRule {
+	if !settings.Enabled || settings.Strategy != profile.WorkspaceStrategyPerDisplay {
+		return rules
+	}
+	labeled := make([]profile.WorkspaceRule, len(rules))
+	for i, rule := range rules {
+		labeled[i] = rule
+		if id, err := strconv.Atoi(strings.TrimSpace(rule.Workspace)); err == nil && id > 0 {
+			labeled[i].Workspace = strconv.Itoa((id-1)%profile.PerDisplayBlockSize + 1)
+		}
+	}
+	return labeled
 }
 
 // workspacePlanRows lays the workspace plan out as an aligned two-column list
@@ -543,7 +562,7 @@ func workspacePlanByConnector(rules []profile.WorkspaceRule) map[string][]string
 func (m Model) renderProfileCanvas(p profile.Profile, width, height int) string {
 	outputs := m.profileEditableOutputs(p)
 	connected := m.profileConnectedKeys(p)
-	workspaces := workspacePlanByConnector(profile.ResolveWorkspaceRules(p, nil))
+	workspaces := workspacePlanByConnector(slotLabeledRules(p.Workspaces, profile.ResolveWorkspaceRules(p, nil)))
 
 	return m.renderStaticCanvas(outputs, width, height, func(output editableOutput) canvasCard {
 		// Nothing here is being dragged, so a display the profile can drive gets
