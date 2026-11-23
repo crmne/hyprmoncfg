@@ -53,7 +53,7 @@ jobs:
         run: echo "path=docs/releases/${GITHUB_REF_NAME#v}.md" >> "$GITHUB_OUTPUT"
 
       - name: Goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: v2.20.2
